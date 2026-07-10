@@ -506,8 +506,6 @@ async function downloadPdfInPage(current: RecordingSession): Promise<void> {
 
 async function startRecording(): Promise<void> {
   try {
-    localStatus = "Checking folder permission.";
-    render();
     if (!await ensureExportFolderPermission()) {
       localStatus = "Allow folder access before starting a capture.";
       render();
@@ -519,10 +517,7 @@ async function startRecording(): Promise<void> {
     videoChunks.length = 0;
     audioChunks.length = 0;
 
-    displayStream = await navigator.mediaDevices.getDisplayMedia({
-      video: true,
-      audio: false
-    });
+    displayStream = await requestScreenStream();
     for (const track of displayStream.getVideoTracks()) {
       track.addEventListener("ended", () => {
         void stopRecording();
@@ -533,7 +528,7 @@ async function startRecording(): Promise<void> {
 
     const audioContext = new AudioContext();
     const destination = audioContext.createMediaStreamDestination();
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    micStream = await requestMicrophoneStream();
     audioContext.createMediaStreamSource(micStream).connect(destination);
 
     mixedStream = new MediaStream([...displayStream.getVideoTracks(), ...destination.stream.getAudioTracks()]);
@@ -594,12 +589,32 @@ async function startRecording(): Promise<void> {
     }, 5000);
     await refresh();
   } catch (error) {
+    cleanupRecorder();
     await saveSession({
       ...((await getSession()) ?? { timeline: [], screenshots: [] }),
       status: "error",
-      error: error instanceof Error ? error.message : String(error)
+      error: permissionAwareErrorMessage(error)
     });
     await refresh();
+  }
+}
+
+async function requestScreenStream(): Promise<MediaStream> {
+  try {
+    return await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: false
+    });
+  } catch (error) {
+    throw new Error(`Screen permission was dismissed. Click Start Capture again and choose a screen, window, or tab. ${rawErrorMessage(error)}`);
+  }
+}
+
+async function requestMicrophoneStream(): Promise<MediaStream> {
+  try {
+    return await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (error) {
+    throw new Error(`Microphone permission was dismissed. Click Start Capture again and allow microphone access. ${rawErrorMessage(error)}`);
   }
 }
 
@@ -763,6 +778,18 @@ function send(message: RuntimeMessage): Promise<{ ok: boolean; session?: Recordi
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[char] ?? char);
+}
+
+function permissionAwareErrorMessage(error: unknown): string {
+  const message = rawErrorMessage(error);
+  if (/folder|screen|microphone/i.test(message)) return message;
+  if (/permission dismissed/i.test(message)) return "Permission was dismissed. Click Start Capture again and approve the Chrome permission prompt.";
+  if (/permission denied|notallowederror|not allowed/i.test(message)) return "Permission was denied. Allow folder, screen, and microphone access to start a capture.";
+  return message;
+}
+
+function rawErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function formatDuration(startedAt?: number, stoppedAt?: number): string {

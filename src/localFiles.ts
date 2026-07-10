@@ -54,8 +54,12 @@ export async function ensureExportFolderPermission(requestPermission = true): Pr
   const current = await permissionHandle.queryPermission?.(descriptor);
   if (current === "granted") return true;
   if (!requestPermission) return false;
-  const requested = await permissionHandle.requestPermission?.(descriptor);
-  return requested === "granted";
+  try {
+    const requested = await permissionHandle.requestPermission?.(descriptor);
+    return requested === "granted";
+  } catch (error) {
+    throw new Error(folderPermissionErrorMessage(error));
+  }
 }
 
 export async function startRecordingFolder(name: string): Promise<string | undefined> {
@@ -134,6 +138,14 @@ function folderPickerErrorMessage(error: unknown): string {
     return "Chrome blocked that folder because it is protected or managed by the system. Create or choose a normal folder such as Documents/JesSee Captures, Desktop/JesSee Captures, or another project folder you own.";
   }
   return `Could not use that folder. ${message}`;
+}
+
+function folderPermissionErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/dismiss|abort|cancel/i.test(message)) return "Folder permission was dismissed. Click Start Capture again and allow folder access.";
+  if (/activation|gesture/i.test(message)) return "Folder permission must be approved from the Start Capture click. Click Start Capture again and allow folder access.";
+  if (/permission|not allowed|denied/i.test(message)) return "Chrome denied access to the capture folder. Choose or allow a folder before starting.";
+  return `Could not confirm folder access. ${message}`;
 }
 
 async function saveRootDirectory(handle: FileSystemDirectoryHandle): Promise<void> {
