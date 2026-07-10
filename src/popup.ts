@@ -39,6 +39,7 @@ let settingsCache: Awaited<ReturnType<typeof getSettings>> | undefined;
 let pdfProgress: PdfProgress | undefined;
 let cleanupRan = false;
 let onboardingDraft: { email: string; apiKey: string; retentionDays: number } | undefined;
+let microphoneReady = false;
 const videoChunks: Blob[] = [];
 const audioChunks: Blob[] = [];
 
@@ -506,16 +507,18 @@ async function downloadPdfInPage(current: RecordingSession): Promise<void> {
 
 async function startRecording(): Promise<void> {
   try {
-    if (!await ensureExportFolderPermission()) {
-      localStatus = "Allow folder access before starting a capture.";
-      render();
-      return;
-    }
+    if (!await ensureFolderReadyForStart()) return;
+    if (!await ensureMicrophoneReadyForStart()) return;
     await hardCleanupInterruptedRecording();
     localStatus = "Choose what to capture in Chrome's picker.";
     render();
     videoChunks.length = 0;
     audioChunks.length = 0;
+
+    const audioContext = new AudioContext();
+    const destination = audioContext.createMediaStreamDestination();
+    micStream = await requestMicrophoneStream();
+    audioContext.createMediaStreamSource(micStream).connect(destination);
 
     displayStream = await requestScreenStream();
     for (const track of displayStream.getVideoTracks()) {
@@ -523,11 +526,6 @@ async function startRecording(): Promise<void> {
         void stopRecording();
       });
     }
-
-    const audioContext = new AudioContext();
-    const destination = audioContext.createMediaStreamDestination();
-    micStream = await requestMicrophoneStream();
-    audioContext.createMediaStreamSource(micStream).connect(destination);
 
     mixedStream = new MediaStream([...displayStream.getVideoTracks(), ...destination.stream.getAudioTracks()]);
     previewVideo = document.createElement("video");
@@ -594,6 +592,44 @@ async function startRecording(): Promise<void> {
       error: permissionAwareErrorMessage(error)
     });
     await refresh();
+  }
+}
+
+async function ensureFolderReadyForStart(): Promise<boolean> {
+  if (await ensureExportFolderPermission(false)) return true;
+  if (!await ensureExportFolderPermission(true)) {
+    localStatus = "Allow folder access before starting a capture.";
+    render();
+    return false;
+  }
+  localStatus = "Folder access is ready. Click Start Capture again.";
+  render();
+  return false;
+}
+
+async function ensureMicrophoneReadyForStart(): Promise<boolean> {
+  const state = await microphonePermissionState();
+  if (state === "denied") {
+    localStatus = "Microphone access is blocked. Enable it for JesSee in Chrome settings, then click Start Capture again.";
+    render();
+    return false;
+  }
+  if (state === "granted" || microphoneReady) return true;
+
+  const stream = await requestMicrophoneStream();
+  for (const track of stream.getTracks()) track.stop();
+  microphoneReady = true;
+  localStatus = "Microphone access is ready. Click Start Capture again and choose what to capture.";
+  render();
+  return false;
+}
+
+async function microphonePermissionState(): Promise<PermissionState | "unknown"> {
+  try {
+    const status = await navigator.permissions.query({ name: "microphone" as PermissionName });
+    return status.state;
+  } catch {
+    return microphoneReady ? "granted" : "unknown";
   }
 }
 
