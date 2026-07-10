@@ -24,6 +24,7 @@
   "options_page": "options.html",
   "permissions": [
     "activeTab",
+    "audioCapture",
     "downloads",
     "offscreen",
     "sidePanel",

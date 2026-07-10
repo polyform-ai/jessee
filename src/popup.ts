@@ -523,8 +523,6 @@ async function startRecording(): Promise<void> {
         void stopRecording();
       });
     }
-    localStatus = "Requesting microphone access.";
-    render();
 
     const audioContext = new AudioContext();
     const destination = audioContext.createMediaStreamDestination();
