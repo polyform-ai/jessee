@@ -1,6 +1,6 @@
 import "./ui.css";
 import { chooseExportFolder, deleteOldCaptureFolders, exportFolderName, hasExportFolder, restoreExportFolder } from "./localFiles";
-import { clearApiKey, getSettings, pruneCaptureHistory, saveSettings } from "./storage";
+import { clearApiKey, getSession, getSettings, pruneCaptureHistory, saveSession, saveSettings } from "./storage";
 import { createCustomTemplate, hasTemplateOverride, isBuiltInTemplateId, getTemplates } from "./templates";
 import { postWebhook } from "./webhook";
 
@@ -196,6 +196,8 @@ async function render(message = ""): Promise<void> {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       for (const track of stream.getTracks()) track.stop();
       await saveSettings({ microphoneEnabledAt: Date.now() });
+      const session = await getSession();
+      if (session.error) await saveSession({ ...session, error: undefined, status: session.status === "error" ? "idle" : session.status });
       await render("Microphone enabled.");
     } catch (error) {
       await render(microphoneErrorMessage(error));

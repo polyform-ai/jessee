@@ -60,7 +60,7 @@ const PDF_PROGRESS_STEPS = [
 void refresh();
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === "local" && changes.recordingSession) void refresh();
+  if (areaName === "local" && (changes.recordingSession || changes.settings)) void refresh();
 });
 
 async function refresh(): Promise<void> {
