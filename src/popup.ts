@@ -37,6 +37,7 @@ let selectedTemplateName = "Debug Ticket";
 let settingsCache: Awaited<ReturnType<typeof getSettings>> | undefined;
 let pdfProgress: PdfProgress | undefined;
 let cleanupRan = false;
+let onboardingDraft: { email: string; apiKey: string; retentionDays: number } | undefined;
 const videoChunks: Blob[] = [];
 const audioChunks: Blob[] = [];
 
@@ -208,6 +209,9 @@ function render(): void {
 }
 
 function renderOnboarding(settings: Awaited<ReturnType<typeof getSettings>> | undefined): void {
+  const email = onboardingDraft?.email ?? settings?.email ?? "";
+  const apiKeyValue = onboardingDraft?.apiKey ?? (settings?.openAiKey ? "••••••••••••••••" : "");
+  const retentionDays = onboardingDraft?.retentionDays ?? settings?.retentionDays ?? 30;
   root.innerHTML = `
     <main class="app">
       <div class="header header-panel">
@@ -230,15 +234,15 @@ function renderOnboarding(settings: Awaited<ReturnType<typeof getSettings>> | un
           </div>
           <div class="field">
             <label for="email">Email</label>
-            <input id="email" type="email" autocomplete="email" placeholder="you@example.com" value="${escapeHtml(settings?.email ?? "")}" />
+            <input id="email" type="email" autocomplete="email" placeholder="you@example.com" value="${escapeHtml(email)}" />
           </div>
           <div class="field">
             <label for="apiKey">OpenAI API key</label>
-            <input id="apiKey" type="password" autocomplete="off" placeholder="sk-..." value="${settings?.openAiKey ? "••••••••••••••••" : ""}" />
+            <input id="apiKey" type="password" autocomplete="off" placeholder="sk-..." value="${escapeHtml(apiKeyValue)}" />
           </div>
           <div class="field">
             <label for="retentionDays">Delete captures after</label>
-            <input id="retentionDays" type="number" min="1" max="365" value="${settings?.retentionDays ?? 30}" />
+            <input id="retentionDays" type="number" min="1" max="365" value="${retentionDays}" />
           </div>
           <div class="meta">
             <span>Output folder</span>
@@ -384,6 +388,7 @@ async function saveOnboarding(): Promise<void> {
     return;
   }
   await saveSettings({ email, openAiKey, retentionDays: normalizeRetentionDays(retentionDays) });
+  onboardingDraft = undefined;
   const updated = await getSettings();
   await postWebhook(updated, "new_user", { email });
   localStatus = "";
@@ -392,6 +397,7 @@ async function saveOnboarding(): Promise<void> {
 
 async function chooseFolderFromPopup(): Promise<void> {
   try {
+    preserveOnboardingDraft();
     await chooseExportFolder();
     localStatus = "Folder selected.";
     await refresh();
@@ -399,6 +405,17 @@ async function chooseFolderFromPopup(): Promise<void> {
     localStatus = error instanceof Error ? error.message : String(error);
     render();
   }
+}
+
+function preserveOnboardingDraft(): void {
+  const email = document.querySelector<HTMLInputElement>("#email")?.value.trim() ?? "";
+  const apiKey = document.querySelector<HTMLInputElement>("#apiKey")?.value.trim() ?? "";
+  const retentionDays = Number(document.querySelector<HTMLInputElement>("#retentionDays")?.value ?? 30);
+  onboardingDraft = {
+    email,
+    apiKey,
+    retentionDays: normalizeRetentionDays(retentionDays)
+  };
 }
 
 async function selectTemplate(templateId: string): Promise<void> {
