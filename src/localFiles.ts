@@ -42,8 +42,24 @@ export async function restoreExportFolder(): Promise<boolean> {
   return Boolean(rootDirectory);
 }
 
+export async function ensureExportFolderPermission(requestPermission = true): Promise<boolean> {
+  rootDirectory = rootDirectory ?? await loadRootDirectory(false);
+  rootDirectoryName = rootDirectory?.name;
+  if (!rootDirectory) return false;
+  const permissionHandle = rootDirectory as FileSystemDirectoryHandle & {
+    queryPermission?: (descriptor?: { mode?: "read" | "readwrite" }) => Promise<PermissionState>;
+    requestPermission?: (descriptor?: { mode?: "read" | "readwrite" }) => Promise<PermissionState>;
+  };
+  const descriptor = { mode: "readwrite" as const };
+  const current = await permissionHandle.queryPermission?.(descriptor);
+  if (current === "granted") return true;
+  if (!requestPermission) return false;
+  const requested = await permissionHandle.requestPermission?.(descriptor);
+  return requested === "granted";
+}
+
 export async function startRecordingFolder(name: string): Promise<string | undefined> {
-  rootDirectory = rootDirectory ?? await loadRootDirectory(true);
+  if (!await ensureExportFolderPermission()) return undefined;
   rootDirectoryName = rootDirectory?.name;
   if (!rootDirectory) return undefined;
   const folderName = sanitizeName(name);
@@ -52,9 +68,9 @@ export async function startRecordingFolder(name: string): Promise<string | undef
   return folderName;
 }
 
-export async function deleteOldCaptureFolders(retentionDays: number): Promise<number> {
+export async function deleteOldCaptureFolders(retentionDays: number, requestPermission = false): Promise<number> {
   if (retentionDays <= 0) return 0;
-  rootDirectory = rootDirectory ?? await loadRootDirectory(true);
+  if (!await ensureExportFolderPermission(requestPermission)) return 0;
   rootDirectoryName = rootDirectory?.name;
   if (!rootDirectory) return 0;
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
@@ -140,7 +156,7 @@ async function loadRootDirectory(requestPermission: boolean): Promise<FileSystem
   const descriptor = { mode: "readwrite" as const };
   const current = await permissionHandle.queryPermission?.(descriptor);
   if (current === "granted") return handle;
-  if (!requestPermission) return undefined;
+  if (!requestPermission) return handle;
   const requested = await permissionHandle.requestPermission?.(descriptor);
   return requested === "granted" ? handle : undefined;
 }

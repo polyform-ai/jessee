@@ -182,7 +182,7 @@ async function render(message = ""): Promise<void> {
     const retentionDays = Math.min(365, Math.max(1, Math.round(Number.isFinite(value) ? value : 30)));
     await saveSettings({ retentionDays });
     try {
-      await Promise.all([deleteOldCaptureFolders(retentionDays), pruneCaptureHistory(retentionDays)]);
+      await Promise.all([deleteOldCaptureFolders(retentionDays, true), pruneCaptureHistory(retentionDays)]);
       await render("Retention saved.");
     } catch (error) {
       await render(error instanceof Error ? error.message : String(error));

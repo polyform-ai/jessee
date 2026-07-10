@@ -4,6 +4,7 @@ import { dataUrlToBlob } from "./dataUrl";
 import {
   chooseExportFolder,
   deleteOldCaptureFolders,
+  ensureExportFolderPermission,
   exportFolderName,
   hasExportFolder,
   restoreExportFolder,
@@ -505,6 +506,13 @@ async function downloadPdfInPage(current: RecordingSession): Promise<void> {
 
 async function startRecording(): Promise<void> {
   try {
+    localStatus = "Checking folder permission.";
+    render();
+    if (!await ensureExportFolderPermission()) {
+      localStatus = "Allow folder access before starting a capture.";
+      render();
+      return;
+    }
     await hardCleanupInterruptedRecording();
     localStatus = "Choose what to capture in Chrome's picker.";
     render();
