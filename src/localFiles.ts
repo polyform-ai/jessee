@@ -63,7 +63,7 @@ export async function ensureExportFolderPermission(requestPermission = true): Pr
 }
 
 export async function startRecordingFolder(name: string): Promise<string | undefined> {
-  if (!await ensureExportFolderPermission()) return undefined;
+  rootDirectory = rootDirectory ?? await loadRootDirectory(false);
   rootDirectoryName = rootDirectory?.name;
   if (!rootDirectory) return undefined;
   const folderName = sanitizeName(name);

@@ -4,7 +4,6 @@ import { dataUrlToBlob } from "./dataUrl";
 import {
   chooseExportFolder,
   deleteOldCaptureFolders,
-  ensureExportFolderPermission,
   exportFolderName,
   hasExportFolder,
   restoreExportFolder,
@@ -40,6 +39,7 @@ let pdfProgress: PdfProgress | undefined;
 let cleanupRan = false;
 let onboardingDraft: { email: string; apiKey: string; retentionDays: number } | undefined;
 let microphoneReady = false;
+let microphonePermission: PermissionState | "unknown" = "unknown";
 const videoChunks: Blob[] = [];
 const audioChunks: Blob[] = [];
 
@@ -68,6 +68,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 async function refresh(): Promise<void> {
   await restoreExportFolder();
   settingsCache = await getSettings();
+  microphonePermission = await microphonePermissionState();
+  microphoneReady = microphoneReady || microphonePermission === "granted";
   if (!cleanupRan && hasExportFolder()) {
     cleanupRan = true;
     void cleanupOldCaptures(settingsCache.retentionDays ?? 30);
@@ -95,6 +97,7 @@ function render(): void {
   const showCaptureSummary = Boolean(current?.startedAt || current?.screenshots.length || current?.ticket);
   const progress = pdfProgress ?? (current?.status === "generating" ? createProgress(current, Date.now()) : undefined);
   const history = settings?.captureHistory ?? [];
+  const isMicrophoneReady = microphoneReady || microphonePermission === "granted";
   root.innerHTML = `
     <main class="app">
       <div class="header header-panel">
@@ -117,9 +120,10 @@ function render(): void {
             </div>
           </div>
           <div class="row">
-            <button class="button primary" id="start" ${current?.status === "generating" || current?.status === "recording" ? "disabled" : ""}>Start Capture</button>
+            <button class="button primary" id="start" ${current?.status === "generating" || current?.status === "recording" || !isMicrophoneReady ? "disabled" : ""}>Start Capture</button>
             <button class="button danger" id="stop" ${current?.status !== "recording" ? "disabled" : ""}>End Capture</button>
           </div>
+          ${!isMicrophoneReady ? `<button class="button secondary" id="enableMic">Enable Microphone</button>` : ""}
           <button class="button primary" id="pdfAction" ${!canUsePdfAction ? "disabled" : ""}>${hasTicket ? "Download PDF" : current?.captureAnalysis ? "Generate PDF" : "Create Plan"}</button>
         </section>
         ${progress ? `<section class="panel">
@@ -185,6 +189,9 @@ function render(): void {
   `;
 
   bind("#start", "click", () => startRecording());
+  bind("#enableMic", "click", () => {
+    void enableMicrophone();
+  });
   bind("#stop", "click", () => stopRecording());
   bind("#pdfAction", "click", () => {
     if (session?.ticket) void downloadPdfInPage(session);
@@ -507,7 +514,6 @@ async function downloadPdfInPage(current: RecordingSession): Promise<void> {
 
 async function startRecording(): Promise<void> {
   try {
-    if (!await ensureFolderReadyForStart()) return;
     if (!await ensureMicrophoneReadyForStart()) return;
     await hardCleanupInterruptedRecording();
     localStatus = "Choose what to capture in Chrome's picker.";
@@ -595,18 +601,6 @@ async function startRecording(): Promise<void> {
   }
 }
 
-async function ensureFolderReadyForStart(): Promise<boolean> {
-  if (await ensureExportFolderPermission(false)) return true;
-  if (!await ensureExportFolderPermission(true)) {
-    localStatus = "Allow folder access before starting a capture.";
-    render();
-    return false;
-  }
-  localStatus = "Folder access is ready. Click Start Capture again.";
-  render();
-  return false;
-}
-
 async function ensureMicrophoneReadyForStart(): Promise<boolean> {
   const state = await microphonePermissionState();
   if (state === "denied") {
@@ -616,12 +610,24 @@ async function ensureMicrophoneReadyForStart(): Promise<boolean> {
   }
   if (state === "granted" || microphoneReady) return true;
 
-  const stream = await requestMicrophoneStream();
-  for (const track of stream.getTracks()) track.stop();
-  microphoneReady = true;
-  localStatus = "Microphone access is ready. Click Start Capture again and choose what to capture.";
+  localStatus = "Enable microphone before starting a capture.";
   render();
   return false;
+}
+
+async function enableMicrophone(): Promise<void> {
+  try {
+    const stream = await requestMicrophoneStream();
+    for (const track of stream.getTracks()) track.stop();
+    microphoneReady = true;
+    microphonePermission = "granted";
+    localStatus = "Microphone access is ready. Click Start Capture.";
+    render();
+  } catch (error) {
+    microphoneReady = false;
+    localStatus = permissionAwareErrorMessage(error);
+    render();
+  }
 }
 
 async function microphonePermissionState(): Promise<PermissionState | "unknown"> {
@@ -648,7 +654,7 @@ async function requestMicrophoneStream(): Promise<MediaStream> {
   try {
     return await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (error) {
-    throw new Error(`Microphone permission was dismissed. Click Start Capture again and allow microphone access. ${rawErrorMessage(error)}`);
+    throw new Error(`Microphone permission was dismissed. Click Enable Microphone and allow microphone access. ${rawErrorMessage(error)}`);
   }
 }
 
