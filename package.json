@@ -1,0 +1,38 @@
+{
+  "name": "jessee-extension",
+  "version": "0.1.0",
+  "description": "Chrome extension that turns screen walkthroughs into structured AI-ready documents.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/polyform-ai/jessee.git"
+  },
+  "bugs": {
+    "url": "https://github.com/polyform-ai/jessee/issues"
+  },
+  "homepage": "https://github.com/polyform-ai/jessee#readme",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "check": "tsc --noEmit && npm run build && npm test && npm run test:e2e"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
+    "jspdf": "^3.0.4",
+    "vite": "^7.0.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.53.2",
+    "@tailwindcss/vite": "^4.3.2",
+    "@types/chrome": "^0.0.326",
+    "@types/node": "^24.0.10",
+    "fake-indexeddb": "^6.2.5",
+    "sharp": "^0.35.3",
+    "tailwindcss": "^4.3.2",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}
