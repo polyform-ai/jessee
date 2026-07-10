@@ -38,8 +38,6 @@ let settingsCache: Awaited<ReturnType<typeof getSettings>> | undefined;
 let pdfProgress: PdfProgress | undefined;
 let cleanupRan = false;
 let onboardingDraft: { email: string; apiKey: string; retentionDays: number } | undefined;
-let microphoneReady = false;
-let microphonePermission: PermissionState | "unknown" = "unknown";
 const videoChunks: Blob[] = [];
 const audioChunks: Blob[] = [];
 
@@ -68,8 +66,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 async function refresh(): Promise<void> {
   await restoreExportFolder();
   settingsCache = await getSettings();
-  microphonePermission = await microphonePermissionState();
-  microphoneReady = microphoneReady || microphonePermission === "granted";
   if (!cleanupRan && hasExportFolder()) {
     cleanupRan = true;
     void cleanupOldCaptures(settingsCache.retentionDays ?? 30);
@@ -97,7 +93,7 @@ function render(): void {
   const showCaptureSummary = Boolean(current?.startedAt || current?.screenshots.length || current?.ticket);
   const progress = pdfProgress ?? (current?.status === "generating" ? createProgress(current, Date.now()) : undefined);
   const history = settings?.captureHistory ?? [];
-  const isMicrophoneReady = microphoneReady || microphonePermission === "granted";
+  const isMicrophoneReady = Boolean(settings?.microphoneEnabledAt);
   root.innerHTML = `
     <main class="app">
       <div class="header header-panel">
@@ -123,7 +119,7 @@ function render(): void {
             <button class="button primary" id="start" ${current?.status === "generating" || current?.status === "recording" || !isMicrophoneReady ? "disabled" : ""}>Start Capture</button>
             <button class="button danger" id="stop" ${current?.status !== "recording" ? "disabled" : ""}>End Capture</button>
           </div>
-          ${!isMicrophoneReady ? `<button class="button secondary" id="enableMic">Enable Microphone</button>` : ""}
+          ${!isMicrophoneReady ? `<button class="button secondary" id="openMicSettings">Enable Microphone in Settings</button>` : ""}
           <button class="button primary" id="pdfAction" ${!canUsePdfAction ? "disabled" : ""}>${hasTicket ? "Download PDF" : current?.captureAnalysis ? "Generate PDF" : "Create Plan"}</button>
         </section>
         ${progress ? `<section class="panel">
@@ -179,7 +175,7 @@ function render(): void {
         ${current?.captureAnalysis ? renderPlanReview(current) : ""}
         <section class="panel">
           ${localStatus ? `<p class="success">${escapeHtml(localStatus)}</p>` : ""}
-          ${current?.error ? `<p class="error">${escapeHtml(current.error)}</p>` : ""}
+          ${!localStatus && current?.error ? `<p class="error">${escapeHtml(current.error)}</p>` : ""}
           ${current?.exportFolderName ? `<p class="hint">Capture folder: ${escapeHtml(current.exportFolderName)}</p>` : ""}
           <p class="hint">Screenshots are timestamped and paired with your narration when the PDF is created.</p>
         </section>
@@ -189,9 +185,7 @@ function render(): void {
   `;
 
   bind("#start", "click", () => startRecording());
-  bind("#enableMic", "click", () => {
-    void enableMicrophone();
-  });
+  bind("#openMicSettings", "click", () => chrome.runtime.openOptionsPage());
   bind("#stop", "click", () => stopRecording());
   bind("#pdfAction", "click", () => {
     if (session?.ticket) void downloadPdfInPage(session);
@@ -514,7 +508,7 @@ async function downloadPdfInPage(current: RecordingSession): Promise<void> {
 
 async function startRecording(): Promise<void> {
   try {
-    if (!await ensureMicrophoneReadyForStart()) return;
+    await clearCurrentError();
     await hardCleanupInterruptedRecording();
     localStatus = "Choose what to capture in Chrome's picker.";
     render();
@@ -601,42 +595,10 @@ async function startRecording(): Promise<void> {
   }
 }
 
-async function ensureMicrophoneReadyForStart(): Promise<boolean> {
-  const state = await microphonePermissionState();
-  if (state === "denied") {
-    localStatus = "Microphone access is blocked. Enable it for JesSee in Chrome settings, then click Start Capture again.";
-    render();
-    return false;
-  }
-  if (state === "granted" || microphoneReady) return true;
-
-  localStatus = "Enable microphone before starting a capture.";
-  render();
-  return false;
-}
-
-async function enableMicrophone(): Promise<void> {
-  try {
-    const stream = await requestMicrophoneStream();
-    for (const track of stream.getTracks()) track.stop();
-    microphoneReady = true;
-    microphonePermission = "granted";
-    localStatus = "Microphone access is ready. Click Start Capture.";
-    render();
-  } catch (error) {
-    microphoneReady = false;
-    localStatus = permissionAwareErrorMessage(error);
-    render();
-  }
-}
-
-async function microphonePermissionState(): Promise<PermissionState | "unknown"> {
-  try {
-    const status = await navigator.permissions.query({ name: "microphone" as PermissionName });
-    return status.state;
-  } catch {
-    return microphoneReady ? "granted" : "unknown";
-  }
+async function clearCurrentError(): Promise<void> {
+  const current = await getSession();
+  if (!current.error) return;
+  await saveSession({ ...current, error: undefined, status: current.status === "error" ? "idle" : current.status });
 }
 
 async function requestScreenStream(): Promise<MediaStream> {
@@ -654,7 +616,7 @@ async function requestMicrophoneStream(): Promise<MediaStream> {
   try {
     return await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (error) {
-    throw new Error(`Microphone permission was dismissed. Click Enable Microphone and allow microphone access. ${rawErrorMessage(error)}`);
+    throw new Error(`Microphone access is not available. Open Settings, click Enable Microphone, then start capture again. ${rawErrorMessage(error)}`);
   }
 }
 
@@ -823,7 +785,7 @@ function escapeHtml(value: string): string {
 function permissionAwareErrorMessage(error: unknown): string {
   const message = rawErrorMessage(error);
   if (/folder|screen|microphone/i.test(message)) return message;
-  if (/permission dismissed/i.test(message)) return "Permission was dismissed. Click Start Capture again and approve the Chrome permission prompt.";
+  if (/permission dismissed/i.test(message)) return "Permission was dismissed. Open Settings, enable the microphone, then start capture again.";
   if (/permission denied|notallowederror|not allowed/i.test(message)) return "Permission was denied. Allow folder, screen, and microphone access to start a capture.";
   return message;
 }

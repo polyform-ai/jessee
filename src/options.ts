@@ -62,6 +62,20 @@ async function render(message = ""): Promise<void> {
         <section class="panel">
           <div class="panel-header">
             <div>
+              <h2>Microphone</h2>
+              <p>Required before starting a capture.</p>
+            </div>
+          </div>
+          <div class="meta">
+            <span>Status</span>
+            <strong>${settings.microphoneEnabledAt ? "Enabled" : "Not enabled"}</strong>
+          </div>
+          <button class="button primary" id="enableMicrophone">Enable Microphone</button>
+          <p class="hint">Chrome is more reliable when microphone permission is granted from this settings page before recording.</p>
+        </section>
+        <section class="panel">
+          <div class="panel-header">
+            <div>
               <h2>Templates</h2>
               <p>Choose, review, edit, or create the document structure JesSee uses.</p>
             </div>
@@ -177,6 +191,16 @@ async function render(message = ""): Promise<void> {
       await render(error instanceof Error ? error.message : String(error));
     }
   });
+  document.querySelector("#enableMicrophone")?.addEventListener("click", async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      for (const track of stream.getTracks()) track.stop();
+      await saveSettings({ microphoneEnabledAt: Date.now() });
+      await render("Microphone enabled.");
+    } catch (error) {
+      await render(microphoneErrorMessage(error));
+    }
+  });
   document.querySelector("#retentionDays")?.addEventListener("change", async () => {
     const value = Number(document.querySelector<HTMLInputElement>("#retentionDays")?.value ?? 30);
     const retentionDays = Math.min(365, Math.max(1, Math.round(Number.isFinite(value) ? value : 30)));
@@ -278,6 +302,13 @@ function preserveProfileDraft(): void {
     email: document.querySelector<HTMLInputElement>("#email")?.value.trim() ?? "",
     apiKey: document.querySelector<HTMLInputElement>("#apiKey")?.value.trim() ?? ""
   };
+}
+
+function microphoneErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/dismiss|abort|cancel/i.test(message)) return "Microphone permission was dismissed. Click Enable Microphone again and allow access in Chrome.";
+  if (/denied|notallowed|not allowed|permission/i.test(message)) return "Microphone access is blocked. Enable it for JesSee in Chrome microphone settings, then try again.";
+  return `Could not enable microphone. ${message}`;
 }
 
 function escapeHtml(value: string): string {
