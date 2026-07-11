@@ -27,8 +27,8 @@ interface ResponsesPayload {
 }
 
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
-const TRANSCRIPTION_MODEL = "whisper-1";
-const TICKET_MODEL = "gpt-5.4";
+const TRANSCRIPTION_MODEL = "gpt-4o-transcribe";
+const TICKET_MODEL = "gpt-5.6-terra";
 const ESTIMATED_INPUT_COST_PER_1M = 2.5;
 const ESTIMATED_OUTPUT_COST_PER_1M = 15;
 
@@ -50,8 +50,6 @@ export async function transcribeAudio(apiKey: string, audioDataUrl?: string): Pr
 
   const formData = new FormData();
   formData.append("model", TRANSCRIPTION_MODEL);
-  formData.append("response_format", "verbose_json");
-  formData.append("timestamp_granularities[]", "segment");
   formData.append("file", blob, "recording.webm");
 
   const response = await openAiFetch(`${OPENAI_BASE_URL}/audio/transcriptions`, {

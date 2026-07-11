@@ -2,25 +2,39 @@ import { jsPDF } from "jspdf";
 import type { RecordingSession, TicketDraft } from "./types";
 
 export function createTicketPdf(ticket: TicketDraft, session: RecordingSession): Blob {
-  const maxPageHeight = 14400;
-  const measuringPdf = new jsPDF({ unit: "pt", format: [612, maxPageHeight] });
-  const measuredHeight = drawTicket(measuringPdf, ticket, session);
-  const pageHeight = Math.min(maxPageHeight, Math.max(792, Math.ceil(measuredHeight + 44)));
-  const pdf = new jsPDF({ unit: "pt", format: [612, pageHeight] });
+  const pdf = new jsPDF({ unit: "pt", format: "letter" });
+  pdf.setProperties({
+    title: ticket.title,
+    subject: "JesSee capture summary",
+    author: "JesSee",
+    creator: "JesSee",
+    keywords: ["capture", "debug ticket", "evidence", ticket.templateName].filter(Boolean).join(", ")
+  });
   drawTicket(pdf, ticket, session);
+  addFooter(pdf);
   return pdf.output("blob");
 }
 
-function drawTicket(pdf: jsPDF, ticket: TicketDraft, session: RecordingSession): number {
+function drawTicket(pdf: jsPDF, ticket: TicketDraft, session: RecordingSession): void {
   const margin = 44;
   const width = pdf.internal.pageSize.getWidth();
+  const height = pdf.internal.pageSize.getHeight();
   const maxTextWidth = width - margin * 2;
+  const bottom = height - 42;
   let y = margin;
+
+  const ensureSpace = (requiredHeight: number) => {
+    if (y + requiredHeight <= bottom) return;
+    pdf.addPage();
+    y = margin;
+  };
 
   const addHeading = (text: string, size = 16) => {
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(size);
     const lines = pdf.splitTextToSize(text, maxTextWidth);
+    ensureSpace(lines.length * (size + 5) + 12);
+    pdf.setTextColor(24, 24, 27);
     pdf.text(lines, margin, y);
     y += lines.length * (size + 5) + 8;
   };
@@ -30,6 +44,8 @@ function drawTicket(pdf: jsPDF, ticket: TicketDraft, session: RecordingSession):
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(10);
     const lines = pdf.splitTextToSize(text, maxTextWidth);
+    ensureSpace(lines.length * 13 + 10);
+    pdf.setTextColor(63, 63, 70);
     pdf.text(lines, margin, y);
     y += lines.length * 13 + 10;
   };
@@ -61,6 +77,7 @@ function drawTicket(pdf: jsPDF, ticket: TicketDraft, session: RecordingSession):
         const imageWidth = maxTextWidth;
         const imageHeight = Math.min(300, (props.height * imageWidth) / props.width);
         addParagraph(evidence.caption);
+        ensureSpace(imageHeight + 18);
         pdf.addImage(screenshot.dataUrl, "PNG", margin, y, imageWidth, imageHeight, undefined, "FAST");
         y += imageHeight + 18;
       } catch {
@@ -77,7 +94,22 @@ function drawTicket(pdf: jsPDF, ticket: TicketDraft, session: RecordingSession):
     for (const question of ticket.openQuestions) addParagraph(`- ${question}`);
   }
 
-  return y;
+}
+
+function addFooter(pdf: jsPDF): void {
+  const pageCount = pdf.getNumberOfPages();
+  const width = pdf.internal.pageSize.getWidth();
+  const height = pdf.internal.pageSize.getHeight();
+  for (let page = 1; page <= pageCount; page += 1) {
+    pdf.setPage(page);
+    pdf.setDrawColor(228, 228, 231);
+    pdf.line(44, height - 30, width - 44, height - 30);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(8);
+    pdf.setTextColor(113, 113, 122);
+    pdf.text("JesSee capture", 44, height - 17);
+    pdf.text(`Page ${page} of ${pageCount}`, width - 44, height - 17, { align: "right" });
+  }
 }
 
 export function ticketPdfFilename(ticket: TicketDraft, now = new Date()): string {
