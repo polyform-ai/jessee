@@ -119,6 +119,7 @@ export interface Settings {
   customTemplates?: TicketTemplate[];
   retentionDays?: number;
   microphoneEnabledAt?: number;
+  selectedMicrophoneId?: string;
   captureHistory?: CaptureHistoryItem[];
 }
 
