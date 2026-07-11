@@ -267,6 +267,7 @@ function renderOnboarding(settings: Awaited<ReturnType<typeof getSettings>> | un
   bind("#chooseFolder", "click", () => {
     void chooseFolderFromPopup();
   });
+  bind("#settings", "click", () => chrome.runtime.openOptionsPage());
 }
 
 function renderPlanReview(current: RecordingSession): string {
@@ -788,6 +789,7 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 function cleanupRecorder(): void {
   if (screenshotInterval) window.clearInterval(screenshotInterval);
   screenshotInterval = undefined;
+  screenshotInFlight = false;
   for (const track of displayStream?.getTracks() ?? []) track.stop();
   for (const track of micStream?.getTracks() ?? []) track.stop();
   for (const track of mixedStream?.getTracks() ?? []) track.stop();

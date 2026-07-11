@@ -95,7 +95,9 @@ describe("parseTicket", () => {
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect((JSON.parse(String(fetchMock.mock.calls[0][1]?.body)) as { input: Array<{ role: string }> }).input).toHaveLength(2);
+    const analysisRequest = JSON.parse(String(fetchMock.mock.calls[0][1]?.body)) as { model: string; input: Array<{ role: string }> };
+    expect(analysisRequest.model).toBe("gpt-5.4");
+    expect(analysisRequest.input).toHaveLength(2);
     expect(result.analysis.userGoal).toBe("Explain a broken save flow.");
     expect(result.ticket.title).toBe("Save button fails");
     expect(result.usage.totalTokens).toBe(180);

@@ -28,9 +28,9 @@ interface ResponsesPayload {
 
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
 const TRANSCRIPTION_MODEL = "whisper-1";
-const TICKET_MODEL = "5.6-terra";
-const ESTIMATED_INPUT_COST_PER_1M = 1.25;
-const ESTIMATED_OUTPUT_COST_PER_1M = 10;
+const TICKET_MODEL = "gpt-5.4";
+const ESTIMATED_INPUT_COST_PER_1M = 2.5;
+const ESTIMATED_OUTPUT_COST_PER_1M = 15;
 
 export interface TranscriptionResult {
   text: string;
