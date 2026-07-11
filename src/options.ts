@@ -16,6 +16,7 @@ void render();
 async function render(message = ""): Promise<void> {
   await restoreExportFolder();
   const settings = await getSettings();
+  const microphones = await getMicrophones();
   const templates = getTemplates(settings);
   const selectedTemplateId = settings.selectedTemplateId ?? "debug-ticket";
   const selectedTemplate = templates.find((template) => template.id === selectedTemplateId) ?? templates[0];
@@ -70,8 +71,15 @@ async function render(message = ""): Promise<void> {
             <span>Status</span>
             <strong>${settings.microphoneEnabledAt ? "Enabled" : "Not enabled"}</strong>
           </div>
+          <div class="field">
+            <label for="microphoneSelect">Microphone</label>
+            <select id="microphoneSelect">
+              <option value="">System default microphone</option>
+              ${microphones.map((device) => `<option value="${escapeHtml(device.deviceId)}" ${device.deviceId === settings.selectedMicrophoneId ? "selected" : ""}>${escapeHtml(device.label || "Microphone")}</option>`).join("")}
+            </select>
+          </div>
           <button class="button primary" id="enableMicrophone">Enable Microphone</button>
-          <p class="hint">Chrome is more reliable when microphone permission is granted from this settings page before recording.</p>
+          <p class="hint">Choose the microphone JesSee should record, then enable it here before starting a capture.</p>
         </section>
         <section class="panel">
           <div class="panel-header">
@@ -193,15 +201,20 @@ async function render(message = ""): Promise<void> {
   });
   document.querySelector("#enableMicrophone")?.addEventListener("click", async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const selectedMicrophoneId = document.querySelector<HTMLSelectElement>("#microphoneSelect")?.value ?? "";
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: microphoneConstraints(selectedMicrophoneId) });
       for (const track of stream.getTracks()) track.stop();
-      await saveSettings({ microphoneEnabledAt: Date.now() });
+      await saveSettings({ microphoneEnabledAt: Date.now(), selectedMicrophoneId });
       const session = await getSession();
       if (session.error) await saveSession({ ...session, error: undefined, status: session.status === "error" ? "idle" : session.status });
       await render("Microphone enabled.");
     } catch (error) {
       await render(microphoneErrorMessage(error));
     }
+  });
+  document.querySelector("#microphoneSelect")?.addEventListener("change", async (event) => {
+    await saveSettings({ selectedMicrophoneId: (event.target as HTMLSelectElement).value });
+    await render("Microphone selection saved. Click Enable Microphone to verify it.");
   });
   document.querySelector("#retentionDays")?.addEventListener("change", async () => {
     const value = Number(document.querySelector<HTMLInputElement>("#retentionDays")?.value ?? 30);
@@ -297,6 +310,19 @@ async function render(message = ""): Promise<void> {
     templateMode = "view";
     await render("Template deleted.");
   });
+}
+
+async function getMicrophones(): Promise<MediaDeviceInfo[]> {
+  if (!navigator.mediaDevices?.enumerateDevices) return [];
+  try {
+    return (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === "audioinput");
+  } catch {
+    return [];
+  }
+}
+
+function microphoneConstraints(deviceId: string): MediaTrackConstraints {
+  return deviceId ? { deviceId: { exact: deviceId } } : {};
 }
 
 function preserveProfileDraft(): void {

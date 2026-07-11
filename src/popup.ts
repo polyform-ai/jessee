@@ -30,6 +30,7 @@ let micStream: MediaStream | undefined;
 let mixedStream: MediaStream | undefined;
 let previewVideo: HTMLVideoElement | undefined;
 let screenshotInterval: number | undefined;
+let screenshotInFlight = false;
 let liveRenderInterval: number | undefined;
 let pdfProgressInterval: number | undefined;
 let localStatus = "";
@@ -56,6 +57,7 @@ const PDF_PROGRESS_STEPS = [
   { label: "Writing document", threshold: 78 },
   { label: "Building PDF", threshold: 92 }
 ];
+const CAPTURE_INTERVAL_MS = 500;
 
 void refresh();
 
@@ -105,7 +107,10 @@ function render(): void {
             <p class="hint">${hasExportFolder() ? "Captures save locally" : "Set an output folder in Settings"}</p>
           </div>
         </div>
-        <span class="status">${status}</span>
+        <div class="header-actions">
+          <span class="status">${status}</span>
+          <button class="icon-button" id="settings" aria-label="Open Settings" title="Settings">⚙</button>
+        </div>
       </div>
       <div class="stack">
         <section class="panel">
@@ -168,9 +173,6 @@ function render(): void {
             <div class="meta"><span>Capture</span><strong>${recordingDuration}</strong></div>
             <div class="meta"><span>Template</span><strong>${escapeHtml(current?.ticket?.templateName ?? selectedTemplateName)}</strong></div>
           </div>
-          <div class="row">
-            <button class="button secondary" id="settings">Settings</button>
-          </div>
         </section>` : ""}
         ${current?.captureAnalysis ? renderPlanReview(current) : ""}
         <section class="panel">
@@ -226,6 +228,7 @@ function renderOnboarding(settings: Awaited<ReturnType<typeof getSettings>> | un
             <p class="hint">Help AI see what you see.</p>
           </div>
         </div>
+        <button class="icon-button" id="settings" aria-label="Open Settings" title="Settings">⚙</button>
       </div>
       <div class="stack">
         <section class="panel">
@@ -264,6 +267,7 @@ function renderOnboarding(settings: Awaited<ReturnType<typeof getSettings>> | un
   bind("#chooseFolder", "click", () => {
     void chooseFolderFromPopup();
   });
+  bind("#settings", "click", () => chrome.runtime.openOptionsPage());
 }
 
 function renderPlanReview(current: RecordingSession): string {
@@ -507,20 +511,31 @@ async function downloadPdfInPage(current: RecordingSession): Promise<void> {
 }
 
 async function startRecording(): Promise<void> {
+  // Both media requests must begin directly from this click. Chrome's share
+  // picker suspends the handler, so requesting the microphone afterwards can
+  // be rejected even when it was enabled in Settings.
+  const startedAt = Date.now();
+  // The persisted File System Access handle can be temporarily unavailable
+  // after Chrome reloads an unpacked extension. Local export is useful, but it
+  // must never block the actual recording.
+  const recordingFolderPromise = startRecordingFolder(`${new Date(startedAt).toISOString().slice(0, 19)}-jessee-capture`).catch((error: unknown) => {
+    console.warn("Local capture folder is unavailable; keeping the recording in JesSee.", error);
+    return undefined;
+  });
+  const microphoneStreamPromise = requestMicrophoneStream(settingsCache);
+  const screenStreamPromise = requestScreenStream();
   try {
     await clearCurrentError();
     await hardCleanupInterruptedRecording();
-    localStatus = "Choose what to capture in Chrome's picker.";
-    render();
     videoChunks.length = 0;
     audioChunks.length = 0;
 
     const audioContext = new AudioContext();
     const destination = audioContext.createMediaStreamDestination();
-    micStream = await requestMicrophoneStream();
+    micStream = await microphoneStreamPromise;
     audioContext.createMediaStreamSource(micStream).connect(destination);
 
-    displayStream = await requestScreenStream();
+    displayStream = await screenStreamPromise;
     for (const track of displayStream.getVideoTracks()) {
       track.addEventListener("ended", () => {
         void stopRecording();
@@ -534,10 +549,9 @@ async function startRecording(): Promise<void> {
     await previewVideo.play();
 
     const target = await getBestActiveTab();
-    const startedAt = Date.now();
     const captureId = crypto.randomUUID();
     const template = getSelectedTemplate(await getSettings());
-    const exportFolderName = await startRecordingFolder(`${new Date(startedAt).toISOString().slice(0, 19)}-${target?.title ?? "jessee-capture"}`);
+    const exportFolderName = await recordingFolderPromise;
     const initialSession: RecordingSession = {
       ...(await resetSession()),
       status: "recording",
@@ -582,9 +596,11 @@ async function startRecording(): Promise<void> {
     await captureMoment("screenshot");
     screenshotInterval = window.setInterval(() => {
       void captureMoment("screenshot");
-    }, 5000);
+    }, CAPTURE_INTERVAL_MS);
     await refresh();
   } catch (error) {
+    void microphoneStreamPromise.then((stream) => stream.getTracks().forEach((track) => track.stop())).catch(() => undefined);
+    void screenStreamPromise.then((stream) => stream.getTracks().forEach((track) => track.stop())).catch(() => undefined);
     cleanupRecorder();
     await saveSession({
       ...((await getSession()) ?? { timeline: [], screenshots: [] }),
@@ -612,12 +628,19 @@ async function requestScreenStream(): Promise<MediaStream> {
   }
 }
 
-async function requestMicrophoneStream(): Promise<MediaStream> {
+async function requestMicrophoneStream(settings: Awaited<ReturnType<typeof getSettings>> | undefined): Promise<MediaStream> {
   try {
-    return await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (!settings?.microphoneEnabledAt) {
+      throw new Error("Enable a microphone in Settings before starting a capture.");
+    }
+    return await navigator.mediaDevices.getUserMedia({ audio: microphoneConstraints(settings?.selectedMicrophoneId) });
   } catch (error) {
     throw new Error(`Microphone access is not available. Open Settings, click Enable Microphone, then start capture again. ${rawErrorMessage(error)}`);
   }
+}
+
+function microphoneConstraints(deviceId: string | undefined): MediaTrackConstraints {
+  return deviceId ? { deviceId: { exact: deviceId } } : {};
 }
 
 async function stopRecording(): Promise<void> {
@@ -687,6 +710,9 @@ async function hardCleanupInterruptedRecording(message?: string): Promise<void> 
 }
 
 async function captureMoment(type: TimelineEvent["type"] = "screenshot"): Promise<void> {
+  if (screenshotInFlight) return;
+  screenshotInFlight = true;
+  try {
   if (!previewVideo || !session?.startedAt) {
     await run({ type: "CAPTURE_MOMENT" });
     return;
@@ -712,12 +738,16 @@ async function captureMoment(type: TimelineEvent["type"] = "screenshot"): Promis
     annotations: [],
     redactions: []
   };
-  await saveSession({
+  const nextSession = {
     ...current,
     timeline: [...current.timeline, { ...event, screenshotId: screenshot.id }],
     screenshots: [...current.screenshots, screenshot]
-  });
-  await refresh();
+  };
+  await saveSession(nextSession);
+  session = nextSession;
+  } finally {
+    screenshotInFlight = false;
+  }
 }
 
 async function appendLocalEvent(type: TimelineEvent["type"]): Promise<void> {
@@ -759,6 +789,7 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 function cleanupRecorder(): void {
   if (screenshotInterval) window.clearInterval(screenshotInterval);
   screenshotInterval = undefined;
+  screenshotInFlight = false;
   for (const track of displayStream?.getTracks() ?? []) track.stop();
   for (const track of micStream?.getTracks() ?? []) track.stop();
   for (const track of mixedStream?.getTracks() ?? []) track.stop();
@@ -786,7 +817,7 @@ function permissionAwareErrorMessage(error: unknown): string {
   const message = rawErrorMessage(error);
   if (/folder|screen|microphone/i.test(message)) return message;
   if (/permission dismissed/i.test(message)) return "Permission was dismissed. Open Settings, enable the microphone, then start capture again.";
-  if (/permission denied|notallowederror|not allowed/i.test(message)) return "Permission was denied. Allow folder, screen, and microphone access to start a capture.";
+  if (/permission denied|notallowederror|not allowed/i.test(message)) return `Permission was denied. ${message}`;
   return message;
 }
 
