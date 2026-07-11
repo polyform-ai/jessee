@@ -94,9 +94,13 @@ Tomorrow we'll show, explain, sketch, annotate, and collaborate naturally.
 
 JesSee is an experiment in building that future.
 
-If you want to improve JesSee, make a pull request.
+JesSee improves fastest when people share the real communication problems they run into.
 
-If you are interested in working on this project part time, email Ahmed at [ahmed@polyform.ai](mailto:ahmed@polyform.ai).
+- Found a bug, a confusing workflow, or an idea for a new document type? [Open an issue](https://github.com/polyform-ai/jessee/issues).
+- Want to build an improvement? Fork the project and [open a pull request](https://github.com/polyform-ai/jessee/pulls).
+- Interested in collaborating or working on JesSee part time? Email Ahmed at [ahmed@polyform.ai](mailto:ahmed@polyform.ai).
+
+Good first contributions include better document templates, accessibility improvements, capture-quality work, integrations, and tests that make the recording flow more reliable.
 
 ## The Vision
 
@@ -120,6 +124,12 @@ We're building a better way to communicate.
 ## Current Chrome Extension
 
 JesSee currently ships as a Chrome MV3 extension that captures screen context, microphone narration, cursor movement, and timestamped screenshots. It prepares an editable AI plan, lets you review the goal, story, and selected screenshots, then turns the walkthrough into a clean PDF through OpenAI.
+
+### What JesSee captures and sends
+
+JesSee only captures a tab, window, or screen after you explicitly choose it in Chrome's share picker. Microphone narration is enabled separately in Settings and is required before a capture can begin.
+
+Captures, screenshots, recordings, and PDFs stay on your computer. When you choose **Create Plan** or **Generate PDF**, JesSee sends the selected capture evidence and narration to OpenAI using the API key you provide so it can prepare the document. The public source has no analytics endpoint configured.
 
 ## Local Use
 

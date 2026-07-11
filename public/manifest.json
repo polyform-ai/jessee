@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JesSee",
-  "description": "Help AI see what you see. Capture context and turn it into a clean PDF.",
+  "description": "Turn narrated screen walkthroughs into polished, evidence-backed PDF tickets and guides.",
   "version": "0.1.0",
   "action": {
     "default_title": "JesSee",
