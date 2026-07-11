@@ -30,6 +30,7 @@ let micStream: MediaStream | undefined;
 let mixedStream: MediaStream | undefined;
 let previewVideo: HTMLVideoElement | undefined;
 let screenshotInterval: number | undefined;
+let screenshotInFlight = false;
 let liveRenderInterval: number | undefined;
 let pdfProgressInterval: number | undefined;
 let localStatus = "";
@@ -56,6 +57,7 @@ const PDF_PROGRESS_STEPS = [
   { label: "Writing document", threshold: 78 },
   { label: "Building PDF", threshold: 92 }
 ];
+const CAPTURE_INTERVAL_MS = 500;
 
 void refresh();
 
@@ -105,7 +107,10 @@ function render(): void {
             <p class="hint">${hasExportFolder() ? "Captures save locally" : "Set an output folder in Settings"}</p>
           </div>
         </div>
-        <span class="status">${status}</span>
+        <div class="header-actions">
+          <span class="status">${status}</span>
+          <button class="icon-button" id="settings" aria-label="Open Settings" title="Settings">⚙</button>
+        </div>
       </div>
       <div class="stack">
         <section class="panel">
@@ -168,9 +173,6 @@ function render(): void {
             <div class="meta"><span>Capture</span><strong>${recordingDuration}</strong></div>
             <div class="meta"><span>Template</span><strong>${escapeHtml(current?.ticket?.templateName ?? selectedTemplateName)}</strong></div>
           </div>
-          <div class="row">
-            <button class="button secondary" id="settings">Settings</button>
-          </div>
         </section>` : ""}
         ${current?.captureAnalysis ? renderPlanReview(current) : ""}
         <section class="panel">
@@ -226,6 +228,7 @@ function renderOnboarding(settings: Awaited<ReturnType<typeof getSettings>> | un
             <p class="hint">Help AI see what you see.</p>
           </div>
         </div>
+        <button class="icon-button" id="settings" aria-label="Open Settings" title="Settings">⚙</button>
       </div>
       <div class="stack">
         <section class="panel">
@@ -592,7 +595,7 @@ async function startRecording(): Promise<void> {
     await captureMoment("screenshot");
     screenshotInterval = window.setInterval(() => {
       void captureMoment("screenshot");
-    }, 5000);
+    }, CAPTURE_INTERVAL_MS);
     await refresh();
   } catch (error) {
     void microphoneStreamPromise.then((stream) => stream.getTracks().forEach((track) => track.stop())).catch(() => undefined);
@@ -706,6 +709,9 @@ async function hardCleanupInterruptedRecording(message?: string): Promise<void> 
 }
 
 async function captureMoment(type: TimelineEvent["type"] = "screenshot"): Promise<void> {
+  if (screenshotInFlight) return;
+  screenshotInFlight = true;
+  try {
   if (!previewVideo || !session?.startedAt) {
     await run({ type: "CAPTURE_MOMENT" });
     return;
@@ -731,12 +737,16 @@ async function captureMoment(type: TimelineEvent["type"] = "screenshot"): Promis
     annotations: [],
     redactions: []
   };
-  await saveSession({
+  const nextSession = {
     ...current,
     timeline: [...current.timeline, { ...event, screenshotId: screenshot.id }],
     screenshots: [...current.screenshots, screenshot]
-  });
-  await refresh();
+  };
+  await saveSession(nextSession);
+  session = nextSession;
+  } finally {
+    screenshotInFlight = false;
+  }
 }
 
 async function appendLocalEvent(type: TimelineEvent["type"]): Promise<void> {
