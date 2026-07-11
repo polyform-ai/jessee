@@ -183,7 +183,3 @@ npm run check
 ```
 
 This runs TypeScript, builds the extension, runs unit tests, and loads the extension settings page in Playwright Chromium.
-
-## Security Note
-
-Do not use an API key pasted into chat or logs. Revoke exposed keys and paste a fresh key only into the extension settings UI. The key is stored in `chrome.storage.local`.
