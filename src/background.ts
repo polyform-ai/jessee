@@ -2,6 +2,7 @@ import { analyzeCapture, generateTicket, testOpenAiSetup, transcribeAudio } from
 import { hydrateSession } from "./artifacts";
 import { getSession, getSettings, saveSession } from "./storage";
 import { getSelectedTemplate, templateSignature } from "./templates";
+import { acceptsContentEvent } from "./captureState";
 import type { RecordingSession, RuntimeMessage, TimelineEvent } from "./types";
 
 chrome.action.onClicked.addListener(() => {
@@ -25,7 +26,7 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, sender, sendRespo
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (!changeInfo.url && !tab.title) return;
+  if (!changeInfo.url && !tab.title && changeInfo.status !== "complete") return;
   const session = await getSession();
   if (session.status !== "recording" || session.activeTabId !== tabId) return;
   if (changeInfo.status === "complete") await sendToTab(tabId, { type: "SET_OVERLAY_MODE", mode: "cursor" });
@@ -42,10 +43,15 @@ async function handleMessage(message: RuntimeMessage, sender: chrome.runtime.Mes
     case "GET_SESSION":
       return { ok: true, session: await getSession() };
     case "SET_OVERLAY_MODE":
-      await sendToActiveTab({ type: "SET_OVERLAY_MODE", mode: message.mode });
+      await sendToCaptureTab({ type: "SET_OVERLAY_MODE", mode: message.mode });
       return { ok: true };
     case "CONTENT_RECT_CREATED":
+      if (!acceptsContentEvent(await getSession(), sender.tab?.id)) return { ok: true, session: await getSession() };
       await appendEvent(message.rect.kind === "redaction" ? "redaction" : "annotation", sender.tab?.id, message.rect.label, message.rect);
+      return { ok: true, session: await getSession() };
+    case "CONTENT_CLICKED":
+      if (!acceptsContentEvent(await getSession(), sender.tab?.id)) return { ok: true, session: await getSession() };
+      await appendEvent("click", sender.tab?.id, `Clicked at ${Math.round(message.point.x)}, ${Math.round(message.point.y)}`, undefined, message.point);
       return { ok: true, session: await getSession() };
     case "CONTENT_PAGE_INFO":
       return { ok: true };
@@ -148,17 +154,33 @@ async function preserveCaptureFailure(error: string): Promise<RecordingSession> 
   return next;
 }
 
-async function appendEvent(type: TimelineEvent["type"], tabId?: number, note?: string, rect?: TimelineEvent["rect"]): Promise<void> {
+async function appendEvent(
+  type: TimelineEvent["type"],
+  tabId?: number,
+  note?: string,
+  rect?: TimelineEvent["rect"],
+  point?: TimelineEvent["point"]
+): Promise<void> {
   const session = await getSession();
   const tab = tabId ? await chrome.tabs.get(tabId).catch(() => undefined) : undefined;
   const event: TimelineEvent = {
     id: crypto.randomUUID(), type, atMs: session.startedAt ? Date.now() - session.startedAt : 0,
-    url: tab?.url ?? session.tabUrl ?? "", title: tab?.title ?? session.tabTitle ?? "", note, rect
+    url: tab?.url ?? session.tabUrl ?? "", title: tab?.title ?? session.tabTitle ?? "", note, rect, point
   };
-  await saveSession({ ...session, timeline: [...session.timeline, event] });
+  await saveSession({
+    ...session,
+    tabUrl: tab?.url ?? session.tabUrl,
+    tabTitle: tab?.title ?? session.tabTitle,
+    timeline: [...session.timeline, event]
+  });
 }
 
-async function sendToActiveTab(message: unknown): Promise<void> {
+async function sendToCaptureTab(message: unknown): Promise<void> {
+  const session = await getSession();
+  if (session.activeTabId) {
+    await sendToTab(session.activeTabId, message);
+    return;
+  }
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   if (tab?.id) await sendToTab(tab.id, message);
 }

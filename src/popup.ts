@@ -13,9 +13,10 @@ import {
   writeScreenshot
 } from "./localFiles";
 import { createTicketPdf, ticketPdfFilename } from "./pdf";
+import { visiblePageRects } from "./captureEvidence";
 import { getSession, getSettings, pruneCaptureHistory, resetSession, saveSession, saveSettings, upsertCaptureHistory } from "./storage";
 import { getSelectedTemplate, getTemplates, planRequiresRefresh, templateSignature } from "./templates";
-import type { CaptureAnalysis, CaptureHistoryItem, RecordingSession, RuntimeMessage, ScreenshotEvidence, TimelineEvent } from "./types";
+import type { CaptureAnalysis, CaptureHistoryItem, OverlayMode, RecordingSession, RuntimeMessage, ScreenshotEvidence, TimelineEvent } from "./types";
 import { postWebhook } from "./webhook";
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -31,6 +32,7 @@ let mixedStream: MediaStream | undefined;
 let previewVideo: HTMLVideoElement | undefined;
 let screenshotInterval: number | undefined;
 let screenshotInFlight = false;
+let queuedAnnotationCapture = false;
 let liveRenderInterval: number | undefined;
 let pdfProgressInterval: number | undefined;
 let localStatus = "";
@@ -40,6 +42,7 @@ let pdfProgress: PdfProgress | undefined;
 let cleanupRan = false;
 let lastScreenshotFingerprint: string | undefined;
 let lastStoredScreenshotAtMs = -Infinity;
+let overlayMode: OverlayMode = "cursor";
 let onboardingDraft: { email: string; apiKey: string; retentionDays: number } | undefined;
 const videoChunks: Blob[] = [];
 const audioChunks: Blob[] = [];
@@ -65,7 +68,11 @@ const MAX_SIMILAR_FRAME_GAP_MS = 5_000;
 void refresh();
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === "local" && (changes.recordingSession || changes.settings)) void refresh();
+  if (areaName !== "local") return;
+  const latestEvent = (changes.recordingSession?.newValue as RecordingSession | undefined)?.timeline.at(-1);
+  if (latestEvent?.type === "url-change") overlayMode = "cursor";
+  if (latestEvent?.type === "annotation" || latestEvent?.type === "redaction") requestAnnotationCapture();
+  if (changes.recordingSession || changes.settings) void refresh();
 });
 
 async function refresh(): Promise<void> {
@@ -129,6 +136,14 @@ function render(): void {
             <button class="button primary" id="start" ${current?.status === "generating" || current?.status === "recording" || !isMicrophoneReady ? "disabled" : ""}>Start Capture</button>
             <button class="button danger" id="stop" ${current?.status !== "recording" ? "disabled" : ""}>End Capture</button>
           </div>
+          ${current?.status === "recording" ? `<div class="stack">
+            <div class="row" aria-label="Screen annotation tools">
+              <button class="button ${overlayMode === "cursor" ? "primary" : "secondary"}" id="cursorMode">Pointer</button>
+              <button class="button ${overlayMode === "highlight" ? "primary" : "secondary"}" id="highlightMode">Highlight</button>
+              <button class="button ${overlayMode === "redact" ? "primary" : "secondary"}" id="redactMode">Redact</button>
+            </div>
+            <p class="hint">Choose Highlight or Redact, then drag directly on the page. The marked frame is timestamped for the PDF plan.</p>
+          </div>` : ""}
           ${!isMicrophoneReady ? `<button class="button secondary" id="openMicSettings">Enable Microphone in Settings</button>` : ""}
           <button class="button primary" id="pdfAction" ${!canUsePdfAction ? "disabled" : ""}>${planNeedsRefresh ? "Replan for Template" : hasTicket ? "Download PDF" : current?.captureAnalysis ? "Generate PDF" : "Create Plan"}</button>
         </section>
@@ -196,6 +211,9 @@ function render(): void {
   bind("#start", "click", () => startRecording());
   bind("#openMicSettings", "click", () => chrome.runtime.openOptionsPage());
   bind("#stop", "click", () => stopRecording());
+  bind("#cursorMode", "click", () => setOverlayMode("cursor"));
+  bind("#highlightMode", "click", () => setOverlayMode("highlight"));
+  bind("#redactMode", "click", () => setOverlayMode("redact"));
   bind("#pdfAction", "click", () => {
     if (planNeedsRefresh || !session?.captureAnalysis) void prepareCapturePlan();
     else if (session?.ticket) void downloadPdfInPage(session);
@@ -603,7 +621,8 @@ async function startRecording(): Promise<void> {
 
     audioRecorder?.start(1000);
     mediaRecorder.start(1000);
-    await send({ type: "SET_OVERLAY_MODE", mode: "cursor" });
+    overlayMode = "cursor";
+    await send({ type: "SET_OVERLAY_MODE", mode: overlayMode });
     localStatus = "Capturing. Click End Capture when finished.";
     await captureMoment("screenshot");
     screenshotInterval = window.setInterval(() => {
@@ -613,6 +632,7 @@ async function startRecording(): Promise<void> {
   } catch (error) {
     void microphoneStreamPromise.then((stream) => stream.getTracks().forEach((track) => track.stop())).catch(() => undefined);
     void screenStreamPromise.then((stream) => stream.getTracks().forEach((track) => track.stop())).catch(() => undefined);
+    await disableOverlay();
     cleanupRecorder();
     await saveSession({
       ...((await getSession()) ?? { timeline: [], screenshots: [] }),
@@ -665,7 +685,7 @@ async function stopRecording(): Promise<void> {
   render();
   try {
     if (mediaRecorder && mediaRecorder.state !== "inactive") {
-      await captureMoment("screenshot");
+      await captureMoment("screenshot", true);
       if (screenshotInterval) window.clearInterval(screenshotInterval);
       screenshotInterval = undefined;
       if (audioRecorder && audioRecorder.state !== "inactive") audioRecorder.stop();
@@ -679,6 +699,8 @@ async function stopRecording(): Promise<void> {
 }
 
 async function finishLocalRecording(): Promise<void> {
+  await waitForScreenshotQueue();
+  await disableOverlay();
   const current = await getSession();
   const videoBlob = new Blob(videoChunks, { type: mediaRecorder?.mimeType || "video/webm" });
   const audioBlob = audioChunks.length ? new Blob(audioChunks, { type: audioRecorder?.mimeType || "audio/webm" }) : undefined;
@@ -710,6 +732,7 @@ async function finishLocalRecording(): Promise<void> {
 }
 
 async function hardCleanupInterruptedRecording(message?: string): Promise<void> {
+  await disableOverlay();
   cleanupRecorder();
   const current = await getSession();
   if (current.status === "recording" || current.status === "paused") {
@@ -726,8 +749,11 @@ async function hardCleanupInterruptedRecording(message?: string): Promise<void> 
   }
 }
 
-async function captureMoment(type: TimelineEvent["type"] = "screenshot"): Promise<void> {
-  if (screenshotInFlight) return;
+async function captureMoment(type: TimelineEvent["type"] = "screenshot", force = false): Promise<void> {
+  if (screenshotInFlight) {
+    if (force) queuedAnnotationCapture = true;
+    return;
+  }
   screenshotInFlight = true;
   try {
   if (!previewVideo || !session?.startedAt) return;
@@ -739,33 +765,65 @@ async function captureMoment(type: TimelineEvent["type"] = "screenshot"): Promis
   context?.drawImage(previewVideo, 0, 0, canvas.width, canvas.height);
   const event = createEvent(current, type);
   const fingerprint = frameFingerprint(canvas);
-  if (fingerprint === lastScreenshotFingerprint && event.atMs - lastStoredScreenshotAtMs < MAX_SIMILAR_FRAME_GAP_MS) return;
+  if (!force && fingerprint === lastScreenshotFingerprint && event.atMs - lastStoredScreenshotAtMs < MAX_SIMILAR_FRAME_GAP_MS) return;
   lastScreenshotFingerprint = fingerprint;
   lastStoredScreenshotAtMs = event.atMs;
   const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
   const id = crypto.randomUUID();
   const artifactKey = `screenshot:${id}`;
   await putArtifact(artifactKey, dataUrl);
-  await writeScreenshot(`${String(current.screenshots.length + 1).padStart(3, "0")}-${Math.round(event.atMs)}ms.jpg`, dataUrlToBlob(dataUrl));
+  const latest = await getSession();
+  if (latest.status !== "recording") return;
+  await writeScreenshot(`${String(latest.screenshots.length + 1).padStart(3, "0")}-${Math.round(event.atMs)}ms.jpg`, dataUrlToBlob(dataUrl));
   const screenshot: ScreenshotEvidence = {
     id,
     capturedAtMs: event.atMs,
-    url: current.tabUrl ?? "",
-    title: current.tabTitle ?? "",
+    url: latest.tabUrl ?? "",
+    title: latest.tabTitle ?? "",
     dataUrl: artifactRef(artifactKey),
-    annotations: [],
-    redactions: []
+    annotations: visiblePageRects(latest.timeline, "annotation"),
+    redactions: visiblePageRects(latest.timeline, "redaction")
   };
   const nextSession = {
-    ...current,
-    timeline: [...current.timeline, { ...event, screenshotId: screenshot.id }],
-    screenshots: [...current.screenshots, screenshot]
+    ...latest,
+    timeline: [...latest.timeline, { ...event, screenshotId: screenshot.id }],
+    screenshots: [...latest.screenshots, screenshot]
   };
   await saveSession(nextSession);
   session = nextSession;
   } finally {
     screenshotInFlight = false;
+    if (queuedAnnotationCapture) {
+      queuedAnnotationCapture = false;
+      void captureMoment("screenshot", true);
+    }
   }
+}
+
+function requestAnnotationCapture(): void {
+  if (screenshotInFlight) {
+    queuedAnnotationCapture = true;
+    return;
+  }
+  void captureMoment("screenshot", true);
+}
+
+async function waitForScreenshotQueue(): Promise<void> {
+  while (screenshotInFlight || queuedAnnotationCapture) {
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+  }
+}
+
+async function setOverlayMode(mode: OverlayMode): Promise<void> {
+  overlayMode = mode;
+  await send({ type: "SET_OVERLAY_MODE", mode });
+  localStatus = mode === "cursor" ? "Pointer mode enabled." : `${mode === "highlight" ? "Highlight" : "Redact"} mode enabled. Drag on the page to mark evidence.`;
+  render();
+}
+
+async function disableOverlay(): Promise<void> {
+  overlayMode = "off";
+  await send({ type: "SET_OVERLAY_MODE", mode: "off" }).catch(() => undefined);
 }
 
 function frameFingerprint(canvas: HTMLCanvasElement): string {

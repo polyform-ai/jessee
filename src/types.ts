@@ -5,6 +5,7 @@ export type TimelineEventType =
   | "recording-paused"
   | "recording-resumed"
   | "recording-stopped"
+  | "click"
   | "url-change"
   | "annotation"
   | "redaction"
@@ -19,6 +20,11 @@ export interface Rect {
   color?: string;
   label?: string;
   kind?: "highlight" | "redaction";
+}
+
+export interface ScreenPoint {
+  x: number;
+  y: number;
 }
 
 export interface ScreenshotEvidence {
@@ -40,6 +46,7 @@ export interface TimelineEvent {
   note?: string;
   screenshotId?: string;
   rect?: Rect;
+  point?: ScreenPoint;
 }
 
 export interface RecordingSession {
@@ -103,6 +110,7 @@ export type RuntimeMessage =
   | { type: "TEST_AI_SETUP"; apiKey?: string }
   | { type: "SET_OVERLAY_MODE"; mode: OverlayMode }
   | { type: "CONTENT_RECT_CREATED"; rect: Rect }
+  | { type: "CONTENT_CLICKED"; point: ScreenPoint }
   | { type: "CONTENT_PAGE_INFO"; url: string; title: string };
 
 export type OverlayMode = "off" | "highlight" | "redact" | "cursor";
