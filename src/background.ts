@@ -112,7 +112,7 @@ async function generateTicketArtifact(): Promise<unknown> {
   try {
     const hydrated = await hydrateSession(generating);
     const transcript = await transcribeAudio(settings.openAiKey, hydrated.audioDataUrl);
-    const generated = await generateTicket(settings.openAiKey, { ...hydrated, templateId: template.id }, transcript, template, hydrated.captureAnalysis);
+    const generated = await generateTicket(settings.openAiKey, { ...hydrated, templateId: template.id }, transcript, template, hydrated.captureAnalysis, settings.privateMode ?? false);
     const ticket = { ...generated.ticket, templateName: generated.ticket.templateName ?? template.name };
     const session: RecordingSession = {
       ...generating,

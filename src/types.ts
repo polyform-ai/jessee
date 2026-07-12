@@ -124,6 +124,7 @@ export interface Settings {
   retentionDays?: number;
   microphoneEnabledAt?: number;
   selectedMicrophoneId?: string;
+  privateMode?: boolean;
   captureHistory?: CaptureHistoryItem[];
 }
 
