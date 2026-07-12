@@ -58,6 +58,11 @@ window.addEventListener("mouseup", (event) => {
   draftRect = undefined;
 });
 
+window.addEventListener("click", (event) => {
+  if (mode !== "cursor") return;
+  void chrome.runtime.sendMessage({ type: "CONTENT_CLICKED", point: { x: event.clientX, y: event.clientY } });
+}, true);
+
 function ensureOverlay(): void {
   if (root) return;
   root = document.createElement("div");

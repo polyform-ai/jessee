@@ -100,7 +100,11 @@ describe("parseTicket", () => {
 
     const session: RecordingSession = {
       status: "stopped",
-      timeline: [{ id: "event-1", type: "screenshot", atMs: 1200, url: "https://example.test", title: "Example", screenshotId: "shot-1" }],
+      timeline: [
+        { id: "event-1", type: "click", atMs: 900, url: "https://example.test", title: "Example", note: "Clicked at 320, 180", point: { x: 320, y: 180 } },
+        { id: "event-2", type: "url-change", atMs: 1100, url: "https://example.test/results", title: "Results" },
+        { id: "event-3", type: "screenshot", atMs: 1200, url: "https://example.test/results", title: "Results", screenshotId: "shot-1" }
+      ],
       screenshots: [
         {
           id: "shot-1",
@@ -127,9 +131,17 @@ describe("parseTicket", () => {
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    const analysisRequest = JSON.parse(String(fetchMock.mock.calls[0][1]?.body)) as { model: string; input: Array<{ role: string }> };
+    const analysisRequest = JSON.parse(String(fetchMock.mock.calls[0][1]?.body)) as {
+      model: string;
+      input: Array<{ role: string; content?: Array<{ text?: string }> }>;
+    };
     expect(analysisRequest.model).toBe("gpt-5.6-terra");
     expect(analysisRequest.input).toHaveLength(2);
+    const analysisInput = JSON.parse(analysisRequest.input[1].content?.[0].text ?? "{}") as { timeline: Array<{ type: string; atSeconds: number; point?: { x: number; y: number } }> };
+    expect(analysisInput.timeline).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "click", atSeconds: 0.9, point: { x: 320, y: 180 } }),
+      expect.objectContaining({ type: "url-change", atSeconds: 1.1 })
+    ]));
     expect(result.analysis.userGoal).toBe("Explain a broken save flow.");
     expect(result.ticket.title).toBe("Save button fails");
     expect(result.usage.totalTokens).toBe(180);

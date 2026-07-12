@@ -116,7 +116,8 @@ export async function generateTicket(
     title: event.title,
     note: event.note,
     screenshotId: event.screenshotId,
-    rect: event.rect
+    rect: event.rect,
+    point: event.point
   }));
 
   const evidenceFrames = session.screenshots.map((shot) => ({
@@ -148,7 +149,7 @@ export async function generateTicket(
     `Template instructions: ${template.instructions}`,
     "Use the captureAnalysis as the plan for the document. It was prepared from the transcript, timeline, and screenshot timestamps before image review.",
     "The response should follow the selected template and be concise, Codex-ready, and grounded in the capture.",
-    "Screenshots are timestamped in seconds from capture start. Transcript segments may be unavailable from the transcription API; when they are unavailable, use the overall narration, timeline, and screenshot timestamps without inventing precise word-level timing.",
+    "Screenshots, clicks, annotations, redactions, and URL changes are timestamped in seconds from capture start. Use clicks and page changes as interaction anchors: choose screenshots immediately before or after those events when they prove a reproduction step or state transition. Transcript segments may be unavailable; do not invent precise word-level timing.",
     "Evidence screenshotId values must come from selectedScreenshotIds only. Do not invent facts not present in the analysis, transcript, screenshots, or timeline."
   ].join("\n");
 
@@ -226,7 +227,8 @@ export async function analyzeCapture(
         title: event.title,
         note: event.note,
         screenshotId: event.screenshotId,
-        rect: event.rect
+        rect: event.rect,
+        point: event.point
       }));
   const evidenceFrames = frames ?? (Array.isArray(sessionOrTimeline)
     ? []
@@ -241,13 +243,13 @@ export async function analyzeCapture(
       })));
   const instructions = [
     "You prepare screen captures before final document generation.",
-    "Start with the transcript and timeline. Identify what the user is trying to communicate before looking for screenshots.",
+    "Start with the transcript and timestamped timeline. Identify what the user is trying to communicate before looking for screenshots.",
     "Return only valid JSON. Do not wrap it in code fences.",
     "The JSON schema is: userGoal:string, bestDelivery:string, breakingPoints:string[], helpfulImageMoments:{screenshotId?:string, atSeconds:number, reason:string}[], story:string.",
     "userGoal should capture the user's intended outcome.",
     "bestDelivery should explain the best document shape for that goal and the selected template.",
     "breakingPoints should list moments where the workflow changed, failed, became confusing, or introduced important context.",
-    "helpfulImageMoments should choose only timestamps where a screenshot would materially improve the final PDF. Transcript segments may be unavailable; do not pretend that un-timestamped narration is precisely aligned.",
+    "helpfulImageMoments should choose only timestamps where a screenshot would materially improve the final PDF. Prefer frames around clicks, URL changes, annotations, redactions, errors, and visible state transitions. Transcript segments may be unavailable; do not pretend that un-timestamped narration is precisely aligned.",
     "story should be a short chronological account of what happened.",
     `Selected template: ${template.name}.`,
     `Template instructions: ${template.instructions}`

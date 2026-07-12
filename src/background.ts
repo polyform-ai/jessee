@@ -47,6 +47,9 @@ async function handleMessage(message: RuntimeMessage, sender: chrome.runtime.Mes
     case "CONTENT_RECT_CREATED":
       await appendEvent(message.rect.kind === "redaction" ? "redaction" : "annotation", sender.tab?.id, message.rect.label, message.rect);
       return { ok: true, session: await getSession() };
+    case "CONTENT_CLICKED":
+      await appendEvent("click", sender.tab?.id, `Clicked at ${Math.round(message.point.x)}, ${Math.round(message.point.y)}`, undefined, message.point);
+      return { ok: true, session: await getSession() };
     case "CONTENT_PAGE_INFO":
       return { ok: true };
     case "PREPARE_CAPTURE_PLAN":
@@ -148,14 +151,25 @@ async function preserveCaptureFailure(error: string): Promise<RecordingSession> 
   return next;
 }
 
-async function appendEvent(type: TimelineEvent["type"], tabId?: number, note?: string, rect?: TimelineEvent["rect"]): Promise<void> {
+async function appendEvent(
+  type: TimelineEvent["type"],
+  tabId?: number,
+  note?: string,
+  rect?: TimelineEvent["rect"],
+  point?: TimelineEvent["point"]
+): Promise<void> {
   const session = await getSession();
   const tab = tabId ? await chrome.tabs.get(tabId).catch(() => undefined) : undefined;
   const event: TimelineEvent = {
     id: crypto.randomUUID(), type, atMs: session.startedAt ? Date.now() - session.startedAt : 0,
-    url: tab?.url ?? session.tabUrl ?? "", title: tab?.title ?? session.tabTitle ?? "", note, rect
+    url: tab?.url ?? session.tabUrl ?? "", title: tab?.title ?? session.tabTitle ?? "", note, rect, point
   };
-  await saveSession({ ...session, timeline: [...session.timeline, event] });
+  await saveSession({
+    ...session,
+    tabUrl: tab?.url ?? session.tabUrl,
+    tabTitle: tab?.title ?? session.tabTitle,
+    timeline: [...session.timeline, event]
+  });
 }
 
 async function sendToActiveTab(message: unknown): Promise<void> {
