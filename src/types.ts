@@ -100,7 +100,7 @@ export type RuntimeMessage =
   | { type: "GET_SESSION" }
   | { type: "PREPARE_CAPTURE_PLAN" }
   | { type: "GENERATE_TICKET" }
-  | { type: "TEST_AI_SETUP" }
+  | { type: "TEST_AI_SETUP"; apiKey?: string }
   | { type: "SET_OVERLAY_MODE"; mode: OverlayMode }
   | { type: "CONTENT_RECT_CREATED"; rect: Rect }
   | { type: "CONTENT_PAGE_INFO"; url: string; title: string };

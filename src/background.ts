@@ -55,8 +55,9 @@ async function handleMessage(message: RuntimeMessage, sender: chrome.runtime.Mes
       return generateTicketArtifact();
     case "TEST_AI_SETUP": {
       const settings = await getSettings();
-      if (!settings.openAiKey) throw new Error("Add your OpenAI API key in Settings first.");
-      await testOpenAiSetup(settings.openAiKey);
+      const apiKey = message.apiKey ?? settings.openAiKey;
+      if (!apiKey) throw new Error("Add your OpenAI API key in Settings first.");
+      await testOpenAiSetup(apiKey);
       return { ok: true, session: await getSession() };
     }
   }
