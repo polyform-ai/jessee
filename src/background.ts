@@ -2,6 +2,7 @@ import { analyzeCapture, generateTicket, testOpenAiSetup, transcribeAudio } from
 import { hydrateSession } from "./artifacts";
 import { getSession, getSettings, saveSession } from "./storage";
 import { getSelectedTemplate, templateSignature } from "./templates";
+import { acceptsContentEvent } from "./captureState";
 import type { RecordingSession, RuntimeMessage, TimelineEvent } from "./types";
 
 chrome.action.onClicked.addListener(() => {
@@ -45,9 +46,11 @@ async function handleMessage(message: RuntimeMessage, sender: chrome.runtime.Mes
       await sendToActiveTab({ type: "SET_OVERLAY_MODE", mode: message.mode });
       return { ok: true };
     case "CONTENT_RECT_CREATED":
+      if (!acceptsContentEvent(await getSession(), sender.tab?.id)) return { ok: true, session: await getSession() };
       await appendEvent(message.rect.kind === "redaction" ? "redaction" : "annotation", sender.tab?.id, message.rect.label, message.rect);
       return { ok: true, session: await getSession() };
     case "CONTENT_CLICKED":
+      if (!acceptsContentEvent(await getSession(), sender.tab?.id)) return { ok: true, session: await getSession() };
       await appendEvent("click", sender.tab?.id, `Clicked at ${Math.round(message.point.x)}, ${Math.round(message.point.y)}`, undefined, message.point);
       return { ok: true, session: await getSession() };
     case "CONTENT_PAGE_INFO":

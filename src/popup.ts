@@ -31,6 +31,7 @@ let mixedStream: MediaStream | undefined;
 let previewVideo: HTMLVideoElement | undefined;
 let screenshotInterval: number | undefined;
 let screenshotInFlight = false;
+let queuedAnnotationCapture = false;
 let liveRenderInterval: number | undefined;
 let pdfProgressInterval: number | undefined;
 let localStatus = "";
@@ -68,7 +69,7 @@ void refresh();
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local") return;
   const latestEvent = (changes.recordingSession?.newValue as RecordingSession | undefined)?.timeline.at(-1);
-  if (latestEvent?.type === "annotation" || latestEvent?.type === "redaction") void captureMoment();
+  if (latestEvent?.type === "annotation" || latestEvent?.type === "redaction") requestAnnotationCapture();
   if (changes.recordingSession || changes.settings) void refresh();
 });
 
@@ -629,6 +630,7 @@ async function startRecording(): Promise<void> {
   } catch (error) {
     void microphoneStreamPromise.then((stream) => stream.getTracks().forEach((track) => track.stop())).catch(() => undefined);
     void screenStreamPromise.then((stream) => stream.getTracks().forEach((track) => track.stop())).catch(() => undefined);
+    await disableOverlay();
     cleanupRecorder();
     await saveSession({
       ...((await getSession()) ?? { timeline: [], screenshots: [] }),
@@ -681,7 +683,7 @@ async function stopRecording(): Promise<void> {
   render();
   try {
     if (mediaRecorder && mediaRecorder.state !== "inactive") {
-      await captureMoment("screenshot");
+      await captureMoment("screenshot", true);
       if (screenshotInterval) window.clearInterval(screenshotInterval);
       screenshotInterval = undefined;
       if (audioRecorder && audioRecorder.state !== "inactive") audioRecorder.stop();
@@ -695,6 +697,8 @@ async function stopRecording(): Promise<void> {
 }
 
 async function finishLocalRecording(): Promise<void> {
+  await waitForScreenshotQueue();
+  await disableOverlay();
   const current = await getSession();
   const videoBlob = new Blob(videoChunks, { type: mediaRecorder?.mimeType || "video/webm" });
   const audioBlob = audioChunks.length ? new Blob(audioChunks, { type: audioRecorder?.mimeType || "audio/webm" }) : undefined;
@@ -726,6 +730,7 @@ async function finishLocalRecording(): Promise<void> {
 }
 
 async function hardCleanupInterruptedRecording(message?: string): Promise<void> {
+  await disableOverlay();
   cleanupRecorder();
   const current = await getSession();
   if (current.status === "recording" || current.status === "paused") {
@@ -742,8 +747,11 @@ async function hardCleanupInterruptedRecording(message?: string): Promise<void> 
   }
 }
 
-async function captureMoment(type: TimelineEvent["type"] = "screenshot"): Promise<void> {
-  if (screenshotInFlight) return;
+async function captureMoment(type: TimelineEvent["type"] = "screenshot", force = false): Promise<void> {
+  if (screenshotInFlight) {
+    if (force) queuedAnnotationCapture = true;
+    return;
+  }
   screenshotInFlight = true;
   try {
   if (!previewVideo || !session?.startedAt) return;
@@ -755,32 +763,52 @@ async function captureMoment(type: TimelineEvent["type"] = "screenshot"): Promis
   context?.drawImage(previewVideo, 0, 0, canvas.width, canvas.height);
   const event = createEvent(current, type);
   const fingerprint = frameFingerprint(canvas);
-  if (fingerprint === lastScreenshotFingerprint && event.atMs - lastStoredScreenshotAtMs < MAX_SIMILAR_FRAME_GAP_MS) return;
+  if (!force && fingerprint === lastScreenshotFingerprint && event.atMs - lastStoredScreenshotAtMs < MAX_SIMILAR_FRAME_GAP_MS) return;
   lastScreenshotFingerprint = fingerprint;
   lastStoredScreenshotAtMs = event.atMs;
   const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
   const id = crypto.randomUUID();
   const artifactKey = `screenshot:${id}`;
   await putArtifact(artifactKey, dataUrl);
-  await writeScreenshot(`${String(current.screenshots.length + 1).padStart(3, "0")}-${Math.round(event.atMs)}ms.jpg`, dataUrlToBlob(dataUrl));
+  const latest = await getSession();
+  if (latest.status !== "recording") return;
+  await writeScreenshot(`${String(latest.screenshots.length + 1).padStart(3, "0")}-${Math.round(event.atMs)}ms.jpg`, dataUrlToBlob(dataUrl));
   const screenshot: ScreenshotEvidence = {
     id,
     capturedAtMs: event.atMs,
-    url: current.tabUrl ?? "",
-    title: current.tabTitle ?? "",
+    url: latest.tabUrl ?? "",
+    title: latest.tabTitle ?? "",
     dataUrl: artifactRef(artifactKey),
-    annotations: current.timeline.filter((item) => item.type === "annotation" && item.rect).map((item) => item.rect!),
-    redactions: current.timeline.filter((item) => item.type === "redaction" && item.rect).map((item) => item.rect!)
+    annotations: latest.timeline.filter((item) => item.type === "annotation" && item.rect).map((item) => item.rect!),
+    redactions: latest.timeline.filter((item) => item.type === "redaction" && item.rect).map((item) => item.rect!)
   };
   const nextSession = {
-    ...current,
-    timeline: [...current.timeline, { ...event, screenshotId: screenshot.id }],
-    screenshots: [...current.screenshots, screenshot]
+    ...latest,
+    timeline: [...latest.timeline, { ...event, screenshotId: screenshot.id }],
+    screenshots: [...latest.screenshots, screenshot]
   };
   await saveSession(nextSession);
   session = nextSession;
   } finally {
     screenshotInFlight = false;
+    if (queuedAnnotationCapture) {
+      queuedAnnotationCapture = false;
+      void captureMoment("screenshot", true);
+    }
+  }
+}
+
+function requestAnnotationCapture(): void {
+  if (screenshotInFlight) {
+    queuedAnnotationCapture = true;
+    return;
+  }
+  void captureMoment("screenshot", true);
+}
+
+async function waitForScreenshotQueue(): Promise<void> {
+  while (screenshotInFlight || queuedAnnotationCapture) {
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
   }
 }
 
@@ -789,6 +817,11 @@ async function setOverlayMode(mode: OverlayMode): Promise<void> {
   await send({ type: "SET_OVERLAY_MODE", mode });
   localStatus = mode === "cursor" ? "Pointer mode enabled." : `${mode === "highlight" ? "Highlight" : "Redact"} mode enabled. Drag on the page to mark evidence.`;
   render();
+}
+
+async function disableOverlay(): Promise<void> {
+  overlayMode = "off";
+  await send({ type: "SET_OVERLAY_MODE", mode: "off" }).catch(() => undefined);
 }
 
 function frameFingerprint(canvas: HTMLCanvasElement): string {
