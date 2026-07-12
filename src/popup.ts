@@ -116,7 +116,7 @@ function render(): void {
           <div>
             <p class="kicker">JesSee</p>
             <h1>Help AI see what you see.</h1>
-            <p class="hint">${hasExportFolder() ? "Captures save locally" : "Set an output folder in Settings"}</p>
+            <p class="hint">${settings.privateMode ? "Private Mode · screenshot pixels stay local" : hasExportFolder() ? "Captures save locally" : "Set an output folder in Settings"}</p>
           </div>
         </div>
         <div class="header-actions">

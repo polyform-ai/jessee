@@ -1,5 +1,5 @@
 import { dataUrlToBlob } from "./dataUrl";
-import type { CaptureAnalysis, OpenAiUsage, RecordingSession, ScreenshotEvidence, TicketDraft, TicketTemplate } from "./types";
+import type { CaptureAnalysis, OpenAiUsage, RecordingSession, ScreenshotEvidence, TicketDraft, TicketTemplate, TranscriptionResult } from "./types";
 
 interface ResponsesOutputText {
   type: "output_text";
@@ -33,15 +33,6 @@ const ESTIMATED_INPUT_COST_PER_1M = 2.5;
 const ESTIMATED_OUTPUT_COST_PER_1M = 15;
 
 export const REQUIRED_OPENAI_MODELS = [TICKET_MODEL, TRANSCRIPTION_MODEL] as const;
-
-export interface TranscriptionResult {
-  text: string;
-  segments: Array<{
-    start: number;
-    end: number;
-    text: string;
-  }>;
-}
 
 export async function transcribeAudio(apiKey: string, audioDataUrl?: string): Promise<TranscriptionResult> {
   if (!audioDataUrl) return { text: "", segments: [] };
