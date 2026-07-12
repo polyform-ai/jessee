@@ -79,6 +79,7 @@ async function prepareCapturePlanArtifact(): Promise<unknown> {
       captureAnalysisTemplateSignature: templateSignature(template),
       status: "planned",
       captureAnalysis: generated.analysis,
+      ticket: undefined,
       analysisError: undefined,
       openAiUsage: generated.usage
     };

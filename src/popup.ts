@@ -14,7 +14,7 @@ import {
 } from "./localFiles";
 import { createTicketPdf, ticketPdfFilename } from "./pdf";
 import { getSession, getSettings, pruneCaptureHistory, resetSession, saveSession, saveSettings, upsertCaptureHistory } from "./storage";
-import { getSelectedTemplate, getTemplates, templateSignature } from "./templates";
+import { getSelectedTemplate, getTemplates, planRequiresRefresh, templateSignature } from "./templates";
 import type { CaptureAnalysis, CaptureHistoryItem, RecordingSession, RuntimeMessage, ScreenshotEvidence, TimelineEvent } from "./types";
 import { postWebhook } from "./webhook";
 
@@ -90,7 +90,7 @@ function render(): void {
   }
   const hasEvidence = Boolean(current && (current.screenshots.length > 0 || current.audioDataUrl || current.videoDataUrl));
   const selectedTemplate = settings ? getSelectedTemplate(settings) : undefined;
-  const planNeedsRefresh = Boolean(current?.captureAnalysis && selectedTemplate && current.captureAnalysisTemplateSignature !== templateSignature(selectedTemplate));
+  const planNeedsRefresh = planRequiresRefresh(current, selectedTemplate);
   const canUsePdfAction = current?.status === "stopped" || current?.status === "planned" || current?.status === "ready" || (current?.status === "error" && hasEvidence);
   const hasTicket = Boolean(current?.ticket);
   const templates = settings ? getTemplates(settings) : [];
@@ -130,7 +130,7 @@ function render(): void {
             <button class="button danger" id="stop" ${current?.status !== "recording" ? "disabled" : ""}>End Capture</button>
           </div>
           ${!isMicrophoneReady ? `<button class="button secondary" id="openMicSettings">Enable Microphone in Settings</button>` : ""}
-          <button class="button primary" id="pdfAction" ${!canUsePdfAction ? "disabled" : ""}>${hasTicket ? "Download PDF" : current?.captureAnalysis && !planNeedsRefresh ? "Generate PDF" : current?.captureAnalysis ? "Replan for Template" : "Create Plan"}</button>
+          <button class="button primary" id="pdfAction" ${!canUsePdfAction ? "disabled" : ""}>${planNeedsRefresh ? "Replan for Template" : hasTicket ? "Download PDF" : current?.captureAnalysis ? "Generate PDF" : "Create Plan"}</button>
         </section>
         ${progress ? `<section class="panel">
           <div class="panel-header">
@@ -197,8 +197,8 @@ function render(): void {
   bind("#openMicSettings", "click", () => chrome.runtime.openOptionsPage());
   bind("#stop", "click", () => stopRecording());
   bind("#pdfAction", "click", () => {
-    if (session?.ticket) void downloadPdfInPage(session);
-    else if (!session?.captureAnalysis || planNeedsRefresh) void prepareCapturePlan();
+    if (planNeedsRefresh || !session?.captureAnalysis) void prepareCapturePlan();
+    else if (session?.ticket) void downloadPdfInPage(session);
     else void generateAndDownload();
   });
   bind("#savePlan", "click", () => {
@@ -373,7 +373,7 @@ async function savePlanEdits(): Promise<void> {
     helpfulImageMoments: moments
   };
   const template = getSelectedTemplate(await getSettings());
-  const next = { ...current, captureAnalysis: nextAnalysis, captureAnalysisTemplateSignature: templateSignature(template), status: "planned" as const, analysisError: undefined };
+  const next = { ...current, captureAnalysis: nextAnalysis, captureAnalysisTemplateSignature: templateSignature(template), status: "planned" as const, ticket: undefined, analysisError: undefined };
   await saveSession(next);
   await writeRecordingText("capture-analysis.json", JSON.stringify(nextAnalysis, null, 2), "application/json");
   await saveCaptureHistory(next);
@@ -770,8 +770,11 @@ async function captureMoment(type: TimelineEvent["type"] = "screenshot"): Promis
 
 function frameFingerprint(canvas: HTMLCanvasElement): string {
   const sample = document.createElement("canvas");
-  sample.width = 32;
-  sample.height = 18;
+  // This is intentionally large enough to retain the cursor halo and small
+  // control changes that a 32×18 sample erased, while still avoiding full PNG
+  // storage for visually identical frames.
+  sample.width = 256;
+  sample.height = 144;
   const context = sample.getContext("2d", { willReadFrequently: true });
   if (!context) return `${canvas.width}x${canvas.height}:${Date.now()}`;
   context.drawImage(canvas, 0, 0, sample.width, sample.height);
