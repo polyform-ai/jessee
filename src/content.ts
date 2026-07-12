@@ -108,6 +108,11 @@ function ensureOverlay(): void {
 
 function updateCursor(): void {
   if (!root) return;
+  if (mode === "off") {
+    root.querySelectorAll(".str-draft, .str-box").forEach((element) => element.remove());
+    startPoint = undefined;
+    draftRect = undefined;
+  }
   if (mode === "cursor" && !cursor) {
     cursor = document.createElement("div");
     cursor.className = "str-cursor";

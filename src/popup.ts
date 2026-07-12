@@ -13,6 +13,7 @@ import {
   writeScreenshot
 } from "./localFiles";
 import { createTicketPdf, ticketPdfFilename } from "./pdf";
+import { visiblePageRects } from "./captureEvidence";
 import { getSession, getSettings, pruneCaptureHistory, resetSession, saveSession, saveSettings, upsertCaptureHistory } from "./storage";
 import { getSelectedTemplate, getTemplates, planRequiresRefresh, templateSignature } from "./templates";
 import type { CaptureAnalysis, CaptureHistoryItem, OverlayMode, RecordingSession, RuntimeMessage, ScreenshotEvidence, TimelineEvent } from "./types";
@@ -69,6 +70,7 @@ void refresh();
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local") return;
   const latestEvent = (changes.recordingSession?.newValue as RecordingSession | undefined)?.timeline.at(-1);
+  if (latestEvent?.type === "url-change") overlayMode = "cursor";
   if (latestEvent?.type === "annotation" || latestEvent?.type === "redaction") requestAnnotationCapture();
   if (changes.recordingSession || changes.settings) void refresh();
 });
@@ -779,8 +781,8 @@ async function captureMoment(type: TimelineEvent["type"] = "screenshot", force =
     url: latest.tabUrl ?? "",
     title: latest.tabTitle ?? "",
     dataUrl: artifactRef(artifactKey),
-    annotations: latest.timeline.filter((item) => item.type === "annotation" && item.rect).map((item) => item.rect!),
-    redactions: latest.timeline.filter((item) => item.type === "redaction" && item.rect).map((item) => item.rect!)
+    annotations: visiblePageRects(latest.timeline, "annotation"),
+    redactions: visiblePageRects(latest.timeline, "redaction")
   };
   const nextSession = {
     ...latest,
