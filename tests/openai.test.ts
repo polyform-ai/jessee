@@ -146,4 +146,23 @@ describe("parseTicket", () => {
     expect(result.ticket.title).toBe("Save button fails");
     expect(result.usage.totalTokens).toBe(180);
   });
+
+  it("keeps screenshot pixels out of the drafting request in Private Mode", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ title: "Private ticket", summary: "", environment: [], reproductionSteps: [], expectedBehavior: "", actualBehavior: "", evidence: [{ screenshotId: "shot-1", caption: "Attach the selected local frame." }], openQuestions: [] }),
+      usage: {}
+    }), { status: 200 }));
+    const session: RecordingSession = {
+      status: "stopped", timeline: [],
+      screenshots: [{ id: "shot-1", capturedAtMs: 1000, url: "https://example.test", title: "Example", dataUrl: "data:image/jpeg;base64,aGVsbG8=", annotations: [], redactions: [] }]
+    };
+    const template: TicketTemplate = { id: "debug-ticket", name: "Debug Ticket", instructions: "Create a concise debug ticket." };
+    const analysis = { userGoal: "Explain a bug.", bestDelivery: "Ticket", breakingPoints: [], helpfulImageMoments: [{ screenshotId: "shot-1", atSeconds: 1, reason: "Relevant state" }], story: "" };
+
+    await generateTicket("sk-test", session, { text: "", segments: [] }, template, analysis, true);
+
+    const request = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(JSON.stringify(request)).not.toContain("data:image");
+    expect(request.input[1].content).toHaveLength(1);
+  });
 });

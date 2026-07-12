@@ -106,7 +106,8 @@ export async function generateTicket(
   session: RecordingSession,
   transcript: TranscriptionResult,
   template: TicketTemplate,
-  preparedAnalysis?: CaptureAnalysis
+  preparedAnalysis?: CaptureAnalysis,
+  privateMode = false
 ): Promise<GenerateTicketResult> {
   const timeline = session.timeline.map((event) => ({
     type: event.type,
@@ -134,7 +135,7 @@ export async function generateTicket(
     ? { analysis: preparedAnalysis, usage: emptyUsage() }
     : await analyzeCapture(apiKey, transcript, template, timeline, evidenceFrames);
   const selectedScreenshots = selectScreenshotsForAnalysis(session.screenshots, analysisResult.analysis);
-  const screenshotContent = selectedScreenshots
+  const screenshotContent = privateMode ? [] : selectedScreenshots
     .map((shot) => ({
       type: "input_image",
       image_url: shot.dataUrl,
@@ -150,7 +151,9 @@ export async function generateTicket(
     "Use the captureAnalysis as the plan for the document. It was prepared from the transcript, timeline, and screenshot timestamps before image review.",
     "The response should follow the selected template and be concise, Codex-ready, and grounded in the capture.",
     "Screenshots, clicks, annotations, redactions, and URL changes are timestamped in seconds from capture start. Use clicks and page changes as interaction anchors: choose screenshots immediately before or after those events when they prove a reproduction step or state transition. Transcript segments may be unavailable; do not invent precise word-level timing.",
-    "Evidence screenshotId values must come from selectedScreenshotIds only. Do not invent facts not present in the analysis, transcript, screenshots, or timeline."
+    privateMode
+      ? "Evidence screenshotId values must come from selectedScreenshotIds only. Screenshot pixels are not available in Private Mode; use the transcript, timestamps, selected screenshot IDs, annotations, and timeline context to place local PDF evidence without inventing visual details."
+      : "Evidence screenshotId values must come from selectedScreenshotIds only. Do not invent facts not present in the analysis, transcript, screenshots, or timeline."
   ].join("\n");
 
   const response = await openAiFetch(`${OPENAI_BASE_URL}/responses`, {

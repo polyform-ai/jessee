@@ -60,6 +60,10 @@ async function render(message = ""): Promise<void> {
           </div>
           <button class="button secondary" id="testAiSetup">Test AI setup</button>
           <p class="hint">Checks access to GPT-5.6 Terra and GPT-4o Transcribe before you record. JesSee never silently switches to an older model.</p>
+          <div class="field">
+            <label><input id="privateMode" type="checkbox" ${settings.privateMode ? "checked" : ""} /> Private Mode</label>
+            <p class="hint">Keep screenshot pixels on this computer. JesSee sends narration, timestamps, and selected screenshot IDs to draft the report, then attaches the local images to the PDF.</p>
+          </div>
           <p class="hint">The key is stored only in chrome.storage.local. Do not paste exposed or revoked keys.</p>
         </section>
         <section class="panel">
@@ -174,6 +178,7 @@ async function render(message = ""): Promise<void> {
     const emailInput = document.querySelector<HTMLInputElement>("#email");
     const key = input?.value.trim();
     const email = emailInput?.value.trim() ?? "";
+    const privateMode = document.querySelector<HTMLInputElement>("#privateMode")?.checked ?? false;
     if (!email || !email.includes("@")) {
       await render("Enter a valid email address.");
       return;
@@ -182,7 +187,7 @@ async function render(message = ""): Promise<void> {
       await render("Enter a new key before saving.");
       return;
     }
-    await saveSettings({ email, openAiKey: key && !key.includes("•") ? key : settings.openAiKey });
+    await saveSettings({ email, openAiKey: key && !key.includes("•") ? key : settings.openAiKey, privateMode });
     profileDraft = undefined;
     const updated = await getSettings();
     if (!hadProfile && updated.email && updated.openAiKey) await postWebhook(updated, "new_user", { email: updated.email });
