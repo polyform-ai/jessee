@@ -48,6 +48,19 @@ export async function hydrateSession(session: RecordingSession): Promise<Recordi
   };
 }
 
+export async function deleteSessionArtifacts(session: RecordingSession): Promise<void> {
+  const refs = new Set([
+    ...session.screenshots.map((screenshot) => screenshot.dataUrl),
+    session.videoDataUrl,
+    session.audioDataUrl
+  ].filter((value): value is string => isArtifactRef(value)));
+  if (refs.size === 0) return;
+  const db = await openDb();
+  const store = db.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME);
+  await Promise.all([...refs].map((ref) => requestToPromise(store.delete(ref.slice(REF_PREFIX.length)))));
+  db.close();
+}
+
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);

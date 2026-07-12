@@ -63,6 +63,7 @@ export interface RecordingSession {
   screenshots: ScreenshotEvidence[];
   videoDataUrl?: string;
   audioDataUrl?: string;
+  transcript?: TranscriptionResult;
   templateId?: string;
   ticket?: TicketDraft;
   captureAnalysis?: CaptureAnalysis;
@@ -74,6 +75,15 @@ export interface RecordingSession {
   localExportWarning?: string;
   openAiUsage?: OpenAiUsage;
   error?: string;
+}
+
+export interface TranscriptionResult {
+  text: string;
+  segments: Array<{
+    start: number;
+    end: number;
+    text: string;
+  }>;
 }
 
 export interface CaptureAnalysis {

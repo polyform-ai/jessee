@@ -1,5 +1,6 @@
 import type { CaptureHistoryItem, RecordingSession, Settings } from "./types";
 import { DEFAULT_TEMPLATE_ID } from "./templates";
+import { deleteSessionArtifacts } from "./artifacts";
 
 const SESSION_KEY = "recordingSession";
 const SETTINGS_KEY = "settings";
@@ -54,15 +55,26 @@ function normalizeSettings(settings: Settings): Settings {
 
 export async function upsertCaptureHistory(item: CaptureHistoryItem): Promise<void> {
   const settings = await getSettings();
-  const nextHistory = [item, ...(settings.captureHistory ?? []).filter((existing) => existing.id !== item.id)].slice(0, 50);
+  const candidates = [item, ...(settings.captureHistory ?? []).filter((existing) => existing.id !== item.id)];
+  const nextHistory = candidates.slice(0, 50);
   await saveSettings({ captureHistory: nextHistory });
+  await deleteHistoryArtifacts(candidates.slice(50));
 }
 
 export async function pruneCaptureHistory(retentionDays: number): Promise<void> {
   if (retentionDays <= 0) return;
   const settings = await getSettings();
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+  const expired = (settings.captureHistory ?? []).filter((item) => item.createdAt < cutoff);
   await saveSettings({
     captureHistory: (settings.captureHistory ?? []).filter((item) => item.createdAt >= cutoff)
   });
+  await deleteHistoryArtifacts(expired);
+}
+
+async function deleteHistoryArtifacts(items: CaptureHistoryItem[]): Promise<void> {
+  const results = await Promise.allSettled(items.map((item) => deleteSessionArtifacts(item.session)));
+  for (const result of results) {
+    if (result.status === "rejected") console.warn("Could not delete expired capture artifacts", result.reason);
+  }
 }

@@ -2,7 +2,7 @@ import { analyzeCapture, generateTicket, testOpenAiSetup, transcribeAudio } from
 import { hydrateSession } from "./artifacts";
 import { getSession, getSettings, saveSession } from "./storage";
 import { getSelectedTemplate, templateSignature } from "./templates";
-import { acceptsContentEvent } from "./captureState";
+import { acceptsContentEvent, shouldRecordPageChange } from "./captureState";
 import type { RecordingSession, RuntimeMessage, TimelineEvent } from "./types";
 
 chrome.action.onClicked.addListener(() => {
@@ -26,10 +26,10 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, sender, sendRespo
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (!changeInfo.url && !tab.title && changeInfo.status !== "complete") return;
   const session = await getSession();
   if (session.status !== "recording" || session.activeTabId !== tabId) return;
   if (changeInfo.status === "complete") await sendToTab(tabId, { type: "SET_OVERLAY_MODE", mode: "cursor" });
+  if (!shouldRecordPageChange(session, tab.url, changeInfo.url, changeInfo.status)) return;
   await appendEvent("url-change", tabId, `Navigated to ${tab.url ?? changeInfo.url ?? ""}`);
 });
 
@@ -76,16 +76,20 @@ async function prepareCapturePlanArtifact(): Promise<unknown> {
   const current = await getSession();
   const planning = { ...current, status: "planning" as const, analysisError: undefined };
   await saveSession(planning);
+  let transcript = current.transcript;
   try {
     const hydrated = await hydrateSession(planning);
-    const transcript = await transcribeAudio(settings.openAiKey, hydrated.audioDataUrl);
+    transcript = hydrated.transcript ?? await transcribeAudio(settings.openAiKey, hydrated.audioDataUrl);
+    const transcribed = { ...planning, transcript };
+    await saveSession(transcribed);
     const generated = await analyzeCapture(settings.openAiKey, transcript, template, hydrated);
     const session: RecordingSession = {
-      ...planning,
+      ...transcribed,
       templateId: template.id,
       captureAnalysisTemplateSignature: templateSignature(template),
       status: "planned",
       captureAnalysis: generated.analysis,
+      transcript,
       ticket: undefined,
       analysisError: undefined,
       openAiUsage: generated.usage
@@ -94,7 +98,7 @@ async function prepareCapturePlanArtifact(): Promise<unknown> {
     return { ok: true, session };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await saveSession({ ...current, analysisError: message });
+    await saveSession({ ...current, transcript, analysisError: message });
     throw error;
   }
 }
@@ -111,7 +115,7 @@ async function generateTicketArtifact(): Promise<unknown> {
   await saveSession(generating);
   try {
     const hydrated = await hydrateSession(generating);
-    const transcript = await transcribeAudio(settings.openAiKey, hydrated.audioDataUrl);
+    const transcript = hydrated.transcript ?? await transcribeAudio(settings.openAiKey, hydrated.audioDataUrl);
     const generated = await generateTicket(settings.openAiKey, { ...hydrated, templateId: template.id }, transcript, template, hydrated.captureAnalysis, settings.privateMode ?? false);
     const ticket = { ...generated.ticket, templateName: generated.ticket.templateName ?? template.name };
     const session: RecordingSession = {

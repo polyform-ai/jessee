@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import "fake-indexeddb/auto";
-import { artifactRef, hydrateSession, putArtifact } from "../src/artifacts";
+import { artifactRef, deleteSessionArtifacts, getArtifact, hydrateSession, putArtifact } from "../src/artifacts";
 import type { RecordingSession } from "../src/types";
 
 describe("hydrateSession", () => {
@@ -41,5 +41,21 @@ describe("capture-scoped media artifacts", () => {
     expect(first.videoDataUrl).toBe("data:video/webm;base64,b25l");
     expect(second.videoDataUrl).toBe("data:video/webm;base64,dHdv");
     expect(artifactRef("video:capture-one")).not.toBe(artifactRef("video:capture-two"));
+  });
+
+  it("deletes every IndexedDB artifact owned by an expired session", async () => {
+    const screenshot = await putArtifact("screenshot:expired", "data:image/jpeg;base64,b2xk");
+    const video = await putArtifact("video:expired", "data:video/webm;base64,b2xk");
+    const session: RecordingSession = {
+      status: "stopped",
+      timeline: [],
+      screenshots: [{ id: "shot", capturedAtMs: 0, url: "", title: "", dataUrl: screenshot, annotations: [], redactions: [] }],
+      videoDataUrl: video
+    };
+
+    await deleteSessionArtifacts(session);
+
+    expect(await getArtifact(screenshot)).toBeUndefined();
+    expect(await getArtifact(video)).toBeUndefined();
   });
 });
