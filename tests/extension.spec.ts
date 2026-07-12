@@ -28,6 +28,7 @@ test("loads extension settings page", async () => {
     await page.goto(`chrome-extension://${extensionId}/options.html`);
     await expect(page.getByRole("heading", { name: "JesSee" })).toBeVisible();
     await expect(page.getByLabel("OpenAI API key")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Test AI setup" })).toBeVisible();
 
     await page.goto(`chrome-extension://${extensionId}/popup.html`);
     await expect(page.getByRole("button", { name: "Open Settings" })).toBeVisible();

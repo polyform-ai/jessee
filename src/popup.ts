@@ -14,7 +14,7 @@ import {
 } from "./localFiles";
 import { createTicketPdf, ticketPdfFilename } from "./pdf";
 import { getSession, getSettings, pruneCaptureHistory, resetSession, saveSession, saveSettings, upsertCaptureHistory } from "./storage";
-import { getSelectedTemplate, getTemplates } from "./templates";
+import { getSelectedTemplate, getTemplates, templateSignature } from "./templates";
 import type { CaptureAnalysis, CaptureHistoryItem, RecordingSession, RuntimeMessage, ScreenshotEvidence, TimelineEvent } from "./types";
 import { postWebhook } from "./webhook";
 
@@ -38,6 +38,8 @@ let selectedTemplateName = "Debug Ticket";
 let settingsCache: Awaited<ReturnType<typeof getSettings>> | undefined;
 let pdfProgress: PdfProgress | undefined;
 let cleanupRan = false;
+let lastScreenshotFingerprint: string | undefined;
+let lastStoredScreenshotAtMs = -Infinity;
 let onboardingDraft: { email: string; apiKey: string; retentionDays: number } | undefined;
 const videoChunks: Blob[] = [];
 const audioChunks: Blob[] = [];
@@ -58,6 +60,7 @@ const PDF_PROGRESS_STEPS = [
   { label: "Building PDF", threshold: 92 }
 ];
 const CAPTURE_INTERVAL_MS = 500;
+const MAX_SIMILAR_FRAME_GAP_MS = 5_000;
 
 void refresh();
 
@@ -86,6 +89,8 @@ function render(): void {
     return;
   }
   const hasEvidence = Boolean(current && (current.screenshots.length > 0 || current.audioDataUrl || current.videoDataUrl));
+  const selectedTemplate = settings ? getSelectedTemplate(settings) : undefined;
+  const planNeedsRefresh = Boolean(current?.captureAnalysis && selectedTemplate && current.captureAnalysisTemplateSignature !== templateSignature(selectedTemplate));
   const canUsePdfAction = current?.status === "stopped" || current?.status === "planned" || current?.status === "ready" || (current?.status === "error" && hasEvidence);
   const hasTicket = Boolean(current?.ticket);
   const templates = settings ? getTemplates(settings) : [];
@@ -125,7 +130,7 @@ function render(): void {
             <button class="button danger" id="stop" ${current?.status !== "recording" ? "disabled" : ""}>End Capture</button>
           </div>
           ${!isMicrophoneReady ? `<button class="button secondary" id="openMicSettings">Enable Microphone in Settings</button>` : ""}
-          <button class="button primary" id="pdfAction" ${!canUsePdfAction ? "disabled" : ""}>${hasTicket ? "Download PDF" : current?.captureAnalysis ? "Generate PDF" : "Create Plan"}</button>
+          <button class="button primary" id="pdfAction" ${!canUsePdfAction ? "disabled" : ""}>${hasTicket ? "Download PDF" : current?.captureAnalysis && !planNeedsRefresh ? "Generate PDF" : current?.captureAnalysis ? "Replan for Template" : "Create Plan"}</button>
         </section>
         ${progress ? `<section class="panel">
           <div class="panel-header">
@@ -177,9 +182,11 @@ function render(): void {
         ${current?.captureAnalysis ? renderPlanReview(current) : ""}
         <section class="panel">
           ${localStatus ? `<p class="success">${escapeHtml(localStatus)}</p>` : ""}
-          ${!localStatus && current?.error ? `<p class="error">${escapeHtml(current.error)}</p>` : ""}
+          ${!localStatus && (current?.error || current?.analysisError) ? `<p class="error">${escapeHtml(current?.analysisError ?? current?.error ?? "")}</p>` : ""}
           ${current?.exportFolderName ? `<p class="hint">Capture folder: ${escapeHtml(current.exportFolderName)}</p>` : ""}
-          <p class="hint">Screenshots are timestamped and paired with your narration when the PDF is created.</p>
+          ${current?.localExportWarning ? `<p class="hint">${escapeHtml(current.localExportWarning)}</p>` : ""}
+          ${planNeedsRefresh ? `<p class="hint">The template changed after this plan was created. Replan before generating the PDF.</p>` : ""}
+          <p class="hint">Sharp, cursor-inclusive screenshots are timestamped and paired with your narration when the PDF is created.</p>
         </section>
         ${renderHistory(history)}
       </div>
@@ -191,7 +198,7 @@ function render(): void {
   bind("#stop", "click", () => stopRecording());
   bind("#pdfAction", "click", () => {
     if (session?.ticket) void downloadPdfInPage(session);
-    else if (!session?.captureAnalysis) void prepareCapturePlan();
+    else if (!session?.captureAnalysis || planNeedsRefresh) void prepareCapturePlan();
     else void generateAndDownload();
   });
   bind("#savePlan", "click", () => {
@@ -365,7 +372,8 @@ async function savePlanEdits(): Promise<void> {
       .filter(Boolean),
     helpfulImageMoments: moments
   };
-  const next = { ...current, captureAnalysis: nextAnalysis, status: "planned" as const };
+  const template = getSelectedTemplate(await getSettings());
+  const next = { ...current, captureAnalysis: nextAnalysis, captureAnalysisTemplateSignature: templateSignature(template), status: "planned" as const, analysisError: undefined };
   await saveSession(next);
   await writeRecordingText("capture-analysis.json", JSON.stringify(nextAnalysis, null, 2), "application/json");
   await saveCaptureHistory(next);
@@ -441,7 +449,8 @@ async function run(message: RuntimeMessage, refreshAfter = true): Promise<void> 
 
 async function generateAndDownload(): Promise<void> {
   const currentBefore = await getSession();
-  if (!currentBefore.captureAnalysis) {
+  const template = getSelectedTemplate(await getSettings());
+  if (!currentBefore.captureAnalysis || currentBefore.captureAnalysisTemplateSignature !== templateSignature(template)) {
     await prepareCapturePlan();
     const planned = await getSession();
     if (!planned.captureAnalysis) return;
@@ -563,6 +572,7 @@ async function startRecording(): Promise<void> {
       tabUrl: target?.url,
       tabTitle: target?.title,
       exportFolderName,
+      localExportWarning: exportFolderName ? undefined : "Capture is stored in JesSee. Local-folder export is unavailable; reconnect the folder in Settings to save files there.",
       timeline: [
         {
           id: crypto.randomUUID(),
@@ -576,6 +586,8 @@ async function startRecording(): Promise<void> {
     await saveSession(initialSession);
     session = initialSession;
 
+    lastScreenshotFingerprint = undefined;
+    lastStoredScreenshotAtMs = -Infinity;
     mediaRecorder = new MediaRecorder(mixedStream, { mimeType: pickMimeType(["video/webm;codecs=vp9,opus", "video/webm"]) });
     audioRecorder = new MediaRecorder(new MediaStream(destination.stream.getAudioTracks()), { mimeType: pickMimeType(["audio/webm;codecs=opus", "audio/webm"]) });
 
@@ -620,7 +632,12 @@ async function clearCurrentError(): Promise<void> {
 async function requestScreenStream(): Promise<MediaStream> {
   try {
     return await navigator.mediaDevices.getDisplayMedia({
-      video: true,
+      video: {
+        cursor: "always",
+        width: { ideal: 3840 },
+        height: { ideal: 2160 },
+        frameRate: { ideal: 30, max: 60 }
+      } as MediaTrackConstraints & { cursor: "always" },
       audio: false
     });
   } catch (error) {
@@ -667,9 +684,10 @@ async function finishLocalRecording(): Promise<void> {
   const audioBlob = audioChunks.length ? new Blob(audioChunks, { type: audioRecorder?.mimeType || "audio/webm" }) : undefined;
   await writeRecordingBlob("recording.webm", videoBlob);
   if (audioBlob) await writeRecordingBlob("audio.webm", audioBlob);
-  const videoDataUrl = await putArtifact("video", await blobToDataUrl(videoBlob));
+  const captureId = current.captureId ?? crypto.randomUUID();
+  const videoDataUrl = await putArtifact(`video:${captureId}`, await blobToDataUrl(videoBlob));
   const audioDataUrl = audioBlob
-    ? await putArtifact("audio", await blobToDataUrl(audioBlob))
+    ? await putArtifact(`audio:${captureId}`, await blobToDataUrl(audioBlob))
     : undefined;
   cleanupRecorder();
   localStatus = "Capture saved. Create PDF when ready.";
@@ -689,7 +707,6 @@ async function finishLocalRecording(): Promise<void> {
     image_count: nextSession.screenshots.length
   });
   await refresh();
-  void prepareCapturePlan();
 }
 
 async function hardCleanupInterruptedRecording(message?: string): Promise<void> {
@@ -713,10 +730,7 @@ async function captureMoment(type: TimelineEvent["type"] = "screenshot"): Promis
   if (screenshotInFlight) return;
   screenshotInFlight = true;
   try {
-  if (!previewVideo || !session?.startedAt) {
-    await run({ type: "CAPTURE_MOMENT" });
-    return;
-  }
+  if (!previewVideo || !session?.startedAt) return;
   const current = await getSession();
   const canvas = document.createElement("canvas");
   canvas.width = previewVideo.videoWidth || 1280;
@@ -724,11 +738,15 @@ async function captureMoment(type: TimelineEvent["type"] = "screenshot"): Promis
   const context = canvas.getContext("2d");
   context?.drawImage(previewVideo, 0, 0, canvas.width, canvas.height);
   const event = createEvent(current, type);
-  const dataUrl = canvas.toDataURL("image/png");
+  const fingerprint = frameFingerprint(canvas);
+  if (fingerprint === lastScreenshotFingerprint && event.atMs - lastStoredScreenshotAtMs < MAX_SIMILAR_FRAME_GAP_MS) return;
+  lastScreenshotFingerprint = fingerprint;
+  lastStoredScreenshotAtMs = event.atMs;
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
   const id = crypto.randomUUID();
   const artifactKey = `screenshot:${id}`;
   await putArtifact(artifactKey, dataUrl);
-  await writeScreenshot(`${String(current.screenshots.length + 1).padStart(3, "0")}-${Math.round(event.atMs)}ms.png`, dataUrlToBlob(dataUrl));
+  await writeScreenshot(`${String(current.screenshots.length + 1).padStart(3, "0")}-${Math.round(event.atMs)}ms.jpg`, dataUrlToBlob(dataUrl));
   const screenshot: ScreenshotEvidence = {
     id,
     capturedAtMs: event.atMs,
@@ -748,6 +766,22 @@ async function captureMoment(type: TimelineEvent["type"] = "screenshot"): Promis
   } finally {
     screenshotInFlight = false;
   }
+}
+
+function frameFingerprint(canvas: HTMLCanvasElement): string {
+  const sample = document.createElement("canvas");
+  sample.width = 32;
+  sample.height = 18;
+  const context = sample.getContext("2d", { willReadFrequently: true });
+  if (!context) return `${canvas.width}x${canvas.height}:${Date.now()}`;
+  context.drawImage(canvas, 0, 0, sample.width, sample.height);
+  const pixels = context.getImageData(0, 0, sample.width, sample.height).data;
+  let hash = 2166136261;
+  for (let index = 0; index < pixels.length; index += 12) {
+    hash ^= pixels[index] ^ pixels[index + 1] ^ pixels[index + 2];
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${canvas.width}x${canvas.height}:${hash >>> 0}`;
 }
 
 async function appendLocalEvent(type: TimelineEvent["type"]): Promise<void> {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import "fake-indexeddb/auto";
-import { hydrateSession } from "../src/artifacts";
+import { artifactRef, hydrateSession, putArtifact } from "../src/artifacts";
 import type { RecordingSession } from "../src/types";
 
 describe("hydrateSession", () => {
@@ -28,5 +28,18 @@ describe("hydrateSession", () => {
     expect(hydrated.videoDataUrl).toBeUndefined();
     expect(hydrated.audioDataUrl).toBeUndefined();
     expect(hydrated.screenshots[0].dataUrl).toBe("");
+  });
+});
+
+describe("capture-scoped media artifacts", () => {
+  it("keeps recording media isolated between history entries", async () => {
+    const firstVideo = await putArtifact("video:capture-one", "data:video/webm;base64,b25l");
+    const secondVideo = await putArtifact("video:capture-two", "data:video/webm;base64,dHdv");
+    const first = await hydrateSession({ status: "stopped", timeline: [], screenshots: [], videoDataUrl: firstVideo });
+    const second = await hydrateSession({ status: "stopped", timeline: [], screenshots: [], videoDataUrl: secondVideo });
+
+    expect(first.videoDataUrl).toBe("data:video/webm;base64,b25l");
+    expect(second.videoDataUrl).toBe("data:video/webm;base64,dHdv");
+    expect(artifactRef("video:capture-one")).not.toBe(artifactRef("video:capture-two"));
   });
 });

@@ -44,7 +44,7 @@ Recordings, screenshots, and generated PDFs are stored locally on your computer.
 - **Side panel:** Keeps recording controls available alongside the page being explained.
 - **Active tab, tabs, and scripting:** Adds the optional cursor/annotation overlay to the page being captured and records the selected page's context.
 - **Downloads:** Saves the generated PDF to the user's computer.
-- **Storage and offscreen:** Keeps local settings and capture artifacts, and records media reliably while the side panel remains responsive.
+- **Storage:** Keeps local settings and capture artifacts. Recording is owned by the side panel so microphone permission and the media lifecycle stay in the same user-visible flow.
 - **Host access:** Allows the cursor/annotation overlay to work on the site the user chooses to explain.
 
 ## Support and contributions

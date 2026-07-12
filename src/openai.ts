@@ -32,6 +32,8 @@ const TICKET_MODEL = "gpt-5.6-terra";
 const ESTIMATED_INPUT_COST_PER_1M = 2.5;
 const ESTIMATED_OUTPUT_COST_PER_1M = 15;
 
+export const REQUIRED_OPENAI_MODELS = [TICKET_MODEL, TRANSCRIPTION_MODEL] as const;
+
 export interface TranscriptionResult {
   text: string;
   segments: Array<{
@@ -76,6 +78,21 @@ export async function transcribeAudio(apiKey: string, audioDataUrl?: string): Pr
       text: segment.text ?? ""
     }))
   };
+}
+
+/**
+ * Checks model access before a user spends time recording. This deliberately
+ * does not fall back to an older model: JesSee's output contract is Terra.
+ */
+export async function testOpenAiSetup(apiKey: string): Promise<void> {
+  for (const model of REQUIRED_OPENAI_MODELS) {
+    const response = await openAiFetch(`${OPENAI_BASE_URL}/models/${model}`, {
+      headers: { Authorization: `Bearer ${apiKey}` }
+    });
+    if (!response.ok) {
+      throw new Error(`OpenAI setup failed for ${model}: ${response.status} ${await response.text()}`);
+    }
+  }
 }
 
 export interface GenerateTicketResult {
@@ -131,8 +148,7 @@ export async function generateTicket(
     `Template instructions: ${template.instructions}`,
     "Use the captureAnalysis as the plan for the document. It was prepared from the transcript, timeline, and screenshot timestamps before image review.",
     "The response should follow the selected template and be concise, Codex-ready, and grounded in the capture.",
-    "Screenshots and transcript segments are timestamped in seconds from capture start.",
-    "Use transcript segment timestamps and screenshot timestamps together to pair narration with the right visual evidence.",
+    "Screenshots are timestamped in seconds from capture start. Transcript segments may be unavailable from the transcription API; when they are unavailable, use the overall narration, timeline, and screenshot timestamps without inventing precise word-level timing.",
     "Evidence screenshotId values must come from selectedScreenshotIds only. Do not invent facts not present in the analysis, transcript, screenshots, or timeline."
   ].join("\n");
 
@@ -231,7 +247,7 @@ export async function analyzeCapture(
     "userGoal should capture the user's intended outcome.",
     "bestDelivery should explain the best document shape for that goal and the selected template.",
     "breakingPoints should list moments where the workflow changed, failed, became confusing, or introduced important context.",
-    "helpfulImageMoments should choose only timestamps where a screenshot would materially improve the final PDF.",
+    "helpfulImageMoments should choose only timestamps where a screenshot would materially improve the final PDF. Transcript segments may be unavailable; do not pretend that un-timestamped narration is precisely aligned.",
     "story should be a short chronological account of what happened.",
     `Selected template: ${template.name}.`,
     `Template instructions: ${template.instructions}`
@@ -301,7 +317,7 @@ function parseCaptureAnalysis(text: string): CaptureAnalysis {
   };
 }
 
-function selectScreenshotsForAnalysis(screenshots: ScreenshotEvidence[], analysis: CaptureAnalysis): ScreenshotEvidence[] {
+export function selectScreenshotsForAnalysis(screenshots: ScreenshotEvidence[], analysis: CaptureAnalysis): ScreenshotEvidence[] {
   const imageScreenshots = screenshots.filter((shot) => shot.dataUrl.startsWith("data:image/"));
   const selected: ScreenshotEvidence[] = [];
   const addUnique = (shot?: ScreenshotEvidence) => {
@@ -314,11 +330,17 @@ function selectScreenshotsForAnalysis(screenshots: ScreenshotEvidence[], analysi
     addUnique([...imageScreenshots].sort((a, b) => Math.abs(a.capturedAtMs - targetMs) - Math.abs(b.capturedAtMs - targetMs))[0]);
   }
 
-  if (selected.length === 0) {
-    for (const shot of imageScreenshots) addUnique(shot);
-  }
+  if (selected.length === 0) return selectEvenlySpaced(imageScreenshots, 12);
 
   return selected.slice(0, 12);
+}
+
+function selectEvenlySpaced(screenshots: ScreenshotEvidence[], limit: number): ScreenshotEvidence[] {
+  if (screenshots.length <= limit) return screenshots;
+  return Array.from({ length: limit }, (_, index) => {
+    const position = Math.round((index * (screenshots.length - 1)) / (limit - 1));
+    return screenshots[position];
+  });
 }
 
 export function parseTicket(text: string): TicketDraft {
