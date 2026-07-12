@@ -1,4 +1,4 @@
-import type { Settings, TicketTemplate } from "./types";
+import type { RecordingSession, Settings, TicketTemplate } from "./types";
 
 export const DEFAULT_TEMPLATE_ID = "debug-ticket";
 
@@ -79,4 +79,12 @@ export function isBuiltInTemplateId(templateId: string): boolean {
 
 export function hasTemplateOverride(settings: Settings, templateId: string): boolean {
   return (settings.customTemplates ?? []).some((template) => template.id === templateId && isBuiltInTemplateId(templateId));
+}
+
+export function templateSignature(template: TicketTemplate): string {
+  return JSON.stringify([template.id, template.name, template.instructions]);
+}
+
+export function planRequiresRefresh(session: RecordingSession | undefined, template: TicketTemplate | undefined): boolean {
+  return Boolean(session?.captureAnalysis && template && session.captureAnalysisTemplateSignature !== templateSignature(template));
 }

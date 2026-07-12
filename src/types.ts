@@ -59,6 +59,12 @@ export interface RecordingSession {
   templateId?: string;
   ticket?: TicketDraft;
   captureAnalysis?: CaptureAnalysis;
+  /** A capture remains usable when planning fails; this is retryable metadata. */
+  analysisError?: string;
+  /** Snapshot of the template used to build the plan, so template edits require replanning. */
+  captureAnalysisTemplateSignature?: string;
+  /** Local export is optional, but the UI should not hide a failed export. */
+  localExportWarning?: string;
   openAiUsage?: OpenAiUsage;
   error?: string;
 }
@@ -92,22 +98,12 @@ export interface TicketDraft {
 
 export type RuntimeMessage =
   | { type: "GET_SESSION" }
-  | { type: "START_RECORDING"; includeMic: boolean; cursorHalo: boolean }
-  | { type: "PAUSE_RECORDING" }
-  | { type: "RESUME_RECORDING" }
-  | { type: "STOP_RECORDING" }
-  | { type: "CAPTURE_MOMENT"; note?: string }
   | { type: "PREPARE_CAPTURE_PLAN" }
   | { type: "GENERATE_TICKET" }
-  | { type: "DOWNLOAD_PDF" }
+  | { type: "TEST_AI_SETUP"; apiKey?: string }
   | { type: "SET_OVERLAY_MODE"; mode: OverlayMode }
   | { type: "CONTENT_RECT_CREATED"; rect: Rect }
-  | { type: "CONTENT_PAGE_INFO"; url: string; title: string }
-  | { type: "OFFSCREEN_STARTED" }
-  | { type: "OFFSCREEN_STOPPED"; videoDataUrl: string; audioDataUrl?: string }
-  | { type: "OFFSCREEN_ERROR"; error: string }
-  | { type: "OFFSCREEN_PAUSED" }
-  | { type: "OFFSCREEN_RESUMED" };
+  | { type: "CONTENT_PAGE_INFO"; url: string; title: string };
 
 export type OverlayMode = "off" | "highlight" | "redact" | "cursor";
 

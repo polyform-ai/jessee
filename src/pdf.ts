@@ -50,6 +50,32 @@ function drawTicket(pdf: jsPDF, ticket: TicketDraft, session: RecordingSession):
     y += lines.length * 13 + 10;
   };
 
+  const addEvidenceImage = (caption: string, screenshot: RecordingSession["screenshots"][number], index: number) => {
+    const props = pdf.getImageProperties(screenshot.dataUrl);
+    const maxImageHeight = 360;
+    const naturalHeight = (props.height * maxTextWidth) / props.width;
+    const imageHeight = Math.min(maxImageHeight, naturalHeight);
+    const imageWidth = Math.min(maxTextWidth, (props.width * imageHeight) / props.height);
+    const cardHeight = imageHeight + 68;
+    ensureSpace(cardHeight);
+    pdf.setFillColor(250, 250, 250);
+    pdf.setDrawColor(228, 228, 231);
+    pdf.roundedRect(margin, y, imageWidth, cardHeight - 8, 8, 8, "FD");
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(10);
+    pdf.setTextColor(24, 24, 27);
+    pdf.text(`Evidence ${index + 1}  ·  ${formatTimestamp(screenshot.capturedAtMs)}`, margin + 12, y + 18);
+    const captionLines = pdf.splitTextToSize(caption, imageWidth - 24).slice(0, 2);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(9);
+    pdf.setTextColor(82, 82, 91);
+    pdf.text(captionLines, margin + 12, y + 32);
+    const imageY = y + 48;
+    const format = screenshot.dataUrl.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
+    pdf.addImage(screenshot.dataUrl, format, margin + (maxTextWidth - imageWidth) / 2, imageY, imageWidth, imageHeight, undefined, "SLOW");
+    y += cardHeight + 10;
+  };
+
   addHeading(ticket.title, 20);
   if (ticket.templateName) addParagraph(`Template: ${ticket.templateName}`);
   addParagraph(ticket.summary);
@@ -67,19 +93,13 @@ function drawTicket(pdf: jsPDF, ticket: TicketDraft, session: RecordingSession):
   addParagraph(ticket.actualBehavior);
 
   addHeading("Evidence");
-  for (const evidence of ticket.evidence) {
+  ticket.evidence.forEach((evidence, index) => {
     const screenshot = evidence.screenshotId
       ? session.screenshots.find((shot) => shot.id === evidence.screenshotId)
       : undefined;
     if (screenshot) {
       try {
-        const props = pdf.getImageProperties(screenshot.dataUrl);
-        const imageWidth = maxTextWidth;
-        const imageHeight = Math.min(300, (props.height * imageWidth) / props.width);
-        addParagraph(evidence.caption);
-        ensureSpace(imageHeight + 18);
-        pdf.addImage(screenshot.dataUrl, "PNG", margin, y, imageWidth, imageHeight, undefined, "FAST");
-        y += imageHeight + 18;
+        addEvidenceImage(evidence.caption, screenshot, index);
       } catch {
         addParagraph(evidence.caption);
         addParagraph(`[Screenshot ${screenshot.id} could not be embedded]`);
@@ -87,13 +107,19 @@ function drawTicket(pdf: jsPDF, ticket: TicketDraft, session: RecordingSession):
     } else {
       addParagraph(evidence.caption);
     }
-  }
+  });
 
   if (ticket.openQuestions.length > 0) {
     addHeading("Open Questions");
     for (const question of ticket.openQuestions) addParagraph(`- ${question}`);
   }
 
+}
+
+function formatTimestamp(milliseconds: number): string {
+  const seconds = Math.max(0, Math.round(milliseconds / 1000));
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 function addFooter(pdf: jsPDF): void {

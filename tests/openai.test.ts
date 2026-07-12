@@ -1,10 +1,42 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { dataUrlToBlob } from "../src/dataUrl";
-import { generateTicket, parseTicket } from "../src/openai";
+import { generateTicket, parseTicket, selectScreenshotsForAnalysis, testOpenAiSetup } from "../src/openai";
 import type { RecordingSession, TicketTemplate } from "../src/types";
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+it("uses representative screenshots when a plan has no visual moments", () => {
+  const screenshots = Array.from({ length: 30 }, (_, index) => ({
+    id: `shot-${index}`,
+    capturedAtMs: index * 500,
+    url: "https://example.test",
+    title: "Example",
+    dataUrl: "data:image/jpeg;base64,aGVsbG8=",
+    annotations: [],
+    redactions: []
+  }));
+  const selected = selectScreenshotsForAnalysis(screenshots, {
+    userGoal: "", bestDelivery: "", breakingPoints: [], helpfulImageMoments: [], story: ""
+  });
+
+  expect(selected).toHaveLength(12);
+  expect(selected[0].id).toBe("shot-0");
+  expect(selected.at(-1)?.id).toBe("shot-29");
+});
+
+it("tests both required models without selecting an older fallback", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch")
+    .mockResolvedValueOnce(new Response("{}", { status: 200 }))
+    .mockResolvedValueOnce(new Response("{}", { status: 200 }));
+
+  await testOpenAiSetup("sk-test");
+
+  expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+    "https://api.openai.com/v1/models/gpt-5.6-terra",
+    "https://api.openai.com/v1/models/gpt-4o-transcribe"
+  ]);
 });
 
 describe("parseTicket", () => {

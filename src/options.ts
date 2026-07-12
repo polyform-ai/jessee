@@ -58,6 +58,8 @@ async function render(message = ""): Promise<void> {
             <button class="button primary" id="save">Save</button>
             <button class="button secondary" id="delete">Remove key</button>
           </div>
+          <button class="button secondary" id="testAiSetup">Test AI setup</button>
+          <p class="hint">Checks access to GPT-5.6 Terra and GPT-4o Transcribe before you record. JesSee never silently switches to an older model.</p>
           <p class="hint">The key is stored only in chrome.storage.local. Do not paste exposed or revoked keys.</p>
         </section>
         <section class="panel">
@@ -189,6 +191,19 @@ async function render(message = ""): Promise<void> {
   document.querySelector("#delete")?.addEventListener("click", async () => {
     await clearApiKey();
     await render("Deleted.");
+  });
+  document.querySelector("#testAiSetup")?.addEventListener("click", async () => {
+    const input = document.querySelector<HTMLInputElement>("#apiKey");
+    const draftKey = input?.value.trim();
+    const candidateKey = draftKey && !draftKey.includes("•") ? draftKey : undefined;
+    try {
+      const response = await chrome.runtime.sendMessage({ type: "TEST_AI_SETUP", apiKey: candidateKey }) as { ok?: boolean; error?: string };
+      if (!response.ok) throw new Error(response.error ?? "AI setup test failed.");
+      if (candidateKey) await saveSettings({ openAiKey: candidateKey });
+      await render("AI setup is ready: GPT-5.6 Terra and GPT-4o Transcribe are available.");
+    } catch (error) {
+      await render(error instanceof Error ? error.message : String(error));
+    }
   });
   document.querySelector("#chooseFolder")?.addEventListener("click", async () => {
     try {

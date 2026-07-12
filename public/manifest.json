@@ -24,13 +24,10 @@
   "options_page": "options.html",
   "permissions": [
     "activeTab",
-    "audioCapture",
     "downloads",
-    "offscreen",
     "sidePanel",
     "scripting",
     "storage",
-    "tabCapture",
     "tabs",
     "<all_urls>"
   ],
