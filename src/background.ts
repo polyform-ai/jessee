@@ -1,5 +1,6 @@
 import { analyzeCapture, generateTicket, testOpenAiSetup, transcribeAudio } from "./openai";
-import { hydrateSession } from "./artifacts";
+import { deleteArtifacts, hydrateSession } from "./artifacts";
+import { clearAnnotationEvidence } from "./captureEvidence";
 import { getSession, getSettings, saveSession } from "./storage";
 import { getSelectedTemplate, templateSignature } from "./templates";
 import { acceptsContentEvent, shouldRecordPageChange } from "./captureState";
@@ -49,6 +50,14 @@ async function handleMessage(message: RuntimeMessage, sender: chrome.runtime.Mes
       if (!acceptsContentEvent(await getSession(), sender.tab?.id)) return { ok: true, session: await getSession() };
       await appendEvent(message.rect.kind === "redaction" ? "redaction" : "annotation", sender.tab?.id, message.rect.label, message.rect);
       return { ok: true, session: await getSession() };
+    case "CONTENT_CLEAR_ANNOTATIONS": {
+      const current = await getSession();
+      if (!acceptsContentEvent(current, sender.tab?.id)) return { ok: true, session: current };
+      const cleared = clearAnnotationEvidence(current);
+      await saveSession(cleared.session);
+      await deleteArtifacts(cleared.removedArtifactRefs);
+      return { ok: true, session: cleared.session };
+    }
     case "CONTENT_CLICKED":
       if (!acceptsContentEvent(await getSession(), sender.tab?.id)) return { ok: true, session: await getSession() };
       await appendEvent("click", sender.tab?.id, `Clicked at ${Math.round(message.point.x)}, ${Math.round(message.point.y)}`, undefined, message.point);

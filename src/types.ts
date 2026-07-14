@@ -120,6 +120,7 @@ export type RuntimeMessage =
   | { type: "TEST_AI_SETUP"; apiKey?: string }
   | { type: "SET_OVERLAY_MODE"; mode: OverlayMode }
   | { type: "CONTENT_RECT_CREATED"; rect: Rect }
+  | { type: "CONTENT_CLEAR_ANNOTATIONS" }
   | { type: "CONTENT_CLICKED"; point: ScreenPoint }
   | { type: "CONTENT_PAGE_INFO"; url: string; title: string };
 

@@ -150,7 +150,7 @@ Captures, screenshots, recordings, and PDFs stay on your computer. When you choo
 
 6. Open the extension, add your email, a fresh OpenAI API key, and choose a local output folder.
 7. Click **Start Capture**, choose the tab/window/screen in Chrome's picker, explain the flow, then click **Close Capture**.
-8. While recording, hold **B** and drag to draw an outline box, or hold **R** and drag to blur/redact an area. The marked frame is captured automatically.
+8. While recording, hold **B** and drag to draw an outline box, or hold **R** and drag to blur/redact an area. Press **C** to clear every annotation and redaction from the current capture. Marked frames are captured automatically.
 9. Create the plan to open the visual plan editor. Edits save automatically; use the screenshot dropdown or Previous/Next controls to inspect and change the exact evidence used in the PDF.
 10. Generate and download the PDF from the plan editor or the recorder.
 

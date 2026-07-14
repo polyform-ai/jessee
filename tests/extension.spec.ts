@@ -93,6 +93,10 @@ test("loads extension settings page", async () => {
     await capturePage.mouse.up();
     await capturePage.keyboard.up("r");
     await expect(capturePage.locator(".str-box.str-redact")).toHaveCount(1);
+
+    await capturePage.keyboard.press("c");
+    await expect(capturePage.locator(".str-box")).toHaveCount(0);
+    await expect(capturePage.getByText("Annotations cleared")).toBeVisible();
   } finally {
     await context.close();
   }

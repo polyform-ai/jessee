@@ -14,6 +14,7 @@ let draftRect: HTMLDivElement | undefined;
 let heldMode: "highlight" | "redact" | undefined;
 let interactionMode: "highlight" | "redact" | undefined;
 let shortcutBadge: HTMLDivElement | undefined;
+let shortcutBadgeTimeout: number | undefined;
 let suppressNextClick = false;
 
 if (!window.__screenTicketRecorderLoaded) {
@@ -35,6 +36,13 @@ if (!window.__screenTicketRecorderLoaded) {
   window.addEventListener("keydown", (event) => {
     if (mode === "off" || event.repeat || isTypingTarget(event.target)) return;
     const key = event.key.toLowerCase();
+    if (key === "c") {
+      clearAnnotations();
+      void chrome.runtime.sendMessage({ type: "CONTENT_CLEAR_ANNOTATIONS" });
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (key !== "b" && key !== "r") return;
     heldMode = key === "r" ? "redact" : "highlight";
     ensureOverlay();
@@ -177,6 +185,29 @@ function updateOverlayState(): void {
     shortcutBadge.textContent = heldMode === "redact" ? "R · Drag to redact" : heldMode === "highlight" ? "B · Drag an outline box" : "";
     shortcutBadge.style.display = heldMode ? "flex" : "none";
   }
+}
+
+function clearAnnotations(): void {
+  root?.querySelectorAll(".str-draft, .str-box").forEach((element) => element.remove());
+  startPoint = undefined;
+  draftRect = undefined;
+  interactionMode = undefined;
+  heldMode = undefined;
+  suppressNextClick = false;
+  updateOverlayState();
+  showShortcutConfirmation("C · Annotations cleared");
+}
+
+function showShortcutConfirmation(message: string): void {
+  if (!shortcutBadge) return;
+  if (shortcutBadgeTimeout) window.clearTimeout(shortcutBadgeTimeout);
+  shortcutBadge.textContent = message;
+  shortcutBadge.style.display = "flex";
+  shortcutBadgeTimeout = window.setTimeout(() => {
+    if (!shortcutBadge || heldMode) return;
+    shortcutBadge.textContent = "";
+    shortcutBadge.style.display = "none";
+  }, 1_200);
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {

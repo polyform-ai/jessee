@@ -115,6 +115,7 @@ function render(): void {
   const progress = pdfProgress ?? (current?.status === "generating" ? createProgress(current, Date.now()) : undefined);
   const history = settings?.captureHistory ?? [];
   const isMicrophoneReady = Boolean(settings?.microphoneEnabledAt);
+  const isPlanning = current?.status === "planning";
   root.innerHTML = `
     <main class="app">
       <div class="header header-panel">
@@ -140,20 +141,21 @@ function render(): void {
             </div>
           </div>
           <div class="row">
-            <button class="button primary" id="start" ${current?.status === "generating" || current?.status === "recording" || !isMicrophoneReady ? "disabled" : ""}>Start Capture</button>
+            <button class="button primary" id="start" ${current?.status === "generating" || isPlanning || current?.status === "recording" || !isMicrophoneReady ? "disabled" : ""}>Start Capture</button>
             <button class="button danger" id="stop" ${current?.status !== "recording" ? "disabled" : ""}>Close Capture</button>
           </div>
           ${current?.status === "recording" ? `<div class="stack">
             <div class="shortcut-grid" aria-label="Screen annotation shortcuts">
               <div class="shortcut"><kbd>B</kbd><span>Hold and drag an outline box</span></div>
               <div class="shortcut"><kbd>R</kbd><span>Hold and drag to redact</span></div>
+              <div class="shortcut shortcut-wide"><kbd>C</kbd><span>Clear every box and redaction</span></div>
             </div>
             <p class="hint">Use these shortcuts directly on the page you are recording. Release the key after drawing.</p>
           </div>` : ""}
           ${!isMicrophoneReady ? `<button class="button secondary" id="openMicSettings">Enable Microphone in Settings</button>` : ""}
-          ${canUsePdfAction ? `<button class="button primary" id="pdfAction">${planNeedsRefresh ? "Replan for Template" : hasTicket ? "Download PDF" : current?.captureAnalysis ? "Generate PDF" : "Create Plan"}</button>` : ""}
-          ${current?.captureAnalysis ? `<button class="button secondary" id="reviewPlan">Review plan and screenshots</button>` : ""}
-          ${current && current.status !== "idle" && current.status !== "recording" && current.status !== "generating" ? `<button class="button secondary" id="newCapture">New Capture</button>` : ""}
+          ${isPlanning ? `<button class="button primary" disabled>Creating plan…</button>` : canUsePdfAction ? `<button class="button primary" id="pdfAction">${planNeedsRefresh ? "Replan for Template" : hasTicket ? "Download PDF" : current?.captureAnalysis ? "Generate PDF" : "Create Plan"}</button>` : ""}
+          ${current?.captureAnalysis && !isPlanning ? `<button class="button secondary" id="reviewPlan">Review plan and screenshots</button>` : ""}
+          ${current && current.status !== "idle" && current.status !== "recording" && current.status !== "planning" && current.status !== "generating" ? `<button class="button secondary" id="newCapture">New Capture</button>` : ""}
         </section>
         ${progress ? `<section class="panel">
           <div class="panel-header">
