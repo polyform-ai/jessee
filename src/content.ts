@@ -11,57 +11,86 @@ let root: HTMLDivElement | undefined;
 let cursor: HTMLDivElement | undefined;
 let startPoint: { x: number; y: number } | undefined;
 let draftRect: HTMLDivElement | undefined;
+let heldMode: "highlight" | "redact" | undefined;
+let interactionMode: "highlight" | "redact" | undefined;
+let shortcutBadge: HTMLDivElement | undefined;
+let suppressNextClick = false;
 
-if (window.__screenTicketRecorderLoaded) {
-  // The background may force-inject this script after an unpacked extension reload.
-  // Avoid duplicate event listeners in tabs that already have the content script.
-} else {
+if (!window.__screenTicketRecorderLoaded) {
   window.__screenTicketRecorderLoaded = true;
 
-chrome.runtime.onMessage.addListener((message: RuntimeMessage) => {
-  if (message.type === "SET_OVERLAY_MODE") {
+  chrome.runtime.onMessage.addListener((message: RuntimeMessage) => {
+    if (message.type !== "SET_OVERLAY_MODE") return;
     mode = message.mode;
     ensureOverlay();
-    updateCursor();
-  }
-});
+    updateOverlayState();
+  });
 
-window.addEventListener("mousemove", (event) => {
-  if (!cursor) return;
-  cursor.style.transform = `translate(${event.clientX - 27}px, ${event.clientY - 27}px)`;
-});
+  window.addEventListener("mousemove", (event) => {
+    if (cursor) cursor.style.transform = `translate(${event.clientX - 27}px, ${event.clientY - 27}px)`;
+    if (!startPoint || !draftRect) return;
+    Object.assign(draftRect.style, toStyleRect(normalizeRect(startPoint.x, startPoint.y, event.clientX, event.clientY)));
+  }, true);
 
-window.addEventListener("mousedown", (event) => {
-  if (mode !== "highlight" && mode !== "redact") return;
-  ensureOverlay();
-  startPoint = { x: event.clientX, y: event.clientY };
-  draftRect = document.createElement("div");
-  draftRect.className = mode === "redact" ? "str-draft str-redact" : "str-draft str-highlight";
-  root?.appendChild(draftRect);
-  event.preventDefault();
-});
+  window.addEventListener("keydown", (event) => {
+    if (mode === "off" || event.repeat || isTypingTarget(event.target)) return;
+    const key = event.key.toLowerCase();
+    if (key !== "b" && key !== "r") return;
+    heldMode = key === "r" ? "redact" : "highlight";
+    ensureOverlay();
+    updateOverlayState();
+    event.preventDefault();
+  }, true);
 
-window.addEventListener("mousemove", (event) => {
-  if (!startPoint || !draftRect) return;
-  const rect = normalizeRect(startPoint.x, startPoint.y, event.clientX, event.clientY);
-  Object.assign(draftRect.style, toStyleRect(rect));
-});
+  window.addEventListener("keyup", (event) => {
+    const key = event.key.toLowerCase();
+    const releasedActiveShortcut = (key === "b" && heldMode === "highlight") || (key === "r" && heldMode === "redact");
+    if (!releasedActiveShortcut) return;
+    if (!startPoint) heldMode = undefined;
+    updateOverlayState();
+    event.preventDefault();
+  }, true);
 
-window.addEventListener("mouseup", (event) => {
-  if (!startPoint || !draftRect) return;
-  const rect = normalizeRect(startPoint.x, startPoint.y, event.clientX, event.clientY);
-  const kind = mode === "redact" ? "redaction" : "highlight";
-  const payload: Rect = { ...rect, kind, color: kind === "redaction" ? "#111111" : "#f59e0b" };
-  draftRect.className = kind === "redaction" ? "str-box str-redact" : "str-box str-highlight";
-  chrome.runtime.sendMessage({ type: "CONTENT_RECT_CREATED", rect: payload });
-  startPoint = undefined;
-  draftRect = undefined;
-});
+  window.addEventListener("mousedown", (event) => {
+    const drawingMode = heldMode ?? (mode === "highlight" || mode === "redact" ? mode : undefined);
+    if (!drawingMode) return;
+    interactionMode = drawingMode;
+    startPoint = { x: event.clientX, y: event.clientY };
+    draftRect = document.createElement("div");
+    draftRect.className = drawingMode === "redact" ? "str-draft str-redact" : "str-draft str-highlight";
+    root?.appendChild(draftRect);
+    event.preventDefault();
+    event.stopPropagation();
+  }, true);
 
-window.addEventListener("click", (event) => {
-  if (mode !== "cursor") return;
-  void chrome.runtime.sendMessage({ type: "CONTENT_CLICKED", point: { x: event.clientX, y: event.clientY } });
-}, true);
+  window.addEventListener("mouseup", (event) => {
+    if (!startPoint || !draftRect || !interactionMode) return;
+    const rect = normalizeRect(startPoint.x, startPoint.y, event.clientX, event.clientY);
+    const kind = interactionMode === "redact" ? "redaction" : "highlight";
+    const payload: Rect = { ...rect, kind, color: kind === "redaction" ? "#111111" : "#f59e0b" };
+    draftRect.className = kind === "redaction" ? "str-box str-redact" : "str-box str-highlight";
+    void chrome.runtime.sendMessage({ type: "CONTENT_RECT_CREATED", rect: payload });
+    startPoint = undefined;
+    draftRect = undefined;
+    interactionMode = undefined;
+    heldMode = undefined;
+    suppressNextClick = true;
+    updateOverlayState();
+    event.preventDefault();
+    event.stopPropagation();
+  }, true);
+
+  window.addEventListener("click", (event) => {
+    if (suppressNextClick) {
+      suppressNextClick = false;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (mode !== "cursor" || heldMode) return;
+    void chrome.runtime.sendMessage({ type: "CONTENT_CLICKED", point: { x: event.clientX, y: event.clientY } });
+  }, true);
+}
 
 function ensureOverlay(): void {
   if (root) return;
@@ -95,31 +124,64 @@ function ensureOverlay(): void {
       pointer-events: none;
     }
     #screen-ticket-recorder-overlay .str-highlight {
-      border: 3px solid #f59e0b;
-      background: rgba(245, 158, 11, 0.18);
+      border: 4px solid #f59e0b;
+      background: transparent;
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 4px 20px rgba(245, 158, 11, 0.35);
     }
     #screen-ticket-recorder-overlay .str-redact {
-      border: 3px solid #111111;
-      background: rgba(17, 17, 17, 0.82);
+      border: 2px solid rgba(255, 255, 255, 0.72);
+      background: rgba(24, 24, 27, 0.72);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+    #screen-ticket-recorder-overlay .str-shortcut-badge {
+      position: fixed;
+      left: 50%;
+      bottom: 28px;
+      transform: translateX(-50%);
+      display: none;
+      align-items: center;
+      border: 1px solid rgba(255, 255, 255, 0.24);
+      border-radius: 999px;
+      background: rgba(24, 24, 27, 0.9);
+      color: white;
+      padding: 9px 14px;
+      font-size: 13px;
+      font-weight: 650;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.28);
     }
   </style>`;
   document.documentElement.appendChild(root);
+  shortcutBadge = document.createElement("div");
+  shortcutBadge.className = "str-shortcut-badge";
+  root.appendChild(shortcutBadge);
 }
 
-function updateCursor(): void {
+function updateOverlayState(): void {
   if (!root) return;
   if (mode === "off") {
     root.querySelectorAll(".str-draft, .str-box").forEach((element) => element.remove());
     startPoint = undefined;
     draftRect = undefined;
+    interactionMode = undefined;
+    heldMode = undefined;
   }
   if (mode === "cursor" && !cursor) {
     cursor = document.createElement("div");
     cursor.className = "str-cursor";
     root.appendChild(cursor);
   }
-  if (cursor) cursor.style.display = mode === "cursor" ? "block" : "none";
-  root.style.pointerEvents = mode === "highlight" || mode === "redact" ? "auto" : "none";
+  if (cursor) cursor.style.display = mode === "cursor" && !heldMode ? "block" : "none";
+  root.style.pointerEvents = heldMode || mode === "highlight" || mode === "redact" ? "auto" : "none";
+  if (shortcutBadge) {
+    shortcutBadge.textContent = heldMode === "redact" ? "R · Drag to redact" : heldMode === "highlight" ? "B · Drag an outline box" : "";
+    shortcutBadge.style.display = heldMode ? "flex" : "none";
+  }
+}
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  const element = target instanceof HTMLElement ? target : undefined;
+  return Boolean(element?.isContentEditable || element?.closest("input, textarea, select, [contenteditable='true']"));
 }
 
 function normalizeRect(x1: number, y1: number, x2: number, y2: number): Rect {
@@ -138,6 +200,4 @@ function toStyleRect(rect: Rect): Partial<CSSStyleDeclaration> {
     width: `${rect.width}px`,
     height: `${rect.height}px`
   };
-}
-
 }

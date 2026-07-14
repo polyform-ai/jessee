@@ -32,6 +32,67 @@ test("loads extension settings page", async () => {
 
     await page.goto(`chrome-extension://${extensionId}/popup.html`);
     await expect(page.getByRole("button", { name: "Open Settings" })).toBeVisible();
+
+    await page.evaluate(async () => {
+      const screenshot = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=";
+      await chrome.storage.local.set({
+        recordingSession: {
+          status: "planned",
+          startedAt: Date.now() - 10_000,
+          stoppedAt: Date.now(),
+          timeline: [],
+          screenshots: [
+            { id: "shot-1", capturedAtMs: 1_000, url: "https://example.test/one", title: "First state", dataUrl: screenshot, annotations: [], redactions: [] },
+            { id: "shot-2", capturedAtMs: 2_000, url: "https://example.test/two", title: "Second state", dataUrl: screenshot, annotations: [], redactions: [] }
+          ],
+          captureAnalysis: {
+            userGoal: "Show a visual workflow",
+            bestDelivery: "A concise guide",
+            story: "Move from the first state to the second.",
+            breakingPoints: [],
+            helpfulImageMoments: [{ screenshotId: "shot-1", atSeconds: 1, reason: "Shows the first state" }]
+          }
+        }
+      });
+    });
+    await page.goto(`chrome-extension://${extensionId}/plan.html`);
+    await expect(page.getByRole("heading", { name: "Screenshot evidence" })).toBeVisible();
+    await expect(page.getByRole("img", { name: "Screenshot captured at 1s" })).toBeVisible();
+    await page.getByRole("button", { name: "Next image" }).click();
+    await expect(page.getByRole("img", { name: "Screenshot captured at 2s" })).toBeVisible();
+    await expect(page.getByText("Saved automatically", { exact: true })).toBeVisible();
+    await page.getByLabel("Goal").fill("Show the updated visual workflow");
+    await expect.poll(() => page.evaluate(async () => {
+      const stored = await chrome.storage.local.get("recordingSession");
+      return stored.recordingSession?.captureAnalysis?.userGoal;
+    })).toBe("Show the updated visual workflow");
+
+    const capturePage = await context.newPage();
+    await capturePage.route("https://jessee.test/**", (route) => route.fulfill({
+      contentType: "text/html",
+      body: "<main><h1>Keyboard annotation test</h1><p>Drag over this page.</p></main>"
+    }));
+    await capturePage.goto("https://jessee.test/demo");
+    await serviceWorker.evaluate(async () => {
+      const tabs = await chrome.tabs.query({ url: "https://jessee.test/*" });
+      if (!tabs[0]?.id) throw new Error("Missing capture test tab");
+      await chrome.tabs.sendMessage(tabs[0].id, { type: "SET_OVERLAY_MODE", mode: "cursor" });
+    });
+    await capturePage.keyboard.down("b");
+    await capturePage.mouse.move(80, 80);
+    await capturePage.mouse.down();
+    await capturePage.mouse.move(260, 180);
+    await capturePage.mouse.up();
+    await capturePage.keyboard.up("b");
+    await expect(capturePage.locator(".str-box.str-highlight")).toHaveCount(1);
+
+    await capturePage.keyboard.down("r");
+    await capturePage.mouse.move(300, 100);
+    await capturePage.mouse.down();
+    await capturePage.mouse.move(460, 200);
+    await capturePage.mouse.up();
+    await capturePage.keyboard.up("r");
+    await expect(capturePage.locator(".str-box.str-redact")).toHaveCount(1);
   } finally {
     await context.close();
   }
