@@ -41,8 +41,8 @@ it("tests both required models without selecting an older fallback", async () =>
 
 it("requests timestamped transcription segments", async () => {
   const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
-    text: "Open settings and save the change.",
-    segments: [{ start: 1.2, end: 3.8, text: "Open settings and save the change.", speaker: "A" }]
+    text: "Open settings. Save the change.",
+    segments: [{ start: 1.2, end: 3.8, text: "Open settings. Save the change.", speaker: "A" }]
   }), { status: 200 }));
 
   const result = await transcribeAudio("sk-test", "data:audio/webm;base64,aGVsbG8=");
@@ -51,7 +51,10 @@ it("requests timestamped transcription segments", async () => {
   expect(body.get("model")).toBe("gpt-4o-transcribe-diarize");
   expect(body.get("response_format")).toBe("diarized_json");
   expect(body.get("chunking_strategy")).toBe("auto");
-  expect(result.segments).toEqual([{ start: 1.2, end: 3.8, text: "Open settings and save the change." }]);
+  expect(result.segments).toEqual([
+    { start: 1.2, end: 2.413, text: "Open settings." },
+    { start: 2.413, end: 3.8, text: "Save the change." }
+  ]);
 });
 
 it("aligns a narrated moment to the first screenshot after the sentence ends", () => {
@@ -108,6 +111,7 @@ describe("parseTicket", () => {
         JSON.stringify({
           output_text: JSON.stringify({
             userGoal: "Explain a broken save flow.",
+            keyPoints: ["Saving returns an error", "The result page proves the failure"],
             bestDelivery: "Debug ticket with reproduction steps.",
             breakingPoints: ["Save button returns an error."],
             helpfulImageMoments: [{ screenshotId: "shot-1", atSeconds: 1.2, reason: "Shows the error." }],
@@ -190,6 +194,11 @@ describe("parseTicket", () => {
       screenshotAtSentenceEnd: expect.objectContaining({ id: "shot-1" })
     }));
     expect(result.analysis.userGoal).toBe("Explain a broken save flow.");
+    expect(result.analysis.keyPoints).toEqual(["Saving returns an error", "The result page proves the failure"]);
+    expect(result.analysis.storySteps).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "page-change", pageUrl: "https://example.test/results", screenshotId: "shot-1" }),
+      expect.objectContaining({ transcript: "I clicked save and got an error.", screenshotId: "shot-1" })
+    ]));
     expect(result.ticket.title).toBe("Save button fails");
     expect(result.usage.totalTokens).toBe(180);
   });

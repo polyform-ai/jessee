@@ -123,7 +123,7 @@ We're building a better way to communicate.
 
 ## Current Chrome Extension
 
-JesSee currently ships as a Chrome MV3 extension that captures screen context, microphone narration, cursor movement, and timestamped screenshots. It prepares an editable AI plan, lets you review the goal, story, and selected screenshots, then turns the walkthrough into a clean PDF through OpenAI.
+JesSee currently ships as a Chrome MV3 extension that captures screen context, microphone narration, cursor movement, and timestamped screenshots. It prepares an editable AI plan where the goal and key points remain visible beside a step-through story of timestamped transcript sentences, page changes, and selected screenshots, then turns the walkthrough into a clean PDF through OpenAI.
 
 ### What JesSee captures and sends
 

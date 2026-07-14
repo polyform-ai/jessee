@@ -40,7 +40,14 @@ test("loads extension settings page", async () => {
           status: "planned",
           startedAt: Date.now() - 10_000,
           stoppedAt: Date.now(),
-          timeline: [],
+          timeline: [{ id: "page-change", type: "url-change", atMs: 2_000, url: "https://example.test/two", title: "Second state" }],
+          transcript: {
+            text: "Open the first state. Move to the second page.",
+            segments: [
+              { start: 0.5, end: 1, text: "Open the first state." },
+              { start: 1.2, end: 2, text: "Move to the second page." }
+            ]
+          },
           screenshots: [
             { id: "shot-1", capturedAtMs: 1_000, url: "https://example.test/one", title: "First state", dataUrl: screenshot, annotations: [], redactions: [] },
             { id: "shot-2", capturedAtMs: 2_000, url: "https://example.test/two", title: "Second state", dataUrl: screenshot, annotations: [], redactions: [] }
@@ -50,15 +57,25 @@ test("loads extension settings page", async () => {
             bestDelivery: "A concise guide",
             story: "Move from the first state to the second.",
             breakingPoints: [],
-            helpfulImageMoments: [{ screenshotId: "shot-1", atSeconds: 1, reason: "Shows the first state" }]
+            keyPoints: ["The workflow starts on the first page", "The user then changes pages"],
+            helpfulImageMoments: [
+              { screenshotId: "shot-1", atSeconds: 1, reason: "Shows the first state" },
+              { screenshotId: "shot-2", atSeconds: 2, reason: "Shows the second state" }
+            ],
+            storySteps: [
+              { startSeconds: 0.5, endSeconds: 1, title: "Open the first state", narrative: "The walkthrough begins on the first page.", transcript: "Open the first state.", screenshotId: "shot-1", pageUrl: "https://example.test/one", pageTitle: "First state", kind: "narration" },
+              { startSeconds: 2, endSeconds: 2, title: "Opened Second state", narrative: "The walkthrough moves to the second page.", transcript: "Move to the second page.", screenshotId: "shot-2", pageUrl: "https://example.test/two", pageTitle: "Second state", kind: "page-change" }
+            ]
           }
         }
       });
     });
     await page.goto(`chrome-extension://${extensionId}/plan.html`);
-    await expect(page.getByRole("heading", { name: "Screenshot evidence" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Story timeline" })).toBeVisible();
+    await expect(page.getByRole("blockquote")).toHaveText("Open the first state.");
     await expect(page.getByRole("img", { name: "Screenshot captured at 1s" })).toBeVisible();
-    await page.getByRole("button", { name: "Next image" }).click();
+    await page.getByRole("button", { name: "Next story step" }).click();
+    await expect(page.getByText("Page changed to", { exact: true })).toBeVisible();
     await expect(page.getByRole("img", { name: "Screenshot captured at 2s" })).toBeVisible();
     await expect(page.getByText("Saved automatically", { exact: true })).toBeVisible();
     await page.getByLabel("Goal").fill("Show the updated visual workflow");

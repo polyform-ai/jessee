@@ -1,5 +1,6 @@
 import { dataUrlToBlob } from "./dataUrl";
-import type { CaptureAnalysis, OpenAiUsage, RecordingSession, ScreenshotEvidence, TicketDraft, TicketTemplate, TranscriptionResult } from "./types";
+import { buildCaptureStory, splitTranscriptIntoSentences } from "./captureStory";
+import type { CaptureAnalysis, CaptureStoryStep, OpenAiUsage, RecordingSession, ScreenshotEvidence, TicketDraft, TicketTemplate, TimelineEvent, TranscriptionResult } from "./types";
 
 interface ResponsesOutputText {
   type: "output_text";
@@ -66,11 +67,11 @@ export async function transcribeAudio(apiKey: string, audioDataUrl?: string): Pr
   };
   return {
     text: payload.text ?? "",
-    segments: (payload.segments ?? []).map((segment) => ({
+    segments: splitTranscriptIntoSentences((payload.segments ?? []).map((segment) => ({
       start: segment.start ?? 0,
       end: segment.end ?? 0,
       text: segment.text ?? ""
-    }))
+    })))
   };
 }
 
@@ -219,7 +220,7 @@ export async function analyzeCapture(
   sessionOrTimeline: RecordingSession | unknown[],
   frames?: unknown[]
 ): Promise<{ analysis: CaptureAnalysis; usage: OpenAiUsage }> {
-  const timeline = Array.isArray(sessionOrTimeline)
+  const timeline = (Array.isArray(sessionOrTimeline)
     ? sessionOrTimeline
     : sessionOrTimeline.timeline.map((event) => ({
         type: event.type,
@@ -231,7 +232,7 @@ export async function analyzeCapture(
         screenshotId: event.screenshotId,
         rect: event.rect,
         point: event.point
-      }));
+      }))) as TimelineEvent[];
   const evidenceFrames = frames ?? (Array.isArray(sessionOrTimeline)
     ? []
     : sessionOrTimeline.screenshots.map((shot) => ({
@@ -252,13 +253,16 @@ export async function analyzeCapture(
     "You prepare screen captures before final document generation.",
     "Start with the transcript and timestamped timeline. Identify what the user is trying to communicate before looking for screenshots.",
     "Return only valid JSON. Do not wrap it in code fences.",
-    "The JSON schema is: userGoal:string, bestDelivery:string, breakingPoints:string[], helpfulImageMoments:{screenshotId?:string, atSeconds:number, reason:string}[], story:string.",
+    "The JSON schema is: userGoal:string, keyPoints:string[], bestDelivery:string, breakingPoints:string[], story:string, storySteps:{startSeconds:number,endSeconds:number,title:string,narrative:string,transcript:string,screenshotId?:string,pageUrl?:string,pageTitle?:string,kind:'narration'|'page-change'|'action'}[].",
     "userGoal should capture the user's intended outcome.",
+    "keyPoints should preserve every important claim, request, problem, expectation, and decision made by the user. Prefer detail over compression.",
     "bestDelivery should provide a detailed outline of the best document shape for that goal and the selected template.",
     "breakingPoints should comprehensively list every moment where the workflow changed, failed, became confusing, introduced important context, or established a decision or expected result.",
-    "helpfulImageMoments should be generous and detailed. Add evidence for every meaningful spoken segment, action, page change, annotation, redaction, error, and visible state transition unless the frame is truly redundant.",
-    "Transcript timestamps mark when a segment starts. For screenshot selection, use selectionAtSeconds and screenshotAtSentenceEnd so the chosen image reflects the completed sentence and resulting UI state, not the beginning of the narration.",
-    "Prefer the first screenshot at or after a segment ends. Use the closest prior screenshot only when no later screenshot exists. Return the exact screenshotId from evidenceFrames whenever possible.",
+    "storySteps are the detailed chronological plan. Create a step for every meaningful transcript sentence, action, page change, annotation, redaction, error, and visible state transition unless it is truly redundant.",
+    "Each story step must explain what is happening in narrative, preserve the exact relevant transcript sentence in transcript, and select the screenshot that best illustrates the resulting state.",
+    "Every URL change in the timeline must appear as a page-change story step with pageUrl and pageTitle. Page changes are part of the story, not incidental metadata.",
+    "Transcript timestamps mark when a sentence starts and ends. For screenshot selection, use selectionAtSeconds and screenshotAtSentenceEnd so the chosen image reflects the completed sentence and resulting UI state, not the beginning of the narration.",
+    "Prefer the first screenshot at or after a sentence ends. Use the closest prior screenshot only when no later screenshot exists. Return the exact screenshotId from evidenceFrames whenever possible.",
     "story should be a detailed chronological walkthrough that preserves the full narrative from the audio rather than a short summary.",
     `Selected template: ${template.name}.`,
     `Template instructions: ${template.instructions}`
@@ -306,7 +310,7 @@ export async function analyzeCapture(
 
   const payload = (await response.json()) as ResponsesPayload;
   return {
-    analysis: alignAnalysisToSentenceEnds(parseCaptureAnalysis(extractOutputText(payload)), transcript, evidenceFrames),
+    analysis: alignAnalysisToSentenceEnds(parseCaptureAnalysis(extractOutputText(payload)), transcript, evidenceFrames, timeline),
     usage: usageFromPayload(payload)
   };
 }
@@ -315,6 +319,7 @@ function parseCaptureAnalysis(text: string): CaptureAnalysis {
   const parsed = JSON.parse(stripCodeFence(text)) as Partial<CaptureAnalysis>;
   return {
     userGoal: parsed.userGoal || "",
+    keyPoints: Array.isArray(parsed.keyPoints) ? parsed.keyPoints.filter((point): point is string => typeof point === "string") : [],
     bestDelivery: parsed.bestDelivery || "",
     breakingPoints: Array.isArray(parsed.breakingPoints) ? parsed.breakingPoints : [],
     helpfulImageMoments: Array.isArray(parsed.helpfulImageMoments)
@@ -324,7 +329,25 @@ function parseCaptureAnalysis(text: string): CaptureAnalysis {
           reason: typeof moment.reason === "string" ? moment.reason : ""
         }))
       : [],
-    story: parsed.story || ""
+    story: parsed.story || "",
+    storySteps: Array.isArray(parsed.storySteps)
+      ? parsed.storySteps.map(parseStoryStep)
+      : []
+  };
+}
+
+function parseStoryStep(step: Partial<CaptureStoryStep>): CaptureStoryStep {
+  const startSeconds = typeof step.startSeconds === "number" ? step.startSeconds : 0;
+  return {
+    startSeconds,
+    endSeconds: typeof step.endSeconds === "number" ? step.endSeconds : startSeconds,
+    title: typeof step.title === "string" ? step.title : "Story step",
+    narrative: typeof step.narrative === "string" ? step.narrative : "",
+    transcript: typeof step.transcript === "string" ? step.transcript : "",
+    screenshotId: typeof step.screenshotId === "string" ? step.screenshotId : undefined,
+    pageUrl: typeof step.pageUrl === "string" ? step.pageUrl : undefined,
+    pageTitle: typeof step.pageTitle === "string" ? step.pageTitle : undefined,
+    kind: step.kind === "page-change" || step.kind === "action" ? step.kind : "narration"
   };
 }
 
@@ -334,6 +357,10 @@ export function selectScreenshotsForAnalysis(screenshots: ScreenshotEvidence[], 
   const addUnique = (shot?: ScreenshotEvidence) => {
     if (shot && !selected.some((existing) => existing.id === shot.id)) selected.push(shot);
   };
+
+  for (const step of analysis.storySteps ?? []) {
+    if (step.screenshotId) addUnique(imageScreenshots.find((shot) => shot.id === step.screenshotId));
+  }
 
   for (const moment of analysis.helpfulImageMoments) {
     if (moment.screenshotId) addUnique(imageScreenshots.find((shot) => shot.id === moment.screenshotId));
@@ -351,11 +378,18 @@ export function selectScreenshotsForAnalysis(screenshots: ScreenshotEvidence[], 
 export function alignAnalysisToSentenceEnds(
   analysis: CaptureAnalysis,
   transcript: TranscriptionResult,
-  frames: unknown[]
+  frames: unknown[],
+  timeline: TimelineEvent[] = []
 ): CaptureAnalysis {
-  if (transcript.segments.length === 0) return analysis;
+  const screenshots = frames.filter((frame): frame is Pick<ScreenshotEvidence, "id" | "capturedAtMs" | "url" | "title"> => {
+    if (!frame || typeof frame !== "object") return false;
+    const candidate = frame as Partial<ScreenshotEvidence>;
+    return typeof candidate.id === "string" && typeof candidate.capturedAtMs === "number";
+  });
+  const storySteps = buildCaptureStory(analysis, transcript, timeline, screenshots);
   return {
     ...analysis,
+    storySteps,
     helpfulImageMoments: analysis.helpfulImageMoments.map((moment) => {
       const segment = closestTranscriptSegment(transcript, moment.atSeconds);
       if (!segment) return moment;
@@ -365,7 +399,11 @@ export function alignAnalysisToSentenceEnds(
         atSeconds: segment.end,
         screenshotId: frame?.id ?? moment.screenshotId
       };
-    })
+    }).concat(
+      storySteps
+        .filter((step) => step.screenshotId && !analysis.helpfulImageMoments.some((moment) => moment.screenshotId === step.screenshotId))
+        .map((step) => ({ screenshotId: step.screenshotId, atSeconds: step.endSeconds, reason: step.narrative || step.title }))
+    )
   };
 }
 

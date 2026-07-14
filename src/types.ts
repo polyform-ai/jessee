@@ -88,6 +88,7 @@ export interface TranscriptionResult {
 
 export interface CaptureAnalysis {
   userGoal: string;
+  keyPoints?: string[];
   bestDelivery: string;
   breakingPoints: string[];
   helpfulImageMoments: Array<{
@@ -96,6 +97,19 @@ export interface CaptureAnalysis {
     reason: string;
   }>;
   story: string;
+  storySteps?: CaptureStoryStep[];
+}
+
+export interface CaptureStoryStep {
+  startSeconds: number;
+  endSeconds: number;
+  title: string;
+  narrative: string;
+  transcript: string;
+  screenshotId?: string;
+  pageUrl?: string;
+  pageTitle?: string;
+  kind?: "narration" | "page-change" | "action";
 }
 
 export interface TicketDraft {
