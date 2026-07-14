@@ -49,12 +49,64 @@
     @apply min-h-screen max-w-4xl bg-zinc-50 p-6;
   }
 
+  .plan-page {
+    @apply min-h-screen bg-zinc-50 p-6;
+  }
+
+  .plan-header {
+    @apply mx-auto mb-5 flex max-w-7xl items-center justify-between gap-4 border border-zinc-200/80 bg-white/95 p-4 shadow-sm;
+    border-radius: 12px;
+  }
+
+  .plan-layout {
+    @apply mx-auto grid max-w-7xl items-start gap-5;
+    grid-template-columns: minmax(320px, 0.8fr) minmax(520px, 1.4fr);
+  }
+
+  .plan-copy {
+    @apply sticky top-6 max-h-[calc(100vh-3rem)] overflow-y-auto;
+  }
+
+  .evidence-inspector {
+    @apply min-w-0;
+  }
+
   .stack {
     @apply flex flex-col gap-3;
   }
 
   .row {
     @apply flex gap-2;
+  }
+
+  .flow-actions {
+    @apply grid grid-cols-2 gap-2;
+  }
+
+  .flow-actions > .button:first-child {
+    @apply col-span-2;
+  }
+
+  .flow-actions > .button:nth-child(2):last-child {
+    @apply col-span-2;
+  }
+
+  .shortcut-grid {
+    @apply grid grid-cols-2 gap-2;
+  }
+
+  .shortcut {
+    @apply flex items-center gap-2 border border-zinc-200 bg-zinc-50 p-2 text-xs leading-4 text-zinc-600;
+    border-radius: 8px;
+  }
+
+  .shortcut-wide {
+    @apply col-span-2;
+  }
+
+  .shortcut kbd {
+    @apply flex size-7 shrink-0 items-center justify-center border border-zinc-300 bg-white font-mono text-xs font-bold text-zinc-950 shadow-sm;
+    border-radius: 6px;
   }
 
   .header {
@@ -125,6 +177,10 @@
     @apply flex-none border-zinc-200 bg-zinc-50 text-zinc-700;
   }
 
+  .button.compact {
+    @apply min-h-8 flex-none px-3 py-1.5;
+  }
+
   .button:focus-visible {
     @apply outline-none ring-2 ring-zinc-950/15 ring-offset-2 ring-offset-white;
   }
@@ -151,52 +207,171 @@
     border-radius: 999px;
   }
 
-  .progress-track {
-    @apply h-2 w-full overflow-hidden bg-zinc-100;
-    border-radius: 999px;
+  .save-status {
+    @apply text-xs font-medium text-zinc-500;
   }
 
-  .progress-fill {
-    @apply h-full bg-[#5B5EF8] transition-all duration-500 ease-out;
-    border-radius: 999px;
+  .moment-tabs {
+    @apply flex flex-wrap gap-2;
   }
 
-  .progress-steps {
-    @apply grid grid-cols-2 gap-2;
-  }
-
-  .progress-step {
-    @apply flex min-h-10 items-center gap-2 border border-zinc-200 bg-zinc-50 px-2.5 py-2 text-xs text-zinc-500;
+  .moment-tab {
+    @apply flex size-8 items-center justify-center border border-zinc-200 bg-zinc-50 text-xs font-semibold text-zinc-600 transition;
     border-radius: 8px;
   }
 
-  .progress-step span {
-    @apply flex size-5 shrink-0 items-center justify-center border border-zinc-200 bg-white text-[10px] font-semibold text-zinc-500;
-    border-radius: 999px;
-  }
-
-  .progress-step strong {
-    @apply min-w-0 text-xs font-medium leading-4;
-  }
-
-  .progress-step.active {
-    @apply border-[#5B5EF8] bg-[#5B5EF8]/10 text-zinc-950 shadow-sm;
-  }
-
-  .progress-step.active span {
+  .moment-tab:hover,
+  .moment-tab.active {
     @apply border-[#5B5EF8] bg-[#5B5EF8] text-white;
   }
 
-  .progress-step.active strong {
-    @apply font-semibold;
+  .moment-tab.page-change:not(.active) {
+    @apply border-sky-200 bg-sky-50 text-sky-700;
   }
 
-  .progress-step.done {
-    @apply border-emerald-200 bg-emerald-50 text-emerald-900;
+  .story-stepper {
+    @apply flex items-center justify-between gap-3 border-b border-zinc-100 pb-3;
   }
 
-  .progress-step.done span {
-    @apply border-emerald-600 bg-emerald-600 text-white;
+  .story-stepper span {
+    @apply shrink-0 text-xs font-semibold text-zinc-500;
+  }
+
+  .story-card {
+    @apply flex flex-col gap-3 border border-zinc-200 bg-zinc-50 p-4;
+    border-radius: 10px;
+  }
+
+  .story-meta {
+    @apply flex items-center justify-between gap-3 text-xs font-medium text-zinc-500;
+  }
+
+  .story-kind {
+    @apply inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700;
+  }
+
+  .story-kind.page-change {
+    @apply border-sky-200 bg-sky-50 text-sky-700;
+  }
+
+  .story-kind.action {
+    @apply border-amber-200 bg-amber-50 text-amber-700;
+  }
+
+  .story-kind.manual {
+    @apply border-emerald-200 bg-emerald-50 text-emerald-700;
+  }
+
+  .transcript-quote {
+    @apply border-l-4 border-[#5B5EF8] bg-white px-4 py-3;
+  }
+
+  .transcript-quote > span,
+  .page-context > span {
+    @apply block text-[10px] font-semibold uppercase tracking-wide text-zinc-500;
+  }
+
+  .transcript-quote blockquote {
+    @apply m-0 mt-1 text-sm leading-6 text-zinc-800;
+  }
+
+  .page-context {
+    @apply flex flex-col gap-1 border border-sky-100 bg-sky-50 p-3;
+    border-radius: 8px;
+  }
+
+  .page-context strong {
+    @apply text-sm font-semibold text-sky-950;
+  }
+
+  .page-context small {
+    @apply break-all text-xs leading-5 text-sky-700;
+  }
+
+  .transcript-panel {
+    @apply border border-zinc-200 bg-zinc-50;
+    border-radius: 8px;
+  }
+
+  .transcript-panel summary {
+    @apply flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-xs font-semibold text-zinc-800;
+  }
+
+  .transcript-panel summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .transcript-panel summary strong {
+    @apply font-medium text-zinc-500;
+  }
+
+  .transcript-list {
+    @apply flex max-h-80 flex-col gap-1 overflow-y-auto border-t border-zinc-200 p-2;
+  }
+
+  .transcript-row {
+    @apply flex w-full cursor-pointer items-start gap-3 border-0 bg-transparent p-2 text-left text-xs leading-5 text-zinc-700 transition;
+    border-radius: 6px;
+  }
+
+  .transcript-row:hover,
+  .transcript-row.active {
+    @apply bg-white text-zinc-950 shadow-sm;
+  }
+
+  .transcript-row time {
+    @apply w-16 shrink-0 pt-px font-mono text-[10px] font-semibold text-zinc-400;
+  }
+
+  .transcript-row span {
+    @apply min-w-0 flex-1;
+  }
+
+  .transcript-empty {
+    @apply p-3 text-xs leading-5 text-zinc-500;
+  }
+
+  .image-stepper {
+    @apply flex items-center justify-between gap-3;
+  }
+
+  .image-stepper span {
+    @apply shrink-0 text-xs font-medium text-zinc-500;
+  }
+
+  .screenshot-stage {
+    @apply flex min-h-96 items-center justify-center overflow-hidden border border-zinc-200 bg-zinc-950 p-2;
+    border-radius: 10px;
+  }
+
+  .screenshot-stage img {
+    @apply block max-h-[68vh] max-w-full object-contain;
+  }
+
+  .screenshot-empty {
+    @apply flex min-h-64 items-center justify-center border border-dashed border-zinc-300 bg-zinc-50 p-8 text-center text-sm leading-6 text-zinc-500;
+    border-radius: 10px;
+  }
+
+  .screenshot-meta {
+    @apply flex items-start gap-3 text-xs leading-5;
+  }
+
+  .screenshot-meta strong {
+    @apply shrink-0 text-zinc-950;
+  }
+
+  .screenshot-meta span {
+    @apply min-w-0 break-all text-zinc-500;
+  }
+
+  .empty-state {
+    @apply mx-auto mt-24 flex max-w-lg flex-col items-center gap-2 border border-zinc-200 bg-white p-10 text-center shadow-sm;
+    border-radius: 12px;
+  }
+
+  .empty-state p {
+    @apply text-sm leading-6 text-zinc-500;
   }
 
   .field {
@@ -212,6 +387,10 @@
   .field textarea {
     @apply w-full border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400;
     border-radius: 8px;
+  }
+
+  .field-help {
+    @apply text-[11px] leading-4 text-zinc-400;
   }
 
   .field select {
@@ -256,17 +435,54 @@
     border-radius: 8px;
   }
 
-  .template-row {
+  .capture-row {
     @apply flex items-start justify-between gap-3 border border-zinc-200 bg-zinc-50 p-3;
     border-radius: 8px;
   }
 
-  .template-row > div {
+  .capture-row > div {
     @apply min-w-0 flex-1;
   }
 
-  .template-row strong {
+  .capture-row strong {
     @apply block text-sm font-semibold text-zinc-950;
+  }
+
+  .history-panel summary {
+    @apply flex cursor-pointer list-none items-center justify-between gap-3;
+  }
+
+  .history-panel summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .history-panel summary > span:first-child {
+    @apply flex min-w-0 flex-col;
+  }
+
+  .history-panel summary strong {
+    @apply text-sm font-semibold text-zinc-950;
+  }
+
+  .history-panel summary small {
+    @apply mt-1 text-xs leading-5 text-zinc-500;
+  }
+
+  .history-panel summary::after {
+    content: "⌄";
+    @apply ml-auto text-lg leading-none text-zinc-400 transition-transform;
+  }
+
+  .history-panel[open] summary::after {
+    @apply rotate-180;
+  }
+
+  .history-count {
+    @apply flex min-w-6 items-center justify-center rounded-full bg-zinc-100 px-2 py-1 text-[11px] font-semibold text-zinc-600;
+  }
+
+  .history-list {
+    @apply mt-1;
   }
 
   .hint {
@@ -279,5 +495,19 @@
 
   .error {
     @apply whitespace-pre-wrap text-xs font-medium leading-5 text-rose-700;
+  }
+
+  @media (max-width: 900px) {
+    .plan-header {
+      @apply items-start;
+    }
+
+    .plan-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .plan-copy {
+      @apply static max-h-none overflow-visible;
+    }
   }
 }

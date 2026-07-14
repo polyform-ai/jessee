@@ -1,5 +1,8 @@
 import "./ui.css";
-import { artifactRef, hydrateSession, putArtifact } from "./artifacts";
+import { artifactRef, putArtifact } from "./artifacts";
+import { shouldStartWithFreshCapture } from "./captureHome";
+import { saveCaptureHistory } from "./captureHistory";
+import { getCaptureFlowView, type CaptureFlowButton } from "./captureFlow";
 import { dataUrlToBlob } from "./dataUrl";
 import {
   chooseExportFolder,
@@ -12,11 +15,10 @@ import {
   writeRecordingText,
   writeScreenshot
 } from "./localFiles";
-import { createTicketPdf, ticketPdfFilename } from "./pdf";
+import { downloadPlanPdf } from "./pdfDownload";
 import { visiblePageRects } from "./captureEvidence";
-import { getSession, getSettings, pruneCaptureHistory, resetSession, saveSession, saveSettings, upsertCaptureHistory } from "./storage";
-import { getSelectedTemplate, getTemplates, planRequiresRefresh, templateSignature } from "./templates";
-import type { CaptureAnalysis, CaptureHistoryItem, OverlayMode, RecordingSession, RuntimeMessage, ScreenshotEvidence, TimelineEvent } from "./types";
+import { getSession, getSettings, pruneCaptureHistory, resetSession, saveSession, saveSettings } from "./storage";
+import type { CaptureHistoryItem, RecordingSession, RuntimeMessage, ScreenshotEvidence, TimelineEvent } from "./types";
 import { postWebhook } from "./webhook";
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -34,34 +36,16 @@ let screenshotInterval: number | undefined;
 let screenshotInFlight = false;
 let queuedAnnotationCapture = false;
 let liveRenderInterval: number | undefined;
-let pdfProgressInterval: number | undefined;
 let localStatus = "";
-let selectedTemplateName = "Debug Ticket";
 let settingsCache: Awaited<ReturnType<typeof getSettings>> | undefined;
-let pdfProgress: PdfProgress | undefined;
 let cleanupRan = false;
 let lastScreenshotFingerprint: string | undefined;
 let lastStoredScreenshotAtMs = -Infinity;
-let overlayMode: OverlayMode = "cursor";
 let onboardingDraft: { email: string; apiKey: string; retentionDays: number } | undefined;
+let initialSessionChecked = false;
 const videoChunks: Blob[] = [];
 const audioChunks: Blob[] = [];
 
-interface PdfProgress {
-  startedAt: number;
-  estimateSeconds: number;
-  percent: number;
-  label: string;
-}
-
-const PDF_PROGRESS_STEPS = [
-  { label: "Preparing capture", threshold: 6 },
-  { label: "Transcribing narration", threshold: 18 },
-  { label: "Analyzing transcript", threshold: 38 },
-  { label: "Selecting screenshots", threshold: 58 },
-  { label: "Writing document", threshold: 78 },
-  { label: "Building PDF", threshold: 92 }
-];
 const CAPTURE_INTERVAL_MS = 500;
 const MAX_SIMILAR_FRAME_GAP_MS = 5_000;
 
@@ -70,7 +54,6 @@ void refresh();
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local") return;
   const latestEvent = (changes.recordingSession?.newValue as RecordingSession | undefined)?.timeline.at(-1);
-  if (latestEvent?.type === "url-change") overlayMode = "cursor";
   if (latestEvent?.type === "annotation" || latestEvent?.type === "redaction") requestAnnotationCapture();
   if (changes.recordingSession || changes.settings) void refresh();
 });
@@ -82,9 +65,14 @@ async function refresh(): Promise<void> {
     cleanupRan = true;
     void cleanupOldCaptures(settingsCache.retentionDays ?? 30);
   }
-  selectedTemplateName = getSelectedTemplate(settingsCache).name;
   const response = await send({ type: "GET_SESSION" });
   session = response.session;
+  if (!initialSessionChecked && session && shouldStartWithFreshCapture(session)) {
+    initialSessionChecked = true;
+    session = await resetSession();
+  } else {
+    initialSessionChecked = true;
+  }
   render();
 }
 
@@ -96,18 +84,13 @@ function render(): void {
     return;
   }
   const hasEvidence = Boolean(current && (current.screenshots.length > 0 || current.audioDataUrl || current.videoDataUrl));
-  const selectedTemplate = settings ? getSelectedTemplate(settings) : undefined;
-  const planNeedsRefresh = planRequiresRefresh(current, selectedTemplate);
-  const canUsePdfAction = current?.status === "stopped" || current?.status === "planned" || current?.status === "ready" || (current?.status === "error" && hasEvidence);
-  const hasTicket = Boolean(current?.ticket);
-  const templates = settings ? getTemplates(settings) : [];
-  const selectedTemplateId = settings?.selectedTemplateId ?? "debug-ticket";
   const recordingDuration = formatDuration(current?.startedAt, current?.stoppedAt);
   const status = statusLabel(current?.status);
-  const showCaptureSummary = Boolean(current?.startedAt || current?.screenshots.length || current?.ticket);
-  const progress = pdfProgress ?? (current?.status === "generating" ? createProgress(current, Date.now()) : undefined);
+  const showCaptureSummary = Boolean(current && ["stopped", "planning", "planned", "ready", "error"].includes(current.status) && (current.startedAt || current.screenshots.length));
+  const showStatusDetails = Boolean(localStatus || current?.error || current?.analysisError || current?.exportFolderName || current?.localExportWarning);
   const history = settings?.captureHistory ?? [];
   const isMicrophoneReady = Boolean(settings?.microphoneEnabledAt);
+  const flow = getCaptureFlowView(current, isMicrophoneReady, hasEvidence);
   root.innerHTML = `
     <main class="app">
       <div class="header header-panel">
@@ -125,62 +108,31 @@ function render(): void {
         </div>
       </div>
       <div class="stack">
-        <section class="panel">
+        ${current?.status !== "generating" ? `<section class="panel">
           <div class="panel-header">
             <div>
-              <h2>Capture Context</h2>
-              <p>Explain it once. JesSee turns it into a clean PDF.</p>
+              <h2>${escapeHtml(flow.title)}</h2>
+              <p>${escapeHtml(flow.description)}</p>
             </div>
           </div>
-          <div class="row">
-            <button class="button primary" id="start" ${current?.status === "generating" || current?.status === "recording" || !isMicrophoneReady ? "disabled" : ""}>Start Capture</button>
-            <button class="button danger" id="stop" ${current?.status !== "recording" ? "disabled" : ""}>End Capture</button>
-          </div>
-          ${current?.status === "recording" ? `<div class="stack">
-            <div class="row" aria-label="Screen annotation tools">
-              <button class="button ${overlayMode === "cursor" ? "primary" : "secondary"}" id="cursorMode">Pointer</button>
-              <button class="button ${overlayMode === "highlight" ? "primary" : "secondary"}" id="highlightMode">Highlight</button>
-              <button class="button ${overlayMode === "redact" ? "primary" : "secondary"}" id="redactMode">Redact</button>
+          ${flow.buttons.length ? `<div class="flow-actions">${flow.buttons.map(renderFlowButton).join("")}</div>` : ""}
+          ${flow.showShortcuts ? `<div class="stack">
+            <div class="shortcut-grid" aria-label="Screen annotation shortcuts">
+              <div class="shortcut"><kbd>B</kbd><span>Hold and drag an outline box</span></div>
+              <div class="shortcut"><kbd>R</kbd><span>Hold and drag to redact</span></div>
+              <div class="shortcut shortcut-wide"><kbd>C</kbd><span>Clear every box and redaction</span></div>
             </div>
-            <p class="hint">Choose Highlight or Redact, then drag directly on the page. The marked frame is timestamped for the PDF plan.</p>
+            <p class="hint">Use these shortcuts directly on the page you are recording. Release the key after drawing.</p>
           </div>` : ""}
-          ${!isMicrophoneReady ? `<button class="button secondary" id="openMicSettings">Enable Microphone in Settings</button>` : ""}
-          <button class="button primary" id="pdfAction" ${!canUsePdfAction ? "disabled" : ""}>${planNeedsRefresh ? "Replan for Template" : hasTicket ? "Download PDF" : current?.captureAnalysis ? "Generate PDF" : "Create Plan"}</button>
-        </section>
-        ${progress ? `<section class="panel">
+        </section>` : ""}
+        ${current?.status === "generating" ? `<section class="panel">
           <div class="panel-header">
             <div>
-              <h2>Creating PDF</h2>
-              <p>${escapeHtml(progress.label)} · ${formatProgressTiming(progress)}</p>
+              <h2>Building your PDF</h2>
+              <p>Rendering the reviewed visual story with its selected local screenshots.</p>
             </div>
-          </div>
-          <div class="progress-track" aria-label="PDF creation progress">
-            <div class="progress-fill" style="width: ${Math.round(progress.percent)}%"></div>
-          </div>
-          <div class="progress-steps">
-            ${PDF_PROGRESS_STEPS.map((step, index) => {
-              const status = progressStepStatus(progress, index);
-              return `<div class="progress-step ${status}">
-                <span>${status === "done" ? "OK" : index + 1}</span>
-                <strong>${escapeHtml(step.label)}</strong>
-              </div>`;
-            }).join("")}
           </div>
         </section>` : ""}
-        <section class="panel">
-          <div class="panel-header">
-            <div>
-              <h2>Document Type</h2>
-              <p>Choose how JesSee should organize the PDF.</p>
-            </div>
-          </div>
-          <div class="field">
-            <label for="templateSelect">Template</label>
-            <select id="templateSelect" ${current?.status === "recording" || current?.status === "generating" ? "disabled" : ""}>
-              ${templates.map((template) => `<option value="${escapeHtml(template.id)}" ${template.id === selectedTemplateId ? "selected" : ""}>${escapeHtml(template.name)}</option>`).join("")}
-            </select>
-          </div>
-        </section>
         ${showCaptureSummary ? `<section class="panel">
           <div class="panel-header">
             <div>
@@ -191,18 +143,15 @@ function render(): void {
           <div class="meta-grid">
             <div class="meta"><span>Images Taken</span><strong>${current?.screenshots.length ?? 0}</strong></div>
             <div class="meta"><span>Capture</span><strong>${recordingDuration}</strong></div>
-            <div class="meta"><span>Template</span><strong>${escapeHtml(current?.ticket?.templateName ?? selectedTemplateName)}</strong></div>
+            <div class="meta"><span>Story Steps</span><strong>${current?.captureAnalysis?.storySteps?.length ?? 0}</strong></div>
           </div>
         </section>` : ""}
-        ${current?.captureAnalysis ? renderPlanReview(current) : ""}
-        <section class="panel">
+        ${showStatusDetails ? `<section class="panel">
           ${localStatus ? `<p class="success">${escapeHtml(localStatus)}</p>` : ""}
           ${!localStatus && (current?.error || current?.analysisError) ? `<p class="error">${escapeHtml(current?.analysisError ?? current?.error ?? "")}</p>` : ""}
           ${current?.exportFolderName ? `<p class="hint">Capture folder: ${escapeHtml(current.exportFolderName)}</p>` : ""}
           ${current?.localExportWarning ? `<p class="hint">${escapeHtml(current.localExportWarning)}</p>` : ""}
-          ${planNeedsRefresh ? `<p class="hint">The template changed after this plan was created. Replan before generating the PDF.</p>` : ""}
-          <p class="hint">Sharp, cursor-inclusive screenshots are timestamped and paired with your narration when the PDF is created.</p>
-        </section>
+        </section>` : ""}
         ${renderHistory(history)}
       </div>
     </main>
@@ -211,17 +160,10 @@ function render(): void {
   bind("#start", "click", () => startRecording());
   bind("#openMicSettings", "click", () => chrome.runtime.openOptionsPage());
   bind("#stop", "click", () => stopRecording());
-  bind("#cursorMode", "click", () => setOverlayMode("cursor"));
-  bind("#highlightMode", "click", () => setOverlayMode("highlight"));
-  bind("#redactMode", "click", () => setOverlayMode("redact"));
-  bind("#pdfAction", "click", () => {
-    if (planNeedsRefresh || !session?.captureAnalysis) void prepareCapturePlan();
-    else if (session?.ticket) void downloadPdfInPage(session);
-    else void generateAndDownload();
-  });
-  bind("#savePlan", "click", () => {
-    void savePlanEdits();
-  });
+  bind("#reviewPlan", "click", () => openPlanPage());
+  bind("#newCapture", "click", () => startFreshCapture());
+  bind("#createPlan", "click", () => prepareCapturePlan());
+  bind("#downloadPdf", "click", () => session && downloadPlanPdf(session));
   for (const button of document.querySelectorAll<HTMLButtonElement>(".load-history")) {
     button.addEventListener("click", async () => {
       const item = settings?.captureHistory?.find((capture) => capture.id === button.dataset.captureId);
@@ -231,11 +173,12 @@ function render(): void {
       await refresh();
     });
   }
-  bind("#templateSelect", "change", (event) => {
-    void selectTemplate((event.target as HTMLSelectElement).value);
-  });
   bind("#settings", "click", () => chrome.runtime.openOptionsPage());
   updateLiveRender();
+}
+
+function renderFlowButton(button: CaptureFlowButton): string {
+  return `<button class="button ${button.tone}" id="${button.id}">${escapeHtml(button.label)}</button>`;
 }
 
 function renderOnboarding(settings: Awaited<ReturnType<typeof getSettings>> | undefined): void {
@@ -295,72 +238,16 @@ function renderOnboarding(settings: Awaited<ReturnType<typeof getSettings>> | un
   bind("#settings", "click", () => chrome.runtime.openOptionsPage());
 }
 
-function renderPlanReview(current: RecordingSession): string {
-  const analysis = current.captureAnalysis;
-  if (!analysis) return "";
-  return `<section class="panel">
-    <div class="panel-header">
-      <div>
-        <h2>Plan Review</h2>
-        <p>Adjust what JesSee understood before generating the PDF.</p>
-      </div>
-    </div>
-    <div class="field">
-      <label for="planGoal">Goal</label>
-      <textarea id="planGoal" rows="3">${escapeHtml(analysis.userGoal)}</textarea>
-    </div>
-    <div class="field">
-      <label for="planDelivery">Best delivery</label>
-      <textarea id="planDelivery" rows="3">${escapeHtml(analysis.bestDelivery)}</textarea>
-    </div>
-    <div class="field">
-      <label for="planStory">Story</label>
-      <textarea id="planStory" rows="4">${escapeHtml(analysis.story)}</textarea>
-    </div>
-    <div class="field">
-      <label for="planBreakingPoints">Breaking points</label>
-      <textarea id="planBreakingPoints" rows="4">${escapeHtml(analysis.breakingPoints.join("\n"))}</textarea>
-    </div>
-    <div class="stack">
-      <p class="kicker">Planned screenshots</p>
-      ${analysis.helpfulImageMoments.length > 0 ? analysis.helpfulImageMoments.map((moment, index) => `
-        <div class="template-row">
-          <div class="stack">
-            <div class="field">
-              <label for="planShot-${index}">Screenshot</label>
-              <select id="planShot-${index}" class="plan-shot" data-index="${index}">
-                <option value="">No screenshot</option>
-                ${current.screenshots.map((shot, shotIndex) => `
-                  <option value="${escapeHtml(shot.id)}" ${shot.id === moment.screenshotId ? "selected" : ""}>
-                    ${String(shotIndex + 1).padStart(2, "0")} · ${formatMs(shot.capturedAtMs)} · ${escapeHtml(shot.title || shot.url || "Screenshot")}
-                  </option>
-                `).join("")}
-              </select>
-            </div>
-            <div class="field">
-              <label for="planReason-${index}">Why this image helps</label>
-              <textarea id="planReason-${index}" class="plan-reason" data-index="${index}" rows="2">${escapeHtml(moment.reason)}</textarea>
-            </div>
-          </div>
-        </div>
-      `).join("") : `<p class="hint">No screenshots were selected by the plan.</p>`}
-    </div>
-    <button class="button primary" id="savePlan">Save Plan</button>
-  </section>`;
-}
-
 function renderHistory(history: CaptureHistoryItem[]): string {
   if (history.length === 0) return "";
-  return `<section class="panel">
-    <div class="panel-header">
-      <div>
-        <h2>History</h2>
-        <p>Load a previous local capture and generate a new PDF.</p>
-      </div>
-    </div>
-    <div class="stack">
+  return `<details class="panel history-panel">
+    <summary>
+      <span><strong>History</strong><small>Load a previous local capture</small></span>
+      <span class="history-count">${history.length}</span>
+    </summary>
+    <div class="stack history-list">
       ${history.slice(0, 6).map((item) => `
-        <div class="template-row">
+        <div class="capture-row">
           <div>
             <strong>${escapeHtml(item.title)}</strong>
             <p class="hint">${formatHistoryDate(item.createdAt)} · ${item.imageCount} images · ${formatSeconds(item.durationSeconds)} · ${escapeHtml(item.folderName ?? "local capture")}</p>
@@ -369,34 +256,7 @@ function renderHistory(history: CaptureHistoryItem[]): string {
         </div>
       `).join("")}
     </div>
-  </section>`;
-}
-
-async function savePlanEdits(): Promise<void> {
-  const current = await getSession();
-  if (!current.captureAnalysis) return;
-  const moments = current.captureAnalysis.helpfulImageMoments.map((moment, index) => ({
-    ...moment,
-    screenshotId: document.querySelector<HTMLSelectElement>(`#planShot-${index}`)?.value || undefined,
-    reason: document.querySelector<HTMLTextAreaElement>(`#planReason-${index}`)?.value.trim() ?? moment.reason
-  }));
-  const nextAnalysis: CaptureAnalysis = {
-    userGoal: document.querySelector<HTMLTextAreaElement>("#planGoal")?.value.trim() ?? current.captureAnalysis.userGoal,
-    bestDelivery: document.querySelector<HTMLTextAreaElement>("#planDelivery")?.value.trim() ?? current.captureAnalysis.bestDelivery,
-    story: document.querySelector<HTMLTextAreaElement>("#planStory")?.value.trim() ?? current.captureAnalysis.story,
-    breakingPoints: (document.querySelector<HTMLTextAreaElement>("#planBreakingPoints")?.value ?? "")
-      .split("\n")
-      .map((item) => item.trim())
-      .filter(Boolean),
-    helpfulImageMoments: moments
-  };
-  const template = getSelectedTemplate(await getSettings());
-  const next = { ...current, captureAnalysis: nextAnalysis, captureAnalysisTemplateSignature: templateSignature(template), status: "planned" as const, ticket: undefined, analysisError: undefined };
-  await saveSession(next);
-  await writeRecordingText("capture-analysis.json", JSON.stringify(nextAnalysis, null, 2), "application/json");
-  await saveCaptureHistory(next);
-  localStatus = "Plan saved.";
-  await refresh();
+  </details>`;
 }
 
 async function saveOnboarding(): Promise<void> {
@@ -451,45 +311,12 @@ function preserveOnboardingDraft(): void {
   };
 }
 
-async function selectTemplate(templateId: string): Promise<void> {
-  await saveSettings({ selectedTemplateId: templateId });
-  localStatus = "Template selected.";
-  await refresh();
-}
-
 async function run(message: RuntimeMessage, refreshAfter = true): Promise<void> {
   const response = await send(message);
   if (response.session) session = response.session;
   if (!response.ok) throw new Error(response.error ?? "Request failed.");
   if (refreshAfter) await refresh();
   else render();
-}
-
-async function generateAndDownload(): Promise<void> {
-  const currentBefore = await getSession();
-  const template = getSelectedTemplate(await getSettings());
-  if (!currentBefore.captureAnalysis || currentBefore.captureAnalysisTemplateSignature !== templateSignature(template)) {
-    await prepareCapturePlan();
-    const planned = await getSession();
-    if (!planned.captureAnalysis) return;
-  }
-  startPdfProgress(await getSession());
-  try {
-    await run({ type: "GENERATE_TICKET" });
-    updatePdfProgress(92, "Building the PDF");
-    const current = await getSession();
-    if (current.ticket) await downloadPdfInPage(current);
-    if (current.ticket) updatePdfProgress(100, "Done");
-    if (current.ticket) await saveCaptureHistory(current);
-  } catch (error) {
-    localStatus = error instanceof Error ? error.message : String(error);
-    await refresh();
-  } finally {
-    window.setTimeout(() => {
-      stopPdfProgress();
-      render();
-    }, 500);
-  }
 }
 
 async function prepareCapturePlan(): Promise<void> {
@@ -502,39 +329,21 @@ async function prepareCapturePlan(): Promise<void> {
     await saveCaptureHistory(current);
     localStatus = "Plan ready. Review it, then generate the PDF.";
     await refresh();
+    await openPlanPage();
   } catch (error) {
     localStatus = error instanceof Error ? error.message : String(error);
     await refresh();
   }
 }
 
-async function downloadPdfInPage(current: RecordingSession): Promise<void> {
-  if (!current.ticket) return;
-  const conversionStartedAt = performance.now();
-  const hydrated = await hydrateSession(current);
-  const blob = createTicketPdf(hydrated.ticket!, hydrated);
-  await writeRecordingBlob(ticketPdfFilename(current.ticket), blob);
-  await writeRecordingText("ticket.json", JSON.stringify(current.ticket, null, 2), "application/json");
-  if (current.captureAnalysis) await writeRecordingText("capture-analysis.json", JSON.stringify(current.captureAnalysis, null, 2), "application/json");
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = ticketPdfFilename(current.ticket);
-  anchor.style.display = "none";
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
-  await postWebhook(await getSettings(), "converted_pdf", {
-    image_count: hydrated.screenshots.length,
-    recording_seconds: recordingSeconds(hydrated),
-    conversion_ms: Math.round(performance.now() - conversionStartedAt),
-    template_name: current.ticket.templateName ?? selectedTemplateName,
-    openai_tokens: current.openAiUsage?.totalTokens ?? 0,
-    openai_input_tokens: current.openAiUsage?.inputTokens ?? 0,
-    openai_output_tokens: current.openAiUsage?.outputTokens ?? 0,
-    openai_estimated_cost_usd: current.openAiUsage?.estimatedCostUsd ?? 0
-  });
+async function openPlanPage(): Promise<void> {
+  await chrome.tabs.create({ url: chrome.runtime.getURL("plan.html") });
+}
+
+async function startFreshCapture(): Promise<void> {
+  session = await resetSession();
+  localStatus = "";
+  await refresh();
 }
 
 async function startRecording(): Promise<void> {
@@ -577,14 +386,12 @@ async function startRecording(): Promise<void> {
 
     const target = await getBestActiveTab();
     const captureId = crypto.randomUUID();
-    const template = getSelectedTemplate(await getSettings());
     const exportFolderName = await recordingFolderPromise;
     const initialSession: RecordingSession = {
       ...(await resetSession()),
       status: "recording",
       startedAt,
       captureId,
-      templateId: template.id,
       activeTabId: target?.id,
       activeWindowId: target?.windowId,
       tabUrl: target?.url,
@@ -621,9 +428,8 @@ async function startRecording(): Promise<void> {
 
     audioRecorder?.start(1000);
     mediaRecorder.start(1000);
-    overlayMode = "cursor";
-    await send({ type: "SET_OVERLAY_MODE", mode: overlayMode });
-    localStatus = "Capturing. Click End Capture when finished.";
+    await send({ type: "SET_OVERLAY_MODE", mode: "cursor" });
+    localStatus = "Capturing. Click Close Capture when finished.";
     await captureMoment("screenshot");
     screenshotInterval = window.setInterval(() => {
       void captureMoment("screenshot");
@@ -814,15 +620,7 @@ async function waitForScreenshotQueue(): Promise<void> {
   }
 }
 
-async function setOverlayMode(mode: OverlayMode): Promise<void> {
-  overlayMode = mode;
-  await send({ type: "SET_OVERLAY_MODE", mode });
-  localStatus = mode === "cursor" ? "Pointer mode enabled." : `${mode === "highlight" ? "Highlight" : "Redact"} mode enabled. Drag on the page to mark evidence.`;
-  render();
-}
-
 async function disableOverlay(): Promise<void> {
-  overlayMode = "off";
   await send({ type: "SET_OVERLAY_MODE", mode: "off" }).catch(() => undefined);
 }
 
@@ -950,24 +748,6 @@ function statusLabel(status?: RecordingSession["status"]): string {
   }
 }
 
-async function saveCaptureHistory(current: RecordingSession): Promise<void> {
-  if (!current.startedAt) return;
-  const title = current.ticket?.title || current.captureAnalysis?.userGoal || current.tabTitle || "JesSee capture";
-  await upsertCaptureHistory({
-    id: current.captureId ?? `${current.startedAt}`,
-    title,
-    folderName: current.exportFolderName,
-    createdAt: current.startedAt,
-    stoppedAt: current.stoppedAt,
-    templateName: current.ticket?.templateName ?? selectedTemplateName,
-    imageCount: current.screenshots.length,
-    durationSeconds: recordingSeconds(current),
-    hasPlan: Boolean(current.captureAnalysis),
-    hasTicket: Boolean(current.ticket),
-    session: current
-  });
-}
-
 async function cleanupOldCaptures(retentionDays: number): Promise<void> {
   const normalized = normalizeRetentionDays(retentionDays);
   try {
@@ -994,95 +774,11 @@ function updateLiveRender(): void {
   }
 }
 
-function startPdfProgress(current: RecordingSession): void {
-  const estimateSeconds = estimatePdfSeconds(current);
-  pdfProgress = {
-    startedAt: Date.now(),
-    estimateSeconds,
-    percent: 6,
-    label: "Preparing capture"
-  };
-  if (pdfProgressInterval) window.clearInterval(pdfProgressInterval);
-  pdfProgressInterval = window.setInterval(() => {
-    if (!pdfProgress) return;
-    pdfProgress = createProgress(current, pdfProgress.startedAt, pdfProgress.estimateSeconds);
-    render();
-  }, 1000);
-  render();
-}
-
-function updatePdfProgress(percent: number, label: string): void {
-  if (!pdfProgress) return;
-  pdfProgress = { ...pdfProgress, percent, label };
-  render();
-}
-
-function stopPdfProgress(): void {
-  if (pdfProgressInterval) window.clearInterval(pdfProgressInterval);
-  pdfProgressInterval = undefined;
-  pdfProgress = undefined;
-}
-
-function createProgress(current: RecordingSession, startedAt: number, estimateSeconds = estimatePdfSeconds(current)): PdfProgress {
-  const elapsedSeconds = Math.max(0, (Date.now() - startedAt) / 1000);
-  const ratio = Math.min(0.9, elapsedSeconds / estimateSeconds);
-  const percent = Math.max(6, Math.round(ratio * 90));
-  return {
-    startedAt,
-    estimateSeconds,
-    percent,
-    label: progressLabel(percent)
-  };
-}
-
-function progressLabel(percent: number): string {
-  if (percent < 18) return "Preparing capture";
-  if (percent < 38) return "Transcribing narration";
-  if (percent < 58) return "Analyzing transcript";
-  if (percent < 78) return "Selecting screenshots";
-  if (percent < 92) return "Writing document";
-  return "Building PDF";
-}
-
-function progressStepStatus(progress: PdfProgress, index: number): "done" | "active" | "pending" {
-  const currentIndex = Math.max(
-    0,
-    PDF_PROGRESS_STEPS.findIndex((step, stepIndex) => {
-      const next = PDF_PROGRESS_STEPS[stepIndex + 1];
-      return progress.percent >= step.threshold && (!next || progress.percent < next.threshold);
-    })
-  );
-  if (index < currentIndex) return "done";
-  if (index === currentIndex) return "active";
-  return "pending";
-}
-
-function estimatePdfSeconds(current: RecordingSession): number {
-  const captureSeconds = recordingSeconds(current);
-  const imageCount = current.screenshots.length;
-  const hasAudio = Boolean(current.audioDataUrl);
-  const transcriptionSeconds = hasAudio ? Math.max(8, captureSeconds * 0.35) : 0;
-  const visionSeconds = imageCount * 2.5;
-  const writingSeconds = 14 + Math.min(25, captureSeconds * 0.08);
-  return Math.round(Math.min(150, Math.max(20, transcriptionSeconds + visionSeconds + writingSeconds)));
-}
-
-function formatProgressTiming(progress: PdfProgress): string {
-  const elapsedSeconds = Math.max(0, Math.round((Date.now() - progress.startedAt) / 1000));
-  const remainingSeconds = Math.max(0, progress.estimateSeconds - elapsedSeconds);
-  if (progress.percent >= 95) return "almost done";
-  return `${formatSeconds(elapsedSeconds)} elapsed · about ${formatSeconds(remainingSeconds)} left`;
-}
-
 function formatSeconds(totalSeconds: number): string {
   if (totalSeconds < 60) return `${totalSeconds}s`;
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
-}
-
-function formatMs(ms: number): string {
-  return formatSeconds(Math.max(0, Math.round(ms / 1000)));
 }
 
 function formatHistoryDate(value: number): string {

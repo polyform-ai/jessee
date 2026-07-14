@@ -100,7 +100,7 @@ JesSee improves fastest when people share the real communication problems they r
 - Want to build an improvement? Fork the project and [open a pull request](https://github.com/polyform-ai/jessee/pulls).
 - Interested in collaborating or working on JesSee part time? Email Ahmed at [ahmed@polyform.ai](mailto:ahmed@polyform.ai).
 
-Good first contributions include better document templates, accessibility improvements, capture-quality work, integrations, and tests that make the recording flow more reliable.
+Good first contributions include visual-story improvements, accessibility work, capture-quality improvements, integrations, and tests that make the recording flow more reliable.
 
 ## The Vision
 
@@ -123,13 +123,13 @@ We're building a better way to communicate.
 
 ## Current Chrome Extension
 
-JesSee currently ships as a Chrome MV3 extension that captures screen context, microphone narration, cursor movement, and timestamped screenshots. It prepares an editable AI plan, lets you review the goal, story, and selected screenshots, then turns the walkthrough into a clean PDF through OpenAI.
+JesSee currently ships as a Chrome MV3 extension that captures screen context, microphone narration, cursor movement, and timestamped screenshots. GPT-5.6 Sol prepares an editable plan where the goal, summary, and key points remain visible beside a step-through story of timestamped transcript sentences, page changes, and selected screenshots. The reviewed plan is then rendered directly into a clean local PDF.
 
 ### What JesSee captures and sends
 
 JesSee only captures a tab, window, or screen after you explicitly choose it in Chrome's share picker. Microphone narration is enabled separately in Settings and is required before a capture can begin.
 
-Captures, screenshots, recordings, and PDFs stay on your computer. When you choose **Create Plan** or **Generate PDF**, JesSee sends the selected capture evidence and narration to OpenAI using the API key you provide so it can prepare the document. The public source has no analytics endpoint configured.
+Captures, recordings, and generated PDFs stay on your computer. When you choose **Create Plan**, JesSee sends the narration, timestamps, timeline metadata, screenshot metadata, and a curated set of up to 20 transition screenshots to OpenAI using the API key you provide. In **Private Mode**, no screenshot pixels are sent; only narration and timeline metadata, including local screenshot IDs, are used to plan where local evidence belongs. **Generate PDF** performs no additional AI request and renders the reviewed plan with its selected local images. The public source has no analytics endpoint configured.
 
 ## Local Use
 
@@ -149,10 +149,12 @@ Captures, screenshots, recordings, and PDFs stay on your computer. When you choo
    ```
 
 6. Open the extension, add your email, a fresh OpenAI API key, and choose a local output folder.
-7. Click **Start Capture**, choose the tab/window/screen in Chrome's picker, explain the flow, then click **End Capture**.
-8. Review the generated plan, adjust the goal/story/screenshots if needed, then generate the PDF.
+7. Click **Start Capture**, choose the tab/window/screen in Chrome's picker, explain the flow, then click **Close Capture**.
+8. While recording, hold **B** and drag to draw an outline box, or hold **R** and drag to blur/redact an area. Press **C** to clear every annotation and redaction from the current capture. Marked frames are captured automatically.
+9. Create the plan to open the visual plan editor. Edits save automatically; step through the story, add your own story steps, and use the screenshot controls to inspect or change the exact evidence used in the PDF.
+10. Generate and download the PDF from the plan editor or the recorder.
 
-Mic narration and cursor highlighting are always enabled. JesSee captures timestamped screenshots automatically and pairs them with the timestamped transcript.
+Mic narration and cursor highlighting are always enabled. JesSee captures timestamped screenshots automatically and pairs them with a sentence-level timestamped transcript. Planning aligns narration to the end of each sentence so evidence reflects the completed action or resulting screen state. Representative transition images help the model understand major changes, while the full screenshot timeline remains available by ID so the plan can choose an earlier or later frame when it tells the story better.
 
 ## Development
 

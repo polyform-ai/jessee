@@ -49,11 +49,15 @@ export async function hydrateSession(session: RecordingSession): Promise<Recordi
 }
 
 export async function deleteSessionArtifacts(session: RecordingSession): Promise<void> {
-  const refs = new Set([
+  await deleteArtifacts([
     ...session.screenshots.map((screenshot) => screenshot.dataUrl),
     session.videoDataUrl,
     session.audioDataUrl
-  ].filter((value): value is string => isArtifactRef(value)));
+  ]);
+}
+
+export async function deleteArtifacts(values: Array<string | undefined>): Promise<void> {
+  const refs = new Set(values.filter((value): value is string => isArtifactRef(value)));
   if (refs.size === 0) return;
   const db = await openDb();
   const store = db.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME);
