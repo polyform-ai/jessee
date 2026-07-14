@@ -1,8 +1,7 @@
-import { analyzeCapture, generateTicket, testOpenAiSetup, transcribeAudio } from "./openai";
+import { analyzeCapture, testOpenAiSetup, transcribeAudio } from "./openai";
 import { deleteArtifacts, hydrateSession } from "./artifacts";
 import { clearAnnotationEvidence } from "./captureEvidence";
 import { getSession, getSettings, saveSession } from "./storage";
-import { getSelectedTemplate, templateSignature } from "./templates";
 import { acceptsContentEvent, shouldRecordPageChange } from "./captureState";
 import type { RecordingSession, RuntimeMessage, TimelineEvent } from "./types";
 
@@ -66,8 +65,8 @@ async function handleMessage(message: RuntimeMessage, sender: chrome.runtime.Mes
       return { ok: true };
     case "PREPARE_CAPTURE_PLAN":
       return prepareCapturePlanArtifact();
-    case "GENERATE_TICKET":
-      return generateTicketArtifact();
+    case "GENERATE_PDF":
+      return preparePdfArtifact();
     case "TEST_AI_SETUP": {
       const settings = await getSettings();
       const apiKey = message.apiKey ?? settings.openAiKey;
@@ -81,7 +80,6 @@ async function handleMessage(message: RuntimeMessage, sender: chrome.runtime.Mes
 async function prepareCapturePlanArtifact(): Promise<unknown> {
   const settings = await getSettings();
   if (!settings.openAiKey) throw new Error("Add your OpenAI API key in Settings first.");
-  const template = getSelectedTemplate(settings);
   const current = await getSession();
   const planning = { ...current, status: "planning" as const, analysisError: undefined };
   await saveSession(planning);
@@ -91,15 +89,12 @@ async function prepareCapturePlanArtifact(): Promise<unknown> {
     transcript = hydrated.transcript ?? await transcribeAudio(settings.openAiKey, hydrated.audioDataUrl);
     const transcribed = { ...planning, transcript };
     await saveSession(transcribed);
-    const generated = await analyzeCapture(settings.openAiKey, transcript, template, hydrated);
+    const generated = await analyzeCapture(settings.openAiKey, transcript, hydrated, settings.privateMode ?? false);
     const session: RecordingSession = {
       ...transcribed,
-      templateId: template.id,
-      captureAnalysisTemplateSignature: templateSignature(template),
       status: "planned",
       captureAnalysis: generated.analysis,
       transcript,
-      ticket: undefined,
       analysisError: undefined,
       openAiUsage: generated.usage
     };
@@ -112,47 +107,14 @@ async function prepareCapturePlanArtifact(): Promise<unknown> {
   }
 }
 
-async function generateTicketArtifact(): Promise<unknown> {
-  const settings = await getSettings();
-  if (!settings.openAiKey) throw new Error("Add your OpenAI API key in Settings first.");
-  const template = getSelectedTemplate(settings);
+async function preparePdfArtifact(): Promise<unknown> {
   const current = await getSession();
-  if (!current.captureAnalysis || current.captureAnalysisTemplateSignature !== templateSignature(template)) {
-    throw new Error("The template changed after this plan was created. Replan the capture before generating the PDF.");
-  }
+  if (!current.captureAnalysis) throw new Error("Create and review the plan before generating the PDF.");
   const generating = { ...current, status: "generating" as const, analysisError: undefined };
   await saveSession(generating);
-  try {
-    const hydrated = await hydrateSession(generating);
-    const transcript = hydrated.transcript ?? await transcribeAudio(settings.openAiKey, hydrated.audioDataUrl);
-    const generated = await generateTicket(settings.openAiKey, { ...hydrated, templateId: template.id }, transcript, template, hydrated.captureAnalysis, settings.privateMode ?? false);
-    const ticket = { ...generated.ticket, templateName: generated.ticket.templateName ?? template.name };
-    const session: RecordingSession = {
-      ...generating,
-      templateId: template.id,
-      status: "ready",
-      ticket,
-      captureAnalysis: generated.analysis,
-      analysisError: undefined,
-      openAiUsage: addUsage(generating, generated.usage)
-    };
-    await saveSession(session);
-    return { ok: true, session };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    await saveSession({ ...current, analysisError: message });
-    throw error;
-  }
-}
-
-function addUsage(session: RecordingSession, usage: NonNullable<RecordingSession["openAiUsage"]>): NonNullable<RecordingSession["openAiUsage"]> {
-  const previous = session.openAiUsage;
-  return {
-    inputTokens: (previous?.inputTokens ?? 0) + usage.inputTokens,
-    outputTokens: (previous?.outputTokens ?? 0) + usage.outputTokens,
-    totalTokens: (previous?.totalTokens ?? 0) + usage.totalTokens,
-    estimatedCostUsd: Math.round(((previous?.estimatedCostUsd ?? 0) + usage.estimatedCostUsd) * 1_000_000) / 1_000_000
-  };
+  const ready: RecordingSession = { ...generating, status: "ready", analysisError: undefined };
+  await saveSession(ready);
+  return { ok: true, session: ready };
 }
 
 async function preserveCaptureFailure(error: string): Promise<RecordingSession> {

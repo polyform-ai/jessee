@@ -77,6 +77,13 @@ test("loads extension settings page", async () => {
     await page.getByRole("button", { name: "Next story step" }).click();
     await expect(page.getByText("Page changed to", { exact: true })).toBeVisible();
     await expect(page.getByRole("img", { name: "Screenshot captured at 2s" })).toBeVisible();
+    await page.getByRole("button", { name: "Add step" }).click();
+    await expect(page.getByText("Added step", { exact: true })).toBeVisible();
+    await page.getByLabel("What this part of the story communicates").fill("Add the final confirmation to the story.");
+    await expect.poll(() => page.evaluate(async () => {
+      const stored = await chrome.storage.local.get("recordingSession");
+      return stored.recordingSession?.captureAnalysis?.storySteps?.find((step: { kind?: string }) => step.kind === "manual")?.narrative;
+    })).toBe("Add the final confirmation to the story.");
     await expect(page.getByText("Saved automatically", { exact: true })).toBeVisible();
     await page.getByLabel("Goal").fill("Show the updated visual workflow");
     await expect.poll(() => page.evaluate(async () => {

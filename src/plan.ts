@@ -2,9 +2,8 @@ import "./ui.css";
 import { hydrateSession } from "./artifacts";
 import { buildCaptureStory, splitTranscriptIntoSentences } from "./captureStory";
 import { saveCaptureHistory } from "./captureHistory";
-import { downloadTicketPdf } from "./pdfDownload";
-import { getSession, getSettings, saveSession } from "./storage";
-import { getSelectedTemplate, templateSignature } from "./templates";
+import { downloadPlanPdf } from "./pdfDownload";
+import { getSession, saveSession } from "./storage";
 import type { CaptureAnalysis, CaptureStoryStep, RecordingSession, RuntimeMessage, TranscriptionResult } from "./types";
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -38,7 +37,7 @@ function render(): void {
   const activeStep = storySteps[activeStoryIndex];
   const selectedShot = hydrated.screenshots.find((shot) => shot.id === activeStep?.screenshotId);
   const selectedShotIndex = selectedShot ? hydrated.screenshots.findIndex((shot) => shot.id === selectedShot.id) : -1;
-  const keyPoints = analysis.keyPoints?.length ? analysis.keyPoints : analysis.breakingPoints;
+  const keyPoints = analysis.keyPoints?.length ? analysis.keyPoints : analysis.breakingPoints ?? [];
 
   root.innerHTML = `
     <main class="plan-page">
@@ -63,7 +62,7 @@ function render(): void {
           <div class="panel-header"><div><h2>What the user is communicating</h2><p>The goal and key points stay visible while you step through the story.</p></div></div>
           <div class="field"><label for="planGoal">Goal</label><textarea id="planGoal" rows="3">${escapeHtml(analysis.userGoal)}</textarea></div>
           <div class="field"><label for="planKeyPoints">Key points</label><textarea id="planKeyPoints" rows="6">${escapeHtml(keyPoints.join("\n"))}</textarea><p class="field-help">One important point per line.</p></div>
-          <div class="field"><label for="planStory">Story overview</label><textarea id="planStory" rows="5">${escapeHtml(analysis.story)}</textarea></div>
+          <div class="field"><label for="planStory">Summary</label><textarea id="planStory" rows="5">${escapeHtml(analysis.story)}</textarea></div>
           <details class="transcript-panel" open>
             <summary><span>Transcript</span><strong>${transcriptSegments.length} timestamped sentence${transcriptSegments.length === 1 ? "" : "s"}</strong></summary>
             <div class="transcript-list">
@@ -75,6 +74,7 @@ function render(): void {
         <section class="panel evidence-inspector story-inspector">
           <div class="panel-header">
             <div><h2>Story timeline</h2><p>${storySteps.length ? `Step ${activeStoryIndex + 1} of ${storySteps.length} · narration, actions, and page changes in order` : "No story steps available"}</p></div>
+            <button class="button secondary compact" id="addStory">+ Add step</button>
           </div>
           ${storySteps.length && activeStep ? `
             <div class="story-stepper">
@@ -87,7 +87,7 @@ function render(): void {
             </div>
             <article class="story-card">
               <div class="story-meta">
-                <span class="story-kind ${activeStep.kind ?? "narration"}">${activeStep.kind === "page-change" ? "Page change" : activeStep.kind === "action" ? "Action" : "User narration"}</span>
+                <span class="story-kind ${activeStep.kind ?? "narration"}">${activeStep.kind === "page-change" ? "Page change" : activeStep.kind === "manual" ? "Added step" : activeStep.kind === "action" ? "Action" : "User narration"}</span>
                 <span>${formatTimeRange(activeStep.startSeconds, activeStep.endSeconds)}</span>
               </div>
               <div class="field"><label for="planStepTitle">Story heading</label><input id="planStepTitle" value="${escapeHtml(activeStep.title)}" /></div>
@@ -141,6 +141,7 @@ function render(): void {
   }
   document.querySelector("#previousStory")?.addEventListener("click", () => void stepStory(-1));
   document.querySelector("#nextStory")?.addEventListener("click", () => void stepStory(1));
+  document.querySelector("#addStory")?.addEventListener("click", () => void addStoryStep());
   document.querySelector("#previousImage")?.addEventListener("click", () => void stepImage(-1));
   document.querySelector("#nextImage")?.addEventListener("click", () => void stepImage(1));
   document.querySelector("#settings")?.addEventListener("click", () => chrome.runtime.openOptionsPage());
@@ -163,17 +164,14 @@ async function persistPlan(): Promise<void> {
   saveTimer = undefined;
   if (!session.captureAnalysis) return;
   const nextAnalysis = collectAnalysis(session.captureAnalysis);
-  const template = getSelectedTemplate(await getSettings());
   session = {
     ...session,
     captureAnalysis: nextAnalysis,
-    captureAnalysisTemplateSignature: templateSignature(template),
     status: "planned",
-    ticket: undefined,
     analysisError: undefined
   };
   await saveSession(session);
-  await saveCaptureHistory(session, template.name);
+  await saveCaptureHistory(session);
   statusMessage = "Saved automatically";
   updateSaveStatus();
 }
@@ -189,9 +187,7 @@ function collectAnalysis(current: CaptureAnalysis): CaptureAnalysis {
   return {
     userGoal: document.querySelector<HTMLTextAreaElement>("#planGoal")?.value.trim() ?? current.userGoal,
     keyPoints: (document.querySelector<HTMLTextAreaElement>("#planKeyPoints")?.value ?? "").split("\n").map((item) => item.trim()).filter(Boolean),
-    bestDelivery: current.bestDelivery,
     story: document.querySelector<HTMLTextAreaElement>("#planStory")?.value.trim() ?? current.story,
-    breakingPoints: current.breakingPoints,
     helpfulImageMoments: storySteps.filter((step) => step.screenshotId).map((step) => ({
       screenshotId: step.screenshotId,
       atSeconds: step.endSeconds,
@@ -199,6 +195,40 @@ function collectAnalysis(current: CaptureAnalysis): CaptureAnalysis {
     })),
     storySteps
   };
+}
+
+async function addStoryStep(): Promise<void> {
+  await persistPlan();
+  if (!session.captureAnalysis) return;
+  const storySteps = buildCaptureStory(session.captureAnalysis, session.transcript, session.timeline, hydrated.screenshots);
+  const previous = storySteps[activeStoryIndex] ?? storySteps.at(-1);
+  const timestamp = previous?.endSeconds ?? session.transcript?.segments.at(-1)?.end ?? 0;
+  const insertionIndex = storySteps.length ? activeStoryIndex + 1 : 0;
+  storySteps.splice(insertionIndex, 0, {
+    startSeconds: timestamp,
+    endSeconds: timestamp,
+    title: "New story step",
+    narrative: "",
+    transcript: "",
+    kind: "manual"
+  });
+  session = {
+    ...session,
+    status: "planned",
+    captureAnalysis: {
+      ...session.captureAnalysis,
+      storySteps,
+      helpfulImageMoments: storySteps.filter((step) => step.screenshotId).map((step) => ({
+        screenshotId: step.screenshotId,
+        atSeconds: step.endSeconds,
+        reason: step.narrative || step.title
+      }))
+    }
+  };
+  await saveSession(session);
+  await saveCaptureHistory(session);
+  activeStoryIndex = insertionIndex;
+  render();
 }
 
 async function stepStory(direction: -1 | 1): Promise<void> {
@@ -228,10 +258,10 @@ async function generatePdf(): Promise<void> {
   await persistPlan();
   setStatus("Creating your PDF…");
   try {
-    const response = await send({ type: "GENERATE_TICKET" });
+    const response = await send({ type: "GENERATE_PDF" });
     if (!response.ok) throw new Error(response.error ?? "PDF generation failed.");
     session = await getSession();
-    await downloadTicketPdf(session);
+    await downloadPlanPdf(session);
     await saveCaptureHistory(session);
     setStatus("PDF downloaded");
   } catch (error) {

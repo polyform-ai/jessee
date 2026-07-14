@@ -101,7 +101,7 @@ function closestUnclaimedStep(
   let bestIndex = -1;
   let bestDistance = Number.POSITIVE_INFINITY;
   steps.forEach((step, index) => {
-    if (claimed.has(index)) return;
+    if (claimed.has(index) || step.kind === "manual") return;
     const overlaps = step.startSeconds <= end && step.endSeconds >= start;
     const distance = overlaps ? 0 : Math.min(Math.abs(step.startSeconds - end), Math.abs(step.endSeconds - start));
     if (distance < bestDistance && distance <= 3) {
@@ -135,7 +135,7 @@ function normalizeStep(step: Partial<CaptureStoryStep>): CaptureStoryStep {
     screenshotId: step.screenshotId,
     pageUrl: step.pageUrl,
     pageTitle: step.pageTitle,
-    kind: step.kind === "page-change" || step.kind === "action" ? step.kind : "narration"
+    kind: step.kind === "page-change" || step.kind === "action" || step.kind === "manual" ? step.kind : "narration"
   };
 }
 

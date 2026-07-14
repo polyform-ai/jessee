@@ -18,7 +18,6 @@ describe("buildCaptureStory", () => {
     const analysis: CaptureAnalysis = {
       userGoal: "Explain the save flow",
       keyPoints: ["Saving fails"],
-      bestDelivery: "Debug ticket",
       breakingPoints: [],
       helpfulImageMoments: [],
       story: "Open settings, then review the result.",

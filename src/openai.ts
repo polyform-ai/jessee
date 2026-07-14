@@ -1,6 +1,6 @@
 import { dataUrlToBlob } from "./dataUrl";
 import { buildCaptureStory, splitTranscriptIntoSentences } from "./captureStory";
-import type { CaptureAnalysis, CaptureStoryStep, OpenAiUsage, RecordingSession, ScreenshotEvidence, TicketDraft, TicketTemplate, TimelineEvent, TranscriptionResult } from "./types";
+import type { CaptureAnalysis, CaptureStoryStep, OpenAiUsage, RecordingSession, ScreenshotEvidence, TimelineEvent, TranscriptionResult } from "./types";
 
 interface ResponsesOutputText {
   type: "output_text";
@@ -29,12 +29,12 @@ interface ResponsesPayload {
 
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
 const TRANSCRIPTION_MODEL = "gpt-4o-transcribe-diarize";
-const TICKET_MODEL = "gpt-5.6-terra";
-const MAX_DRAFT_SCREENSHOTS = 30;
-const ESTIMATED_INPUT_COST_PER_1M = 2.5;
-const ESTIMATED_OUTPUT_COST_PER_1M = 15;
+const PLAN_MODEL = "gpt-5.6-sol";
+const MAX_PLANNING_SCREENSHOTS = 20;
+const ESTIMATED_INPUT_COST_PER_1M = 5;
+const ESTIMATED_OUTPUT_COST_PER_1M = 30;
 
-export const REQUIRED_OPENAI_MODELS = [TICKET_MODEL, TRANSCRIPTION_MODEL] as const;
+export const REQUIRED_OPENAI_MODELS = [PLAN_MODEL, TRANSCRIPTION_MODEL] as const;
 
 export async function transcribeAudio(apiKey: string, audioDataUrl?: string): Promise<TranscriptionResult> {
   if (!audioDataUrl) return { text: "", segments: [] };
@@ -77,7 +77,7 @@ export async function transcribeAudio(apiKey: string, audioDataUrl?: string): Pr
 
 /**
  * Checks model access before a user spends time recording. This deliberately
- * does not fall back to an older model: JesSee's output contract is Terra.
+ * does not fall back to an older model: JesSee's planning contract is Sol.
  */
 export async function testOpenAiSetup(apiKey: string): Promise<void> {
   for (const model of REQUIRED_OPENAI_MODELS) {
@@ -90,152 +90,17 @@ export async function testOpenAiSetup(apiKey: string): Promise<void> {
   }
 }
 
-export interface GenerateTicketResult {
-  ticket: TicketDraft;
-  usage: OpenAiUsage;
-  analysis: CaptureAnalysis;
-}
-
-export async function generateTicket(
-  apiKey: string,
-  session: RecordingSession,
-  transcript: TranscriptionResult,
-  template: TicketTemplate,
-  preparedAnalysis?: CaptureAnalysis,
-  privateMode = false
-): Promise<GenerateTicketResult> {
-  const timeline = session.timeline.map((event) => ({
-    type: event.type,
-    atMs: event.atMs,
-    atSeconds: Math.round(event.atMs / 100) / 10,
-    url: event.url,
-    title: event.title,
-    note: event.note,
-    screenshotId: event.screenshotId,
-    rect: event.rect,
-    point: event.point
-  }));
-
-  const evidenceFrames = session.screenshots.map((shot) => ({
-    id: shot.id,
-    capturedAtMs: shot.capturedAtMs,
-    capturedAtSeconds: Math.round(shot.capturedAtMs / 100) / 10,
-    url: shot.url,
-    title: shot.title,
-    annotations: shot.annotations,
-    redactions: shot.redactions
-  }));
-
-  const analysisResult = preparedAnalysis
-    ? { analysis: preparedAnalysis, usage: emptyUsage() }
-    : await analyzeCapture(apiKey, transcript, template, timeline, evidenceFrames);
-  const selectedScreenshots = selectScreenshotsForAnalysis(session.screenshots, analysisResult.analysis);
-  const screenshotContent = privateMode ? [] : selectedScreenshots
-    .map((shot) => ({
-      type: "input_image",
-      image_url: shot.dataUrl,
-      detail: "high"
-    }));
-
-  const instructions = [
-    "You turn screen captures, narration, URLs, steps, and screenshots into structured documents that AI and humans can understand.",
-    "Return only valid JSON. Do not wrap it in code fences.",
-    "The JSON schema is: title:string, templateName:string, summary:string, environment:string[], reproductionSteps:string[], expectedBehavior:string, actualBehavior:string, evidence:{screenshotId?:string, caption:string}[], openQuestions:string[].",
-    `Use this template: ${template.name}.`,
-    `Template instructions: ${template.instructions}`,
-    "Use the captureAnalysis as the plan for the document. It was prepared from the transcript, timeline, and screenshot timestamps before image review.",
-    "The response should follow the selected template, be detailed, Codex-ready, and grounded in the capture.",
-    "Prefer completeness over brevity. Preserve every supported action, state transition, decision, problem, expectation, and relevant piece of narration. Reproduction steps should be atomic and chronological, and evidence captions should explain what each image proves.",
-    "Use as many of the selected screenshots as needed to make the document independently understandable. Avoid omitting useful evidence merely to keep the document short.",
-    "Screenshots, clicks, annotations, redactions, and URL changes are timestamped in seconds from capture start. Use clicks and page changes as interaction anchors: choose screenshots immediately before or after those events when they prove a reproduction step or state transition. When transcript segments are available, their start is when the sentence began and their end is the better representation of the resulting screen state.",
-    privateMode
-      ? "Evidence screenshotId values must come from selectedScreenshotIds only. Screenshot pixels are not available in Private Mode; use the transcript, timestamps, selected screenshot IDs, annotations, and timeline context to place local PDF evidence without inventing visual details."
-      : "Evidence screenshotId values must come from selectedScreenshotIds only. Do not invent facts not present in the analysis, transcript, screenshots, or timeline."
-  ].join("\n");
-
-  const response = await openAiFetch(`${OPENAI_BASE_URL}/responses`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: TICKET_MODEL,
-      reasoning: { effort: "high" },
-      input: [
-        {
-          role: "system",
-          content: [{ type: "input_text", text: instructions }]
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: JSON.stringify(
-                {
-                  transcriptText: transcript.text,
-                  transcriptSegments: transcript.segments.map((segment) => ({
-                    ...segment,
-                    selectionAtSeconds: segment.end
-                  })),
-                  selectedTemplate: {
-                    id: template.id,
-                    name: template.name,
-                    instructions: template.instructions
-                  },
-                  captureAnalysis: analysisResult.analysis,
-                  selectedScreenshotIds: selectedScreenshots.map((shot) => shot.id),
-                  timeline,
-                  evidenceFrames
-                },
-                null,
-                2
-              )
-            },
-            ...screenshotContent
-          ]
-        }
-      ]
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error(`Ticket generation failed: ${response.status} ${await response.text()}`);
-  }
-
-  const payload = (await response.json()) as ResponsesPayload;
-  const text = extractOutputText(payload);
-  return {
-    ticket: parseTicket(text),
-    usage: combineUsage(analysisResult.usage, usageFromPayload(payload)),
-    analysis: analysisResult.analysis
-  };
-}
-
 export async function analyzeCapture(
   apiKey: string,
   transcript: TranscriptionResult,
-  template: TicketTemplate,
-  sessionOrTimeline: RecordingSession | unknown[],
-  frames?: unknown[]
+  session: RecordingSession,
+  privateMode = false
 ): Promise<{ analysis: CaptureAnalysis; usage: OpenAiUsage }> {
-  const timeline = (Array.isArray(sessionOrTimeline)
-    ? sessionOrTimeline
-    : sessionOrTimeline.timeline.map((event) => ({
-        type: event.type,
-        atMs: event.atMs,
+  const timeline = session.timeline.map((event) => ({
+        ...event,
         atSeconds: Math.round(event.atMs / 100) / 10,
-        url: event.url,
-        title: event.title,
-        note: event.note,
-        screenshotId: event.screenshotId,
-        rect: event.rect,
-        point: event.point
-      }))) as TimelineEvent[];
-  const evidenceFrames = frames ?? (Array.isArray(sessionOrTimeline)
-    ? []
-    : sessionOrTimeline.screenshots.map((shot) => ({
+      }));
+  const evidenceFrames = session.screenshots.map((shot) => ({
         id: shot.id,
         capturedAtMs: shot.capturedAtMs,
         capturedAtSeconds: Math.round(shot.capturedAtMs / 100) / 10,
@@ -243,29 +108,30 @@ export async function analyzeCapture(
         title: shot.title,
         annotations: shot.annotations,
         redactions: shot.redactions
-      })));
+      }));
+  const planningScreenshots = selectPlanningScreenshots(session);
   const alignedTranscriptSegments = transcript.segments.map((segment) => ({
     ...segment,
     selectionAtSeconds: segment.end,
     screenshotAtSentenceEnd: screenshotAtOrAfter(evidenceFrames, segment.end)
   }));
   const instructions = [
-    "You prepare screen captures before final document generation.",
+    "You turn a narrated screen capture into a clear visual story plan. The reviewed plan will be rendered directly as the PDF, with no later AI formatting pass.",
     "Start with the transcript and timestamped timeline. Identify what the user is trying to communicate before looking for screenshots.",
     "Return only valid JSON. Do not wrap it in code fences.",
-    "The JSON schema is: userGoal:string, keyPoints:string[], bestDelivery:string, breakingPoints:string[], story:string, storySteps:{startSeconds:number,endSeconds:number,title:string,narrative:string,transcript:string,screenshotId?:string,pageUrl?:string,pageTitle?:string,kind:'narration'|'page-change'|'action'}[].",
+    "The JSON schema is: userGoal:string, keyPoints:string[], story:string, storySteps:{startSeconds:number,endSeconds:number,title:string,narrative:string,transcript:string,screenshotId?:string,pageUrl?:string,pageTitle?:string,kind:'narration'|'page-change'|'action'}[].",
     "userGoal should capture the user's intended outcome.",
     "keyPoints should preserve every important claim, request, problem, expectation, and decision made by the user. Prefer detail over compression.",
-    "bestDelivery should provide a detailed outline of the best document shape for that goal and the selected template.",
-    "breakingPoints should comprehensively list every moment where the workflow changed, failed, became confusing, introduced important context, or established a decision or expected result.",
+    "story should be a concise but complete summary of what the user is trying to communicate.",
     "storySteps are the detailed chronological plan. Create a step for every meaningful transcript sentence, action, page change, annotation, redaction, error, and visible state transition unless it is truly redundant.",
     "Each story step must explain what is happening in narrative, preserve the exact relevant transcript sentence in transcript, and select the screenshot that best illustrates the resulting state.",
     "Every URL change in the timeline must appear as a page-change story step with pageUrl and pageTitle. Page changes are part of the story, not incidental metadata.",
     "Transcript timestamps mark when a sentence starts and ends. For screenshot selection, use selectionAtSeconds and screenshotAtSentenceEnd so the chosen image reflects the completed sentence and resulting UI state, not the beginning of the narration.",
     "Prefer the first screenshot at or after a sentence ends. Use the closest prior screenshot only when no later screenshot exists. Return the exact screenshotId from evidenceFrames whenever possible.",
-    "story should be a detailed chronological walkthrough that preserves the full narrative from the audio rather than a short summary.",
-    `Selected template: ${template.name}.`,
-    `Template instructions: ${template.instructions}`
+    "The attached images are only representative transition frames, not the full screenshot set. Use all evidenceFrames timestamps, URLs, titles, and IDs to choose an earlier or later screenshot when that ID better illustrates the point.",
+    privateMode
+      ? "Private Mode is enabled. No screenshot pixels are provided. Use only transcript, timeline metadata, annotations, timestamps, and screenshot IDs; never claim to have visually inspected a frame."
+      : "Representative transition screenshot pixels follow the JSON. Use them to understand the visual changes, while choosing the most appropriate exact screenshotId from the complete evidenceFrames list."
   ].join("\n");
 
   const response = await openAiFetch(`${OPENAI_BASE_URL}/responses`, {
@@ -275,8 +141,8 @@ export async function analyzeCapture(
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      model: TICKET_MODEL,
-      reasoning: { effort: "high" },
+      model: PLAN_MODEL,
+      reasoning: { effort: "medium" },
       input: [
         {
           role: "system",
@@ -292,12 +158,17 @@ export async function analyzeCapture(
                   transcriptText: transcript.text,
                   transcriptSegments: alignedTranscriptSegments,
                   timeline,
-                  evidenceFrames
+                  evidenceFrames,
+                  shownTransitionScreenshotIds: privateMode ? [] : planningScreenshots.map((shot) => shot.id)
                 },
                 null,
                 2
               )
-            }
+            },
+            ...(privateMode ? [] : planningScreenshots.flatMap((shot) => [
+              { type: "input_text", text: `Transition screenshot ${shot.id} at ${Math.round(shot.capturedAtMs / 100) / 10}s · ${shot.title || shot.url}` },
+              { type: "input_image", image_url: shot.dataUrl, detail: "high" }
+            ]))
           ]
         }
       ]
@@ -351,28 +222,35 @@ function parseStoryStep(step: Partial<CaptureStoryStep>): CaptureStoryStep {
   };
 }
 
-export function selectScreenshotsForAnalysis(screenshots: ScreenshotEvidence[], analysis: CaptureAnalysis): ScreenshotEvidence[] {
-  const imageScreenshots = screenshots.filter((shot) => shot.dataUrl.startsWith("data:image/"));
+export function selectPlanningScreenshots(session: RecordingSession): ScreenshotEvidence[] {
+  const imageScreenshots = session.screenshots.filter((shot) => shot.dataUrl.startsWith("data:image/"));
   const selected: ScreenshotEvidence[] = [];
   const addUnique = (shot?: ScreenshotEvidence) => {
     if (shot && !selected.some((existing) => existing.id === shot.id)) selected.push(shot);
   };
 
-  for (const step of analysis.storySteps ?? []) {
-    if (step.screenshotId) addUnique(imageScreenshots.find((shot) => shot.id === step.screenshotId));
+  addUnique(imageScreenshots[0]);
+  addUnique(imageScreenshots.at(-1));
+  for (const event of session.timeline) {
+    if (!(["url-change", "annotation", "redaction", "click"] as string[]).includes(event.type)) continue;
+    addUnique(imageScreenshots.find((shot) => shot.capturedAtMs >= event.atMs));
   }
-
-  for (const moment of analysis.helpfulImageMoments) {
-    if (moment.screenshotId) addUnique(imageScreenshots.find((shot) => shot.id === moment.screenshotId));
-    const targetMs = moment.atSeconds * 1000;
-    addUnique([...imageScreenshots].sort((a, b) => Math.abs(a.capturedAtMs - targetMs) - Math.abs(b.capturedAtMs - targetMs))[0]);
+  imageScreenshots.forEach((shot, index) => {
+    const previous = imageScreenshots[index - 1];
+    if (!previous || shot.url !== previous.url || shot.annotations.length > 0 || shot.redactions.length > 0) addUnique(shot);
+  });
+  if (selected.length > MAX_PLANNING_SCREENSHOTS) {
+    return selectEvenlySpaced(selected.sort((a, b) => a.capturedAtMs - b.capturedAtMs), MAX_PLANNING_SCREENSHOTS);
   }
-
-  if (selected.length > MAX_DRAFT_SCREENSHOTS) return selectEvenlySpaced(selected, MAX_DRAFT_SCREENSHOTS);
-
-  for (const representative of selectEvenlySpaced(imageScreenshots, MAX_DRAFT_SCREENSHOTS)) addUnique(representative);
-
-  return selected.slice(0, MAX_DRAFT_SCREENSHOTS);
+  for (const representative of selectEvenlySpaced(imageScreenshots, MAX_PLANNING_SCREENSHOTS)) {
+    if (selected.length >= MAX_PLANNING_SCREENSHOTS) break;
+    addUnique(representative);
+  }
+  for (const screenshot of imageScreenshots) {
+    if (selected.length >= MAX_PLANNING_SCREENSHOTS) break;
+    addUnique(screenshot);
+  }
+  return selected.sort((a, b) => a.capturedAtMs - b.capturedAtMs);
 }
 
 export function alignAnalysisToSentenceEnds(
@@ -435,21 +313,6 @@ function selectEvenlySpaced(screenshots: ScreenshotEvidence[], limit: number): S
   });
 }
 
-export function parseTicket(text: string): TicketDraft {
-  const parsed = JSON.parse(stripCodeFence(text)) as Partial<TicketDraft>;
-  return {
-    title: parsed.title || "Untitled ticket",
-    templateName: parsed.templateName,
-    summary: parsed.summary || "",
-    environment: parsed.environment || [],
-    reproductionSteps: parsed.reproductionSteps || [],
-    expectedBehavior: parsed.expectedBehavior || "",
-    actualBehavior: parsed.actualBehavior || "",
-    evidence: parsed.evidence || [],
-    openQuestions: parsed.openQuestions || []
-  };
-}
-
 function extractOutputText(payload: ResponsesPayload): string {
   if (payload.output_text) return payload.output_text;
   const parts: string[] = [];
@@ -475,28 +338,6 @@ function usageFromPayload(payload: ResponsesPayload): OpenAiUsage {
     outputTokens,
     totalTokens,
     estimatedCostUsd: Math.round(estimatedCostUsd * 1_000_000) / 1_000_000
-  };
-}
-
-function combineUsage(...usages: OpenAiUsage[]): OpenAiUsage {
-  const inputTokens = usages.reduce((sum, usage) => sum + usage.inputTokens, 0);
-  const outputTokens = usages.reduce((sum, usage) => sum + usage.outputTokens, 0);
-  const totalTokens = usages.reduce((sum, usage) => sum + usage.totalTokens, 0);
-  const estimatedCostUsd = usages.reduce((sum, usage) => sum + usage.estimatedCostUsd, 0);
-  return {
-    inputTokens,
-    outputTokens,
-    totalTokens,
-    estimatedCostUsd: Math.round(estimatedCostUsd * 1_000_000) / 1_000_000
-  };
-}
-
-function emptyUsage(): OpenAiUsage {
-  return {
-    inputTokens: 0,
-    outputTokens: 0,
-    totalTokens: 0,
-    estimatedCostUsd: 0
   };
 }
 

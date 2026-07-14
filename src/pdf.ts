@@ -1,21 +1,26 @@
 import { jsPDF } from "jspdf";
-import type { RecordingSession, TicketDraft } from "./types";
+import { buildCaptureStory } from "./captureStory";
+import type { CaptureStoryStep, RecordingSession } from "./types";
 
-export function createTicketPdf(ticket: TicketDraft, session: RecordingSession): Blob {
+export function createPlanPdf(session: RecordingSession): Blob {
+  if (!session.captureAnalysis) throw new Error("A reviewed plan is required before creating the PDF.");
+  const title = session.captureAnalysis.userGoal || session.tabTitle || "JesSee capture";
   const pdf = new jsPDF({ unit: "pt", format: "letter" });
   pdf.setProperties({
-    title: ticket.title,
-    subject: "JesSee capture summary",
+    title,
+    subject: "JesSee visual story",
     author: "JesSee",
     creator: "JesSee",
-    keywords: ["capture", "debug ticket", "evidence", ticket.templateName].filter(Boolean).join(", ")
+    keywords: "capture, visual story, transcript, evidence"
   });
-  drawTicket(pdf, ticket, session);
+  drawPlan(pdf, session);
   addFooter(pdf);
   return pdf.output("blob");
 }
 
-function drawTicket(pdf: jsPDF, ticket: TicketDraft, session: RecordingSession): void {
+function drawPlan(pdf: jsPDF, session: RecordingSession): void {
+  const analysis = session.captureAnalysis!;
+  const storySteps = buildCaptureStory(analysis, session.transcript, session.timeline, session.screenshots);
   const margin = 44;
   const width = pdf.internal.pageSize.getWidth();
   const height = pdf.internal.pageSize.getHeight();
@@ -39,23 +44,24 @@ function drawTicket(pdf: jsPDF, ticket: TicketDraft, session: RecordingSession):
     y += lines.length * (size + 5) + 8;
   };
 
-  const addParagraph = (text: string) => {
+  const addParagraph = (text: string, color: [number, number, number] = [63, 63, 70]) => {
     if (!text) return;
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(10);
     const lines = pdf.splitTextToSize(text, maxTextWidth);
     ensureSpace(lines.length * 13 + 10);
-    pdf.setTextColor(63, 63, 70);
+    pdf.setTextColor(...color);
     pdf.text(lines, margin, y);
     y += lines.length * 13 + 10;
   };
 
-  const addEvidenceImage = (caption: string, screenshot: RecordingSession["screenshots"][number], index: number) => {
+  const addEvidenceImage = (step: CaptureStoryStep, screenshot: RecordingSession["screenshots"][number], index: number) => {
     const props = pdf.getImageProperties(screenshot.dataUrl);
     const maxImageHeight = 360;
     const naturalHeight = (props.height * maxTextWidth) / props.width;
     const imageHeight = Math.min(maxImageHeight, naturalHeight);
     const imageWidth = Math.min(maxTextWidth, (props.width * imageHeight) / props.height);
+    const caption = step.narrative || step.title;
     const captionLines = pdf.splitTextToSize(caption, imageWidth - 24);
     const captionHeight = Math.max(1, captionLines.length) * 11;
     const cardHeight = imageHeight + captionHeight + 58;
@@ -66,7 +72,7 @@ function drawTicket(pdf: jsPDF, ticket: TicketDraft, session: RecordingSession):
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(10);
     pdf.setTextColor(24, 24, 27);
-    pdf.text(`Evidence ${index + 1}  ·  ${formatTimestamp(screenshot.capturedAtMs)}`, margin + 12, y + 18);
+    pdf.text(`Story step ${index + 1}  ·  ${formatTimestamp(screenshot.capturedAtMs)}`, margin + 12, y + 18);
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(9);
     pdf.setTextColor(82, 82, 91);
@@ -77,48 +83,46 @@ function drawTicket(pdf: jsPDF, ticket: TicketDraft, session: RecordingSession):
     y += cardHeight + 10;
   };
 
-  addHeading(ticket.title, 20);
-  if (ticket.templateName) addParagraph(`Template: ${ticket.templateName}`);
-  addParagraph(ticket.summary);
+  addHeading(analysis.userGoal || session.tabTitle || "JesSee capture", 20);
+  addParagraph(analysis.story);
 
-  addHeading("Environment");
-  for (const item of ticket.environment) addParagraph(`- ${item}`);
-
-  addHeading("Reproduction Steps");
-  ticket.reproductionSteps.forEach((step, index) => addParagraph(`${index + 1}. ${step}`));
-
-  addHeading("Expected Behavior");
-  addParagraph(ticket.expectedBehavior);
-
-  addHeading("Actual Behavior");
-  addParagraph(ticket.actualBehavior);
-
-  addHeading("Evidence");
-  ticket.evidence.forEach((evidence, index) => {
-    const screenshot = evidence.screenshotId
-      ? session.screenshots.find((shot) => shot.id === evidence.screenshotId)
-      : undefined;
-    if (screenshot) {
-      try {
-        addEvidenceImage(evidence.caption, screenshot, index);
-      } catch {
-        addParagraph(evidence.caption);
-        addParagraph(`[Screenshot ${screenshot.id} could not be embedded]`);
-      }
-    } else {
-      addParagraph(evidence.caption);
-    }
-  });
-
-  if (ticket.openQuestions.length > 0) {
-    addHeading("Open Questions");
-    for (const question of ticket.openQuestions) addParagraph(`- ${question}`);
+  const keyPoints = analysis.keyPoints?.length ? analysis.keyPoints : analysis.breakingPoints ?? [];
+  if (keyPoints.length) {
+    addHeading("Key points");
+    keyPoints.forEach((point) => addParagraph(`• ${point}`));
   }
 
+  addHeading("Story");
+  storySteps.forEach((step, index) => {
+    addHeading(`${index + 1}. ${step.title}`, 14);
+    addParagraph(`${formatSeconds(step.startSeconds)}${step.endSeconds !== step.startSeconds ? `–${formatSeconds(step.endSeconds)}` : ""} · ${storyKindLabel(step)}`, [113, 113, 122]);
+    addParagraph(step.narrative);
+    if (step.transcript) addParagraph(`What the user said: “${step.transcript}”`, [39, 39, 42]);
+    if (step.pageUrl) addParagraph(`Page: ${step.pageTitle || step.pageUrl}${step.pageTitle ? ` — ${step.pageUrl}` : ""}`, [3, 105, 161]);
+    const screenshot = step.screenshotId ? session.screenshots.find((shot) => shot.id === step.screenshotId) : undefined;
+    if (screenshot) {
+      try {
+        addEvidenceImage(step, screenshot, index);
+      } catch {
+        addParagraph(`[Screenshot ${screenshot.id} could not be embedded]`);
+      }
+    }
+  });
+}
+
+function storyKindLabel(step: CaptureStoryStep): string {
+  if (step.kind === "page-change") return "Page change";
+  if (step.kind === "manual") return "Added story step";
+  if (step.kind === "action") return "Action";
+  return "User narration";
 }
 
 function formatTimestamp(milliseconds: number): string {
-  const seconds = Math.max(0, Math.round(milliseconds / 1000));
+  return formatSeconds(milliseconds / 1000);
+}
+
+function formatSeconds(value: number): string {
+  const seconds = Math.max(0, Math.round(value));
   const minutes = Math.floor(seconds / 60);
   return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
 }
@@ -134,18 +138,18 @@ function addFooter(pdf: jsPDF): void {
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(8);
     pdf.setTextColor(113, 113, 122);
-    pdf.text("JesSee capture", 44, height - 17);
+    pdf.text("JesSee visual story", 44, height - 17);
     pdf.text(`Page ${page} of ${pageCount}`, width - 44, height - 17, { align: "right" });
   }
 }
 
-export function ticketPdfFilename(ticket: TicketDraft, now = new Date()): string {
+export function planPdfFilename(title: string, now = new Date()): string {
   const timestamp = now.toISOString().slice(0, 19).replace(/:/g, "-");
-  const slug = ticket.title
+  const slug = title
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 70) || "ticket";
+    .slice(0, 70) || "visual-story";
   return `${timestamp}-${slug}.pdf`;
 }
 

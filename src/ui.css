@@ -246,6 +246,10 @@
     @apply border-amber-200 bg-amber-50 text-amber-700;
   }
 
+  .story-kind.manual {
+    @apply border-emerald-200 bg-emerald-50 text-emerald-700;
+  }
+
   .transcript-quote {
     @apply border-l-4 border-[#5B5EF8] bg-white px-4 py-3;
   }
@@ -467,16 +471,16 @@
     border-radius: 8px;
   }
 
-  .template-row {
+  .capture-row {
     @apply flex items-start justify-between gap-3 border border-zinc-200 bg-zinc-50 p-3;
     border-radius: 8px;
   }
 
-  .template-row > div {
+  .capture-row > div {
     @apply min-w-0 flex-1;
   }
 
-  .template-row strong {
+  .capture-row strong {
     @apply block text-sm font-semibold text-zinc-950;
   }
 

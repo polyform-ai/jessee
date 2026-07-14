@@ -1,21 +1,18 @@
-import { getSettings, upsertCaptureHistory } from "./storage";
-import { getSelectedTemplate } from "./templates";
+import { upsertCaptureHistory } from "./storage";
 import type { RecordingSession } from "./types";
 
-export async function saveCaptureHistory(current: RecordingSession, fallbackTemplateName?: string): Promise<void> {
+export async function saveCaptureHistory(current: RecordingSession): Promise<void> {
   if (!current.startedAt) return;
-  const templateName = current.ticket?.templateName ?? fallbackTemplateName ?? getSelectedTemplate(await getSettings()).name;
   await upsertCaptureHistory({
     id: current.captureId ?? `${current.startedAt}`,
-    title: current.ticket?.title || current.captureAnalysis?.userGoal || current.tabTitle || "JesSee capture",
+    title: current.captureAnalysis?.userGoal || current.tabTitle || "JesSee capture",
     folderName: current.exportFolderName,
     createdAt: current.startedAt,
     stoppedAt: current.stoppedAt,
-    templateName,
     imageCount: current.screenshots.length,
     durationSeconds: recordingSeconds(current),
     hasPlan: Boolean(current.captureAnalysis),
-    hasTicket: Boolean(current.ticket),
+    hasPdf: current.status === "ready",
     session: current
   });
 }

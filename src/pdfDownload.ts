@@ -1,19 +1,17 @@
 import { hydrateSession } from "./artifacts";
 import { writeRecordingBlob, writeRecordingText } from "./localFiles";
-import { createTicketPdf, ticketPdfFilename } from "./pdf";
+import { createPlanPdf, planPdfFilename } from "./pdf";
 import { getSettings } from "./storage";
-import { getSelectedTemplate } from "./templates";
 import type { RecordingSession } from "./types";
 import { postWebhook } from "./webhook";
 
-export async function downloadTicketPdf(current: RecordingSession): Promise<void> {
-  if (!current.ticket) return;
+export async function downloadPlanPdf(current: RecordingSession): Promise<void> {
+  if (!current.captureAnalysis) return;
   const conversionStartedAt = performance.now();
   const hydrated = await hydrateSession(current);
-  const blob = createTicketPdf(hydrated.ticket!, hydrated);
-  const filename = ticketPdfFilename(current.ticket);
+  const blob = createPlanPdf(hydrated);
+  const filename = planPdfFilename(current.captureAnalysis.userGoal || current.tabTitle || "visual-story");
   await writeRecordingBlob(filename, blob);
-  await writeRecordingText("ticket.json", JSON.stringify(current.ticket, null, 2), "application/json");
   if (current.captureAnalysis) {
     await writeRecordingText("capture-analysis.json", JSON.stringify(current.captureAnalysis, null, 2), "application/json");
   }
@@ -33,7 +31,6 @@ export async function downloadTicketPdf(current: RecordingSession): Promise<void
     image_count: hydrated.screenshots.length,
     recording_seconds: recordingSeconds(hydrated),
     conversion_ms: Math.round(performance.now() - conversionStartedAt),
-    template_name: current.ticket.templateName ?? getSelectedTemplate(settings).name,
     openai_tokens: current.openAiUsage?.totalTokens ?? 0,
     openai_input_tokens: current.openAiUsage?.inputTokens ?? 0,
     openai_output_tokens: current.openAiUsage?.outputTokens ?? 0,

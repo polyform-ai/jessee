@@ -1,5 +1,4 @@
 import type { CaptureHistoryItem, RecordingSession, Settings } from "./types";
-import { DEFAULT_TEMPLATE_ID } from "./templates";
 import { deleteSessionArtifacts } from "./artifacts";
 
 const SESSION_KEY = "recordingSession";
@@ -43,11 +42,11 @@ export async function clearApiKey(): Promise<void> {
 }
 
 function normalizeSettings(settings: Settings): Settings {
+  const legacy = settings as Settings & { selectedTemplateId?: unknown; customTemplates?: unknown };
+  const { selectedTemplateId: _selectedTemplateId, customTemplates: _customTemplates, ...activeSettings } = legacy;
   return {
-    ...settings,
+    ...activeSettings,
     uniqueId: settings.uniqueId ?? crypto.randomUUID(),
-    selectedTemplateId: settings.selectedTemplateId ?? DEFAULT_TEMPLATE_ID,
-    customTemplates: settings.customTemplates ?? [],
     retentionDays: settings.retentionDays ?? 30,
     captureHistory: settings.captureHistory ?? []
   };
