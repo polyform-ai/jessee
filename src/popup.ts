@@ -2,6 +2,7 @@ import "./ui.css";
 import { artifactRef, putArtifact } from "./artifacts";
 import { shouldStartWithFreshCapture } from "./captureHome";
 import { saveCaptureHistory } from "./captureHistory";
+import { getCaptureFlowView, type CaptureFlowButton } from "./captureFlow";
 import { dataUrlToBlob } from "./dataUrl";
 import {
   chooseExportFolder,
@@ -35,10 +36,8 @@ let screenshotInterval: number | undefined;
 let screenshotInFlight = false;
 let queuedAnnotationCapture = false;
 let liveRenderInterval: number | undefined;
-let pdfProgressInterval: number | undefined;
 let localStatus = "";
 let settingsCache: Awaited<ReturnType<typeof getSettings>> | undefined;
-let pdfProgress: PdfProgress | undefined;
 let cleanupRan = false;
 let lastScreenshotFingerprint: string | undefined;
 let lastStoredScreenshotAtMs = -Infinity;
@@ -47,18 +46,6 @@ let initialSessionChecked = false;
 const videoChunks: Blob[] = [];
 const audioChunks: Blob[] = [];
 
-interface PdfProgress {
-  startedAt: number;
-  estimateSeconds: number;
-  percent: number;
-  label: string;
-}
-
-const PDF_PROGRESS_STEPS = [
-  { label: "Preparing visual story", threshold: 6 },
-  { label: "Adding selected screenshots", threshold: 55 },
-  { label: "Building PDF", threshold: 90 }
-];
 const CAPTURE_INTERVAL_MS = 500;
 const MAX_SIMILAR_FRAME_GAP_MS = 5_000;
 
@@ -97,15 +84,13 @@ function render(): void {
     return;
   }
   const hasEvidence = Boolean(current && (current.screenshots.length > 0 || current.audioDataUrl || current.videoDataUrl));
-  const canUsePdfAction = current?.status === "stopped" || current?.status === "planned" || current?.status === "ready" || (current?.status === "error" && hasEvidence);
-  const hasPdf = current?.status === "ready";
   const recordingDuration = formatDuration(current?.startedAt, current?.stoppedAt);
   const status = statusLabel(current?.status);
-  const showCaptureSummary = Boolean(current?.startedAt || current?.screenshots.length || current?.captureAnalysis);
-  const progress = pdfProgress ?? (current?.status === "generating" ? createProgress(current, Date.now()) : undefined);
+  const showCaptureSummary = Boolean(current && ["stopped", "planning", "planned", "ready", "error"].includes(current.status) && (current.startedAt || current.screenshots.length));
+  const showStatusDetails = Boolean(localStatus || current?.error || current?.analysisError || current?.exportFolderName || current?.localExportWarning);
   const history = settings?.captureHistory ?? [];
   const isMicrophoneReady = Boolean(settings?.microphoneEnabledAt);
-  const isPlanning = current?.status === "planning";
+  const flow = getCaptureFlowView(current, isMicrophoneReady, hasEvidence);
   root.innerHTML = `
     <main class="app">
       <div class="header header-panel">
@@ -123,18 +108,15 @@ function render(): void {
         </div>
       </div>
       <div class="stack">
-        <section class="panel">
+        ${current?.status !== "generating" ? `<section class="panel">
           <div class="panel-header">
             <div>
-              <h2>Capture Context</h2>
-              <p>Explain it once. JesSee turns it into a clean PDF.</p>
+              <h2>${escapeHtml(flow.title)}</h2>
+              <p>${escapeHtml(flow.description)}</p>
             </div>
           </div>
-          <div class="row">
-            <button class="button primary" id="start" ${current?.status === "generating" || isPlanning || current?.status === "recording" || !isMicrophoneReady ? "disabled" : ""}>Start Capture</button>
-            <button class="button danger" id="stop" ${current?.status !== "recording" ? "disabled" : ""}>Close Capture</button>
-          </div>
-          ${current?.status === "recording" ? `<div class="stack">
+          ${flow.buttons.length ? `<div class="flow-actions">${flow.buttons.map(renderFlowButton).join("")}</div>` : ""}
+          ${flow.showShortcuts ? `<div class="stack">
             <div class="shortcut-grid" aria-label="Screen annotation shortcuts">
               <div class="shortcut"><kbd>B</kbd><span>Hold and drag an outline box</span></div>
               <div class="shortcut"><kbd>R</kbd><span>Hold and drag to redact</span></div>
@@ -142,29 +124,13 @@ function render(): void {
             </div>
             <p class="hint">Use these shortcuts directly on the page you are recording. Release the key after drawing.</p>
           </div>` : ""}
-          ${!isMicrophoneReady ? `<button class="button secondary" id="openMicSettings">Enable Microphone in Settings</button>` : ""}
-          ${isPlanning ? `<button class="button primary" disabled>Creating plan…</button>` : canUsePdfAction ? `<button class="button primary" id="pdfAction">${hasPdf ? "Download PDF" : current?.captureAnalysis ? "Generate PDF" : "Create Plan"}</button>` : ""}
-          ${current?.captureAnalysis && !isPlanning ? `<button class="button secondary" id="reviewPlan">Review plan and screenshots</button>` : ""}
-          ${current && current.status !== "idle" && current.status !== "recording" && current.status !== "planning" && current.status !== "generating" ? `<button class="button secondary" id="newCapture">New Capture</button>` : ""}
-        </section>
-        ${progress ? `<section class="panel">
+        </section>` : ""}
+        ${current?.status === "generating" ? `<section class="panel">
           <div class="panel-header">
             <div>
-              <h2>Creating PDF</h2>
-              <p>${escapeHtml(progress.label)} · ${formatProgressTiming(progress)}</p>
+              <h2>Building your PDF</h2>
+              <p>Rendering the reviewed visual story with its selected local screenshots.</p>
             </div>
-          </div>
-          <div class="progress-track" aria-label="PDF creation progress">
-            <div class="progress-fill" style="width: ${Math.round(progress.percent)}%"></div>
-          </div>
-          <div class="progress-steps">
-            ${PDF_PROGRESS_STEPS.map((step, index) => {
-              const status = progressStepStatus(progress, index);
-              return `<div class="progress-step ${status}">
-                <span>${status === "done" ? "OK" : index + 1}</span>
-                <strong>${escapeHtml(step.label)}</strong>
-              </div>`;
-            }).join("")}
           </div>
         </section>` : ""}
         ${showCaptureSummary ? `<section class="panel">
@@ -180,13 +146,12 @@ function render(): void {
             <div class="meta"><span>Story Steps</span><strong>${current?.captureAnalysis?.storySteps?.length ?? 0}</strong></div>
           </div>
         </section>` : ""}
-        <section class="panel">
+        ${showStatusDetails ? `<section class="panel">
           ${localStatus ? `<p class="success">${escapeHtml(localStatus)}</p>` : ""}
           ${!localStatus && (current?.error || current?.analysisError) ? `<p class="error">${escapeHtml(current?.analysisError ?? current?.error ?? "")}</p>` : ""}
           ${current?.exportFolderName ? `<p class="hint">Capture folder: ${escapeHtml(current.exportFolderName)}</p>` : ""}
           ${current?.localExportWarning ? `<p class="hint">${escapeHtml(current.localExportWarning)}</p>` : ""}
-          <p class="hint">Sharp, cursor-inclusive screenshots are timestamped and paired with your narration when the PDF is created.</p>
-        </section>
+        </section>` : ""}
         ${renderHistory(history)}
       </div>
     </main>
@@ -197,11 +162,8 @@ function render(): void {
   bind("#stop", "click", () => stopRecording());
   bind("#reviewPlan", "click", () => openPlanPage());
   bind("#newCapture", "click", () => startFreshCapture());
-  bind("#pdfAction", "click", () => {
-    if (!session?.captureAnalysis) void prepareCapturePlan();
-    else if (session.status === "ready") void downloadPlanPdf(session);
-    else void generateAndDownload();
-  });
+  bind("#createPlan", "click", () => prepareCapturePlan());
+  bind("#downloadPdf", "click", () => session && downloadPlanPdf(session));
   for (const button of document.querySelectorAll<HTMLButtonElement>(".load-history")) {
     button.addEventListener("click", async () => {
       const item = settings?.captureHistory?.find((capture) => capture.id === button.dataset.captureId);
@@ -213,6 +175,10 @@ function render(): void {
   }
   bind("#settings", "click", () => chrome.runtime.openOptionsPage());
   updateLiveRender();
+}
+
+function renderFlowButton(button: CaptureFlowButton): string {
+  return `<button class="button ${button.tone}" id="${button.id}">${escapeHtml(button.label)}</button>`;
 }
 
 function renderOnboarding(settings: Awaited<ReturnType<typeof getSettings>> | undefined): void {
@@ -351,31 +317,6 @@ async function run(message: RuntimeMessage, refreshAfter = true): Promise<void> 
   if (!response.ok) throw new Error(response.error ?? "Request failed.");
   if (refreshAfter) await refresh();
   else render();
-}
-
-async function generateAndDownload(): Promise<void> {
-  const currentBefore = await getSession();
-  if (!currentBefore.captureAnalysis) {
-    await prepareCapturePlan();
-    return;
-  }
-  startPdfProgress(await getSession());
-  try {
-    await run({ type: "GENERATE_PDF" });
-    updatePdfProgress(92, "Building the PDF");
-    const current = await getSession();
-    await downloadPlanPdf(current);
-    updatePdfProgress(100, "Done");
-    await saveCaptureHistory(current);
-  } catch (error) {
-    localStatus = error instanceof Error ? error.message : String(error);
-    await refresh();
-  } finally {
-    window.setTimeout(() => {
-      stopPdfProgress();
-      render();
-    }, 500);
-  }
 }
 
 async function prepareCapturePlan(): Promise<void> {
@@ -831,78 +772,6 @@ function updateLiveRender(): void {
     window.clearInterval(liveRenderInterval);
     liveRenderInterval = undefined;
   }
-}
-
-function startPdfProgress(current: RecordingSession): void {
-  const estimateSeconds = estimatePdfSeconds(current);
-  pdfProgress = {
-    startedAt: Date.now(),
-    estimateSeconds,
-    percent: 6,
-    label: "Preparing capture"
-  };
-  if (pdfProgressInterval) window.clearInterval(pdfProgressInterval);
-  pdfProgressInterval = window.setInterval(() => {
-    if (!pdfProgress) return;
-    pdfProgress = createProgress(current, pdfProgress.startedAt, pdfProgress.estimateSeconds);
-    render();
-  }, 1000);
-  render();
-}
-
-function updatePdfProgress(percent: number, label: string): void {
-  if (!pdfProgress) return;
-  pdfProgress = { ...pdfProgress, percent, label };
-  render();
-}
-
-function stopPdfProgress(): void {
-  if (pdfProgressInterval) window.clearInterval(pdfProgressInterval);
-  pdfProgressInterval = undefined;
-  pdfProgress = undefined;
-}
-
-function createProgress(current: RecordingSession, startedAt: number, estimateSeconds = estimatePdfSeconds(current)): PdfProgress {
-  const elapsedSeconds = Math.max(0, (Date.now() - startedAt) / 1000);
-  const ratio = Math.min(0.9, elapsedSeconds / estimateSeconds);
-  const percent = Math.max(6, Math.round(ratio * 90));
-  return {
-    startedAt,
-    estimateSeconds,
-    percent,
-    label: progressLabel(percent)
-  };
-}
-
-function progressLabel(percent: number): string {
-  if (percent < 55) return "Preparing visual story";
-  if (percent < 90) return "Adding selected screenshots";
-  return "Building PDF";
-}
-
-function progressStepStatus(progress: PdfProgress, index: number): "done" | "active" | "pending" {
-  const currentIndex = Math.max(
-    0,
-    PDF_PROGRESS_STEPS.findIndex((step, stepIndex) => {
-      const next = PDF_PROGRESS_STEPS[stepIndex + 1];
-      return progress.percent >= step.threshold && (!next || progress.percent < next.threshold);
-    })
-  );
-  if (index < currentIndex) return "done";
-  if (index === currentIndex) return "active";
-  return "pending";
-}
-
-function estimatePdfSeconds(current: RecordingSession): number {
-  const selectedImageCount = current.captureAnalysis?.storySteps?.filter((step) => step.screenshotId).length ?? 0;
-  return Math.round(Math.min(20, Math.max(3, 2 + selectedImageCount * 0.25)));
-}
-
-function formatProgressTiming(progress: PdfProgress): string {
-  const elapsedSeconds = Math.max(0, Math.round((Date.now() - progress.startedAt) / 1000));
-  const remainingSeconds = Math.max(0, progress.estimateSeconds - elapsedSeconds);
-  if (progress.percent >= 95) return "almost done";
-  return `${formatSeconds(elapsedSeconds)} elapsed · about ${formatSeconds(remainingSeconds)} left`;
 }
 
 function formatSeconds(totalSeconds: number): string {

@@ -90,6 +90,14 @@ test("loads extension settings page", async () => {
       const stored = await chrome.storage.local.get("recordingSession");
       return stored.recordingSession?.captureAnalysis?.userGoal;
     })).toBe("Show the updated visual workflow");
+    await page.evaluate(async () => {
+      const stored = await chrome.storage.local.get("recordingSession");
+      await chrome.storage.local.set({ recordingSession: { ...stored.recordingSession, status: "ready" } });
+    });
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Download PDF" })).toBeVisible();
+    await page.getByLabel("Summary").fill("A revised story must be regenerated.");
+    await expect(page.getByRole("button", { name: "Generate PDF" })).toBeVisible();
 
     const capturePage = await context.newPage();
     await capturePage.route("https://jessee.test/**", (route) => route.fulfill({

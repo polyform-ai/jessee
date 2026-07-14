@@ -2,6 +2,7 @@ import "./ui.css";
 import { hydrateSession } from "./artifacts";
 import { buildCaptureStory, splitTranscriptIntoSentences } from "./captureStory";
 import { saveCaptureHistory } from "./captureHistory";
+import { getPlanPdfAction } from "./captureFlow";
 import { downloadPlanPdf } from "./pdfDownload";
 import { getSession, saveSession } from "./storage";
 import type { CaptureAnalysis, CaptureStoryStep, RecordingSession, RuntimeMessage, TranscriptionResult } from "./types";
@@ -15,6 +16,7 @@ let hydrated: RecordingSession;
 let activeStoryIndex = 0;
 let saveTimer: number | undefined;
 let statusMessage = "Saved automatically";
+let planDirty = false;
 
 void initialize();
 
@@ -38,6 +40,7 @@ function render(): void {
   const selectedShot = hydrated.screenshots.find((shot) => shot.id === activeStep?.screenshotId);
   const selectedShotIndex = selectedShot ? hydrated.screenshots.findIndex((shot) => shot.id === selectedShot.id) : -1;
   const keyPoints = analysis.keyPoints?.length ? analysis.keyPoints : analysis.breakingPoints ?? [];
+  const pdfAction = getPlanPdfAction(session.status, planDirty);
 
   root.innerHTML = `
     <main class="plan-page">
@@ -53,7 +56,7 @@ function render(): void {
         <div class="header-actions">
           <span class="save-status" id="saveStatus">${escapeHtml(statusMessage)}</span>
           <button class="button secondary compact" id="settings">Settings</button>
-          <button class="button primary compact" id="generatePdf">Generate PDF</button>
+          <button class="button primary compact" id="generatePdf" ${pdfAction.disabled ? "disabled" : ""}>${pdfAction.label}</button>
         </div>
       </header>
 
@@ -122,6 +125,7 @@ function render(): void {
   bindAutosave("#planStepTitle");
   bindAutosave("#planNarrative");
   document.querySelector("#planShot")?.addEventListener("change", async () => {
+    planDirty = true;
     await persistPlan();
     await refreshHydratedSession();
   });
@@ -153,8 +157,10 @@ function bindAutosave(selector: string): void {
 }
 
 function scheduleSave(): void {
+  planDirty = true;
   statusMessage = "Saving…";
   updateSaveStatus();
+  updatePdfAction();
   if (saveTimer) window.clearTimeout(saveTimer);
   saveTimer = window.setTimeout(() => void persistPlan(), 450);
 }
@@ -162,7 +168,7 @@ function scheduleSave(): void {
 async function persistPlan(): Promise<void> {
   if (saveTimer) window.clearTimeout(saveTimer);
   saveTimer = undefined;
-  if (!session.captureAnalysis) return;
+  if (!session.captureAnalysis || !planDirty) return;
   const nextAnalysis = collectAnalysis(session.captureAnalysis);
   session = {
     ...session,
@@ -172,6 +178,7 @@ async function persistPlan(): Promise<void> {
   };
   await saveSession(session);
   await saveCaptureHistory(session);
+  planDirty = false;
   statusMessage = "Saved automatically";
   updateSaveStatus();
 }
@@ -245,6 +252,7 @@ async function stepImage(direction: -1 | 1): Promise<void> {
   const next = hydrated.screenshots[currentIndex + direction];
   if (!next) return;
   select.value = next.id;
+  planDirty = true;
   await persistPlan();
   await refreshHydratedSession();
 }
@@ -256,6 +264,11 @@ async function refreshHydratedSession(): Promise<void> {
 
 async function generatePdf(): Promise<void> {
   await persistPlan();
+  if (session.status === "ready") {
+    await downloadPlanPdf(session);
+    setStatus("PDF downloaded");
+    return;
+  }
   setStatus("Creating your PDF…");
   try {
     const response = await send({ type: "GENERATE_PDF" });
@@ -272,6 +285,14 @@ async function generatePdf(): Promise<void> {
 function updateSaveStatus(): void {
   const element = document.querySelector<HTMLElement>("#saveStatus");
   if (element) element.textContent = statusMessage;
+}
+
+function updatePdfAction(): void {
+  const element = document.querySelector<HTMLButtonElement>("#generatePdf");
+  if (!element) return;
+  const action = getPlanPdfAction(session.status, planDirty);
+  element.textContent = action.label;
+  element.disabled = action.disabled;
 }
 
 function setStatus(message: string): void {

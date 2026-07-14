@@ -79,6 +79,18 @@
     @apply flex gap-2;
   }
 
+  .flow-actions {
+    @apply grid grid-cols-2 gap-2;
+  }
+
+  .flow-actions > .button:first-child {
+    @apply col-span-2;
+  }
+
+  .flow-actions > .button:nth-child(2):last-child {
+    @apply col-span-2;
+  }
+
   .shortcut-grid {
     @apply grid grid-cols-2 gap-2;
   }
@@ -360,54 +372,6 @@
 
   .empty-state p {
     @apply text-sm leading-6 text-zinc-500;
-  }
-
-  .progress-track {
-    @apply h-2 w-full overflow-hidden bg-zinc-100;
-    border-radius: 999px;
-  }
-
-  .progress-fill {
-    @apply h-full bg-[#5B5EF8] transition-all duration-500 ease-out;
-    border-radius: 999px;
-  }
-
-  .progress-steps {
-    @apply grid grid-cols-2 gap-2;
-  }
-
-  .progress-step {
-    @apply flex min-h-10 items-center gap-2 border border-zinc-200 bg-zinc-50 px-2.5 py-2 text-xs text-zinc-500;
-    border-radius: 8px;
-  }
-
-  .progress-step span {
-    @apply flex size-5 shrink-0 items-center justify-center border border-zinc-200 bg-white text-[10px] font-semibold text-zinc-500;
-    border-radius: 999px;
-  }
-
-  .progress-step strong {
-    @apply min-w-0 text-xs font-medium leading-4;
-  }
-
-  .progress-step.active {
-    @apply border-[#5B5EF8] bg-[#5B5EF8]/10 text-zinc-950 shadow-sm;
-  }
-
-  .progress-step.active span {
-    @apply border-[#5B5EF8] bg-[#5B5EF8] text-white;
-  }
-
-  .progress-step.active strong {
-    @apply font-semibold;
-  }
-
-  .progress-step.done {
-    @apply border-emerald-200 bg-emerald-50 text-emerald-900;
-  }
-
-  .progress-step.done span {
-    @apply border-emerald-600 bg-emerald-600 text-white;
   }
 
   .field {
