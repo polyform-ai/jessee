@@ -45,7 +45,7 @@ export async function transcribeAudio(apiKey: string, audioDataUrl?: string): Pr
 
   const formData = new FormData();
   formData.append("model", TRANSCRIPTION_MODEL);
-  formData.append("file", blob, "recording.webm");
+  formData.append("file", blob, transcriptionFilename(blob.type));
   formData.append("response_format", "diarized_json");
   formData.append("chunking_strategy", "auto");
 
@@ -73,6 +73,13 @@ export async function transcribeAudio(apiKey: string, audioDataUrl?: string): Pr
       text: segment.text ?? ""
     })))
   };
+}
+
+export function transcriptionFilename(mimeType: string): string {
+  if (/mp4|m4a/i.test(mimeType)) return "recording.m4a";
+  if (/mpeg|mp3/i.test(mimeType)) return "recording.mp3";
+  if (/wav/i.test(mimeType)) return "recording.wav";
+  return "recording.webm";
 }
 
 /**

@@ -1,5 +1,12 @@
 import "./ui.css";
-import { chooseExportFolder, deleteOldCaptureFolders, exportFolderName, hasExportFolder, restoreExportFolder } from "./localFiles";
+import {
+  chooseExportFolder,
+  deleteOldCaptureFolders,
+  exportFolderName,
+  hasExportFolder,
+  restoreExportFolder,
+  supportsExportFolderSelection
+} from "./localFiles";
 import { clearApiKey, getSession, getSettings, pruneCaptureHistory, saveSession, saveSettings } from "./storage";
 import { postWebhook } from "./webhook";
 
@@ -16,6 +23,7 @@ async function render(message = ""): Promise<void> {
   const microphones = await getMicrophones();
   const email = profileDraft?.email ?? settings.email ?? "";
   const apiKeyValue = profileDraft?.apiKey ?? (settings.openAiKey ? "••••••••••••••••" : "");
+  const canChooseFolder = supportsExportFolderSelection();
   root.innerHTML = `
     <main class="page">
       <div class="stack">
@@ -54,7 +62,7 @@ async function render(message = ""): Promise<void> {
             <label><input id="privateMode" type="checkbox" ${settings.privateMode ? "checked" : ""} /> Private Mode</label>
             <p class="hint">Keep screenshot pixels on this computer. JesSee sends narration, timestamps, timeline metadata, and screenshot IDs to create the plan, then attaches your selected local images to the PDF.</p>
           </div>
-          <p class="hint">The key is stored only in chrome.storage.local. Do not paste exposed or revoked keys.</p>
+          <p class="hint">The key is stored only in this browser's local extension storage. Do not paste exposed or revoked keys.</p>
         </section>
         <section class="panel">
           <div class="panel-header">
@@ -81,19 +89,19 @@ async function render(message = ""): Promise<void> {
           <div class="panel-header">
             <div>
               <h2>Local Storage</h2>
-              <p>Choose where captures, screenshots, JSON, and PDFs are saved.</p>
+              <p>${canChooseFolder ? "Choose where captures, screenshots, JSON, and PDFs are saved." : "Safari keeps captures in JesSee and downloads finished PDFs."}</p>
             </div>
           </div>
           <div class="meta">
-            <span>Output folder</span>
-            <strong>${hasExportFolder() ? escapeHtml(exportFolderName() ?? "Selected") : "Not selected"}</strong>
+            <span>${canChooseFolder ? "Output folder" : "Capture storage"}</span>
+            <strong>${canChooseFolder ? (hasExportFolder() ? escapeHtml(exportFolderName() ?? "Selected") : "Not selected") : "JesSee local storage"}</strong>
           </div>
           <div class="field">
             <label for="retentionDays">Delete captures after</label>
             <input id="retentionDays" type="number" min="1" max="365" value="${settings.retentionDays ?? 30}" />
           </div>
-          <button class="button primary" id="chooseFolder">${hasExportFolder() ? "Change Folder" : "Choose Folder"}</button>
-          <p class="hint">Each capture is saved in a dated subfolder with screen media, audio, screenshots, the visual story plan, and PDF.</p>
+          ${canChooseFolder ? `<button class="button primary" id="chooseFolder">${hasExportFolder() ? "Change Folder" : "Choose Folder"}</button>` : ""}
+          <p class="hint">${canChooseFolder ? "Each capture is saved in a dated subfolder with screen media, audio, screenshots, the visual story plan, and PDF." : "Capture history and screenshots stay in Safari's extension storage. Your completed PDF downloads through Safari."}</p>
         </section>
         ${message ? `<p class="success">${escapeHtml(message)}</p>` : ""}
       </div>
@@ -198,8 +206,8 @@ function preserveProfileDraft(): void {
 
 function microphoneErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
-  if (/dismiss|abort|cancel/i.test(message)) return "Microphone permission was dismissed. Click Enable Microphone again and allow access in Chrome.";
-  if (/denied|notallowed|not allowed|permission/i.test(message)) return "Microphone access is blocked. Enable it for JesSee in Chrome microphone settings, then try again.";
+  if (/dismiss|abort|cancel/i.test(message)) return "Microphone permission was dismissed. Click Enable Microphone again and allow access in your browser.";
+  if (/denied|notallowed|not allowed|permission/i.test(message)) return "Microphone access is blocked. Enable it for JesSee in your browser's microphone settings, then try again.";
   return `Could not enable microphone. ${message}`;
 }
 

@@ -5,6 +5,8 @@ tmp/
 test-results/
 playwright-report/
 release/
+safari/build/
+safari/JesSee Extension/Resources/
 .DS_Store
 .env
 .env.*

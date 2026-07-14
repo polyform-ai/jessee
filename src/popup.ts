@@ -1,5 +1,6 @@
 import "./ui.css";
 import { artifactRef, putArtifact } from "./artifacts";
+import { createCompatibleMediaRecorder, mediaFileExtension } from "./browserSupport";
 import { shouldStartWithFreshCapture } from "./captureHome";
 import { saveCaptureHistory } from "./captureHistory";
 import { getCaptureFlowView, type CaptureFlowButton } from "./captureFlow";
@@ -8,9 +9,11 @@ import {
   chooseExportFolder,
   deleteOldCaptureFolders,
   exportFolderName,
+  hasCaptureStorage,
   hasExportFolder,
   restoreExportFolder,
   startRecordingFolder,
+  supportsExportFolderSelection,
   writeRecordingBlob,
   writeRecordingText,
   writeScreenshot
@@ -61,7 +64,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 async function refresh(): Promise<void> {
   await restoreExportFolder();
   settingsCache = await getSettings();
-  if (!cleanupRan && hasExportFolder()) {
+  if (!cleanupRan) {
     cleanupRan = true;
     void cleanupOldCaptures(settingsCache.retentionDays ?? 30);
   }
@@ -79,7 +82,7 @@ async function refresh(): Promise<void> {
 function render(): void {
   const current = session;
   const settings = settingsCache;
-  if (!settings?.email || !settings.openAiKey || !hasExportFolder()) {
+  if (!settings?.email || !settings.openAiKey || !hasCaptureStorage()) {
     renderOnboarding(settings);
     return;
   }
@@ -99,7 +102,7 @@ function render(): void {
           <div>
             <p class="kicker">JesSee</p>
             <h1>Help AI see what you see.</h1>
-            <p class="hint">${settings.privateMode ? "Private Mode · screenshot pixels stay local" : hasExportFolder() ? "Captures save locally" : "Set an output folder in Settings"}</p>
+            <p class="hint">${settings.privateMode ? "Private Mode · screenshot pixels stay local" : hasExportFolder() ? "Captures save locally" : "Captures stay in JesSee until the PDF downloads"}</p>
           </div>
         </div>
         <div class="header-actions">
@@ -203,7 +206,7 @@ function renderOnboarding(settings: Awaited<ReturnType<typeof getSettings>> | un
           <div class="panel-header">
             <div>
               <h2>Get Started</h2>
-              <p>Add your email, OpenAI API key, and a local folder so JesSee can save captures and PDFs on this computer.</p>
+              <p>Add your email and OpenAI API key. ${supportsExportFolderSelection() ? "Choose a local folder for captures and PDFs." : "Safari keeps captures in JesSee and downloads the finished PDF."}</p>
             </div>
           </div>
           <div class="field">
@@ -219,10 +222,10 @@ function renderOnboarding(settings: Awaited<ReturnType<typeof getSettings>> | un
             <input id="retentionDays" type="number" min="1" max="365" value="${retentionDays}" />
           </div>
           <div class="meta">
-            <span>Output folder</span>
-            <strong>${hasExportFolder() ? escapeHtml(exportFolderName() ?? "Selected") : "Not selected"}</strong>
+            <span>${supportsExportFolderSelection() ? "Output folder" : "Capture storage"}</span>
+            <strong>${supportsExportFolderSelection() ? (hasExportFolder() ? escapeHtml(exportFolderName() ?? "Selected") : "Not selected") : "JesSee local storage"}</strong>
           </div>
-          <button class="button secondary" id="chooseFolder">Choose Folder</button>
+          ${supportsExportFolderSelection() ? `<button class="button secondary" id="chooseFolder">Choose Folder</button>` : ""}
           <button class="button primary" id="saveOnboarding">Continue</button>
           ${localStatus ? `<p class="error">${escapeHtml(localStatus)}</p>` : ""}
         </section>
@@ -275,7 +278,7 @@ async function saveOnboarding(): Promise<void> {
     render();
     return;
   }
-  if (!hasExportFolder()) {
+  if (!hasCaptureStorage()) {
     localStatus = "Choose a local folder before continuing.";
     render();
     return;
@@ -397,7 +400,9 @@ async function startRecording(): Promise<void> {
       tabUrl: target?.url,
       tabTitle: target?.title,
       exportFolderName,
-      localExportWarning: exportFolderName ? undefined : "Capture is stored in JesSee. Local-folder export is unavailable; reconnect the folder in Settings to save files there.",
+      localExportWarning: exportFolderName ? undefined : supportsExportFolderSelection()
+        ? "Capture is stored in JesSee. Local-folder export is unavailable; reconnect the folder in Settings to save files there."
+        : "Capture is stored in JesSee. This browser will download the finished PDF.",
       timeline: [
         {
           id: crypto.randomUUID(),
@@ -413,8 +418,8 @@ async function startRecording(): Promise<void> {
 
     lastScreenshotFingerprint = undefined;
     lastStoredScreenshotAtMs = -Infinity;
-    mediaRecorder = new MediaRecorder(mixedStream, { mimeType: pickMimeType(["video/webm;codecs=vp9,opus", "video/webm"]) });
-    audioRecorder = new MediaRecorder(new MediaStream(destination.stream.getAudioTracks()), { mimeType: pickMimeType(["audio/webm;codecs=opus", "audio/webm"]) });
+    mediaRecorder = createCompatibleMediaRecorder(mixedStream, ["video/webm;codecs=vp9,opus", "video/webm", "video/mp4;codecs=h264,aac", "video/mp4"]);
+    audioRecorder = createCompatibleMediaRecorder(new MediaStream(destination.stream.getAudioTracks()), ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]);
 
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0) videoChunks.push(event.data);
@@ -510,8 +515,8 @@ async function finishLocalRecording(): Promise<void> {
   const current = await getSession();
   const videoBlob = new Blob(videoChunks, { type: mediaRecorder?.mimeType || "video/webm" });
   const audioBlob = audioChunks.length ? new Blob(audioChunks, { type: audioRecorder?.mimeType || "audio/webm" }) : undefined;
-  await writeRecordingBlob("recording.webm", videoBlob);
-  if (audioBlob) await writeRecordingBlob("audio.webm", audioBlob);
+  await writeRecordingBlob(`recording.${mediaFileExtension(videoBlob.type, "webm")}`, videoBlob);
+  if (audioBlob) await writeRecordingBlob(`audio.${mediaFileExtension(audioBlob.type, "webm")}`, audioBlob);
   const captureId = current.captureId ?? crypto.randomUUID();
   const videoDataUrl = await putArtifact(`video:${captureId}`, await blobToDataUrl(videoBlob));
   const audioDataUrl = audioBlob
@@ -659,15 +664,17 @@ function createEvent(current: RecordingSession, type: TimelineEvent["type"]): Ti
 }
 
 async function getBestActiveTab(): Promise<chrome.tabs.Tab | undefined> {
+  const stored = await chrome.storage.local.get("recorderTargetTabId");
+  const targetTabId = stored.recorderTargetTabId;
+  if (typeof targetTabId === "number") {
+    const target = await chrome.tabs.get(targetTabId).catch(() => undefined);
+    if (target?.url && /^https?:\/\//.test(target.url)) return target;
+  }
   const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   const activePage = tabs.find((tab) => tab.url && /^https?:\/\//.test(tab.url));
   if (activePage) return activePage;
   const normalTabs = await chrome.tabs.query({ windowType: "normal" });
   return [...normalTabs].reverse().find((tab) => tab.url && /^https?:\/\//.test(tab.url));
-}
-
-function pickMimeType(types: string[]): string {
-  return types.find((type) => MediaRecorder.isTypeSupported(type)) ?? "";
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
