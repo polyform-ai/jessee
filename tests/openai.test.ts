@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { dataUrlToBlob } from "../src/dataUrl";
-import { alignAnalysisToSentenceEnds, analyzeCapture, selectPlanningScreenshots, testOpenAiSetup, transcribeAudio } from "../src/openai";
+import { alignAnalysisToSentenceEnds, analyzeCapture, selectPlanningScreenshots, testOpenAiSetup, transcribeAudio, transcriptionFilename } from "../src/openai";
 import type { RecordingSession } from "../src/types";
 
 afterEach(() => {
@@ -110,6 +110,11 @@ it("decodes media recorder data urls with mime parameters", async () => {
   const blob = dataUrlToBlob("data:audio/webm;codecs=opus;base64,aGVsbG8=");
   expect(blob.type).toBe("audio/webm;codecs=opus");
   expect(await blob.text()).toBe("hello");
+});
+
+it("uses a transcription filename that matches Safari audio", () => {
+  expect(transcriptionFilename("audio/mp4")).toBe("recording.m4a");
+  expect(transcriptionFilename("audio/webm;codecs=opus")).toBe("recording.webm");
 });
 
 function captureSession(count: number): RecordingSession {

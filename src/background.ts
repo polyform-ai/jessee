@@ -5,12 +5,13 @@ import { getSession, getSettings, saveSession } from "./storage";
 import { acceptsContentEvent, shouldRecordPageChange } from "./captureState";
 import type { RecordingSession, RuntimeMessage, TimelineEvent } from "./types";
 
-chrome.action.onClicked.addListener(() => {
-  void openRecorderPanel();
+chrome.action.onClicked.addListener((tab) => {
+  void openRecorder(tab);
 });
 
 chrome.runtime.onInstalled.addListener(() => {
-  void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+  const sidePanel = getSidePanelApi();
+  if (sidePanel) void sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 });
 
 chrome.runtime.onMessage.addListener((message: RuntimeMessage, sender, sendResponse) => {
@@ -33,9 +34,31 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   await appendEvent("url-change", tabId, `Navigated to ${tab.url ?? changeInfo.url ?? ""}`);
 });
 
-async function openRecorderPanel(): Promise<void> {
-  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  if (tab?.windowId) await chrome.sidePanel.open({ windowId: tab.windowId });
+async function openRecorder(tab?: chrome.tabs.Tab): Promise<void> {
+  const target = tab ?? (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
+  if (target?.id && target.url && /^https?:\/\//.test(target.url)) {
+    await chrome.storage.local.set({ recorderTargetTabId: target.id });
+  }
+
+  const sidePanel = getSidePanelApi();
+  if (sidePanel && target?.windowId) {
+    await sidePanel.open({ windowId: target.windowId });
+    return;
+  }
+
+  const recorderUrl = chrome.runtime.getURL("popup.html");
+  const tabs = await chrome.tabs.query({});
+  const existing = tabs.find((candidate) => candidate.url?.startsWith(recorderUrl));
+  if (existing?.id) {
+    await chrome.tabs.update(existing.id, { active: true });
+    if (existing.windowId) await chrome.windows.update(existing.windowId, { focused: true });
+    return;
+  }
+  await chrome.tabs.create({ url: recorderUrl, active: true });
+}
+
+function getSidePanelApi(): Pick<typeof chrome.sidePanel, "open" | "setPanelBehavior"> | undefined {
+  return (chrome as typeof chrome & { sidePanel?: typeof chrome.sidePanel }).sidePanel;
 }
 
 async function handleMessage(message: RuntimeMessage, sender: chrome.runtime.MessageSender): Promise<unknown> {

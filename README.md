@@ -156,6 +156,20 @@ Captures, recordings, and generated PDFs stay on your computer. When you choose 
 
 Mic narration and cursor highlighting are always enabled. JesSee captures timestamped screenshots automatically and pairs them with a sentence-level timestamped transcript. Planning aligns narration to the end of each sentence so evidence reflects the completed action or resulting screen state. Representative transition images help the model understand major changes, while the full screenshot timeline remains available by ID so the plan can choose an earlier or later frame when it tells the story better.
 
+## Safari
+
+JesSee also includes a macOS Safari Web Extension wrapper in `safari/`. Safari opens the recorder in its own extension tab because Safari does not support Chrome's side panel API. Safari also keeps capture artifacts in extension storage and downloads the finished PDF because Chrome's directory picker is unavailable there.
+
+Build the Safari app and extension without code signing:
+
+```bash
+npm run build:safari
+```
+
+For local use, open `safari/JesSee.xcodeproj` in Xcode, select your Development Team for both targets, and run the **JesSee** scheme. Then enable JesSee in Safari under **Settings → Extensions** and allow website access when Safari asks. Click the toolbar icon from the page you want to explain; JesSee remembers that page while the recorder runs in its extension tab.
+
+The Safari resource bundle is generated from the same Vite build as Chrome. Run `npm run safari:resources` after frontend changes before building or running from Xcode. Generated Safari resources and Xcode build output are intentionally excluded from git.
+
 ## Development
 
 Install dependencies:
