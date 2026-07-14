@@ -59,7 +59,7 @@ async function render(message = ""): Promise<void> {
             <button class="button secondary" id="delete">Remove key</button>
           </div>
           <button class="button secondary" id="testAiSetup">Test AI setup</button>
-          <p class="hint">Checks access to GPT-5.6 Terra and GPT-4o Transcribe before you record. JesSee never silently switches to an older model.</p>
+          <p class="hint">Checks access to GPT-5.6 Terra and GPT-4o Transcribe Diarize before you record. JesSee never silently switches to an older model.</p>
           <div class="field">
             <label><input id="privateMode" type="checkbox" ${settings.privateMode ? "checked" : ""} /> Private Mode</label>
             <p class="hint">Keep screenshot pixels on this computer. JesSee sends narration, timestamps, and selected screenshot IDs to draft the report, then attaches the local images to the PDF.</p>
@@ -205,7 +205,7 @@ async function render(message = ""): Promise<void> {
       const response = await chrome.runtime.sendMessage({ type: "TEST_AI_SETUP", apiKey: candidateKey }) as { ok?: boolean; error?: string };
       if (!response.ok) throw new Error(response.error ?? "AI setup test failed.");
       if (candidateKey) await saveSettings({ openAiKey: candidateKey });
-      await render("AI setup is ready: GPT-5.6 Terra and GPT-4o Transcribe are available.");
+      await render("AI setup is ready: GPT-5.6 Terra and GPT-4o Transcribe Diarize are available.");
     } catch (error) {
       await render(error instanceof Error ? error.message : String(error));
     }

@@ -370,6 +370,43 @@
     @apply block text-sm font-semibold text-zinc-950;
   }
 
+  .history-panel summary {
+    @apply flex cursor-pointer list-none items-center justify-between gap-3;
+  }
+
+  .history-panel summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .history-panel summary > span:first-child {
+    @apply flex min-w-0 flex-col;
+  }
+
+  .history-panel summary strong {
+    @apply text-sm font-semibold text-zinc-950;
+  }
+
+  .history-panel summary small {
+    @apply mt-1 text-xs leading-5 text-zinc-500;
+  }
+
+  .history-panel summary::after {
+    content: "⌄";
+    @apply ml-auto text-lg leading-none text-zinc-400 transition-transform;
+  }
+
+  .history-panel[open] summary::after {
+    @apply rotate-180;
+  }
+
+  .history-count {
+    @apply flex min-w-6 items-center justify-center rounded-full bg-zinc-100 px-2 py-1 text-[11px] font-semibold text-zinc-600;
+  }
+
+  .history-list {
+    @apply mt-1;
+  }
+
   .hint {
     @apply text-xs leading-5 text-zinc-500;
   }

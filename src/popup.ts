@@ -300,14 +300,12 @@ function renderOnboarding(settings: Awaited<ReturnType<typeof getSettings>> | un
 
 function renderHistory(history: CaptureHistoryItem[]): string {
   if (history.length === 0) return "";
-  return `<section class="panel">
-    <div class="panel-header">
-      <div>
-        <h2>History</h2>
-        <p>Load a previous local capture and generate a new PDF.</p>
-      </div>
-    </div>
-    <div class="stack">
+  return `<details class="panel history-panel">
+    <summary>
+      <span><strong>History</strong><small>Load a previous local capture</small></span>
+      <span class="history-count">${history.length}</span>
+    </summary>
+    <div class="stack history-list">
       ${history.slice(0, 6).map((item) => `
         <div class="template-row">
           <div>
@@ -318,7 +316,7 @@ function renderHistory(history: CaptureHistoryItem[]): string {
         </div>
       `).join("")}
     </div>
-  </section>`;
+  </details>`;
 }
 
 async function saveOnboarding(): Promise<void> {

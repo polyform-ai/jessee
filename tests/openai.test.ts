@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { dataUrlToBlob } from "../src/dataUrl";
-import { generateTicket, parseTicket, selectScreenshotsForAnalysis, testOpenAiSetup } from "../src/openai";
+import { alignAnalysisToSentenceEnds, generateTicket, parseTicket, selectScreenshotsForAnalysis, testOpenAiSetup, transcribeAudio } from "../src/openai";
 import type { RecordingSession, TicketTemplate } from "../src/types";
 
 afterEach(() => {
@@ -21,7 +21,7 @@ it("uses representative screenshots when a plan has no visual moments", () => {
     userGoal: "", bestDelivery: "", breakingPoints: [], helpfulImageMoments: [], story: ""
   });
 
-  expect(selected).toHaveLength(12);
+  expect(selected).toHaveLength(30);
   expect(selected[0].id).toBe("shot-0");
   expect(selected.at(-1)?.id).toBe("shot-29");
 });
@@ -35,8 +35,46 @@ it("tests both required models without selecting an older fallback", async () =>
 
   expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
     "https://api.openai.com/v1/models/gpt-5.6-terra",
-    "https://api.openai.com/v1/models/gpt-4o-transcribe"
+    "https://api.openai.com/v1/models/gpt-4o-transcribe-diarize"
   ]);
+});
+
+it("requests timestamped transcription segments", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+    text: "Open settings and save the change.",
+    segments: [{ start: 1.2, end: 3.8, text: "Open settings and save the change.", speaker: "A" }]
+  }), { status: 200 }));
+
+  const result = await transcribeAudio("sk-test", "data:audio/webm;base64,aGVsbG8=");
+
+  const body = fetchMock.mock.calls[0][1]?.body as FormData;
+  expect(body.get("model")).toBe("gpt-4o-transcribe-diarize");
+  expect(body.get("response_format")).toBe("diarized_json");
+  expect(body.get("chunking_strategy")).toBe("auto");
+  expect(result.segments).toEqual([{ start: 1.2, end: 3.8, text: "Open settings and save the change." }]);
+});
+
+it("aligns a narrated moment to the first screenshot after the sentence ends", () => {
+  const analysis = alignAnalysisToSentenceEnds(
+    {
+      userGoal: "Document the flow",
+      bestDelivery: "Guide",
+      breakingPoints: [],
+      story: "Open settings and save.",
+      helpfulImageMoments: [{ screenshotId: "shot-start", atSeconds: 1, reason: "Shows the save flow" }]
+    },
+    { text: "Open settings and save.", segments: [{ start: 1, end: 3.2, text: "Open settings and save." }] },
+    [
+      { id: "shot-start", capturedAtMs: 1_000 },
+      { id: "shot-before-end", capturedAtMs: 3_000 },
+      { id: "shot-after-end", capturedAtMs: 3_500 }
+    ]
+  );
+
+  expect(analysis.helpfulImageMoments[0]).toEqual(expect.objectContaining({
+    atSeconds: 3.2,
+    screenshotId: "shot-after-end"
+  }));
 });
 
 describe("parseTicket", () => {
@@ -137,11 +175,20 @@ describe("parseTicket", () => {
     };
     expect(analysisRequest.model).toBe("gpt-5.6-terra");
     expect(analysisRequest.input).toHaveLength(2);
-    const analysisInput = JSON.parse(analysisRequest.input[1].content?.[0].text ?? "{}") as { timeline: Array<{ type: string; atSeconds: number; point?: { x: number; y: number } }> };
+    const analysisInput = JSON.parse(analysisRequest.input[1].content?.[0].text ?? "{}") as {
+      timeline: Array<{ type: string; atSeconds: number; point?: { x: number; y: number } }>;
+      transcriptSegments: Array<{ start: number; end: number; selectionAtSeconds: number; screenshotAtSentenceEnd?: { id: string } }>;
+    };
     expect(analysisInput.timeline).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: "click", atSeconds: 0.9, point: { x: 320, y: 180 } }),
       expect.objectContaining({ type: "url-change", atSeconds: 1.1 })
     ]));
+    expect(analysisInput.transcriptSegments[0]).toEqual(expect.objectContaining({
+      start: 1,
+      end: 2,
+      selectionAtSeconds: 2,
+      screenshotAtSentenceEnd: expect.objectContaining({ id: "shot-1" })
+    }));
     expect(result.analysis.userGoal).toBe("Explain a broken save flow.");
     expect(result.ticket.title).toBe("Save button fails");
     expect(result.usage.totalTokens).toBe(180);

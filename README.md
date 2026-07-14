@@ -154,7 +154,7 @@ Captures, screenshots, recordings, and PDFs stay on your computer. When you choo
 9. Create the plan to open the visual plan editor. Edits save automatically; use the screenshot dropdown or Previous/Next controls to inspect and change the exact evidence used in the PDF.
 10. Generate and download the PDF from the plan editor or the recorder.
 
-Mic narration and cursor highlighting are always enabled. JesSee captures timestamped screenshots automatically and pairs them with the timestamped transcript.
+Mic narration and cursor highlighting are always enabled. JesSee captures timestamped screenshots automatically and pairs them with the timestamped transcript. Screenshot planning aligns narration to the end of each spoken segment so evidence reflects the completed action or resulting screen state, and the final drafting pass receives a broad set of candidate images for detailed output.
 
 ## Development
 

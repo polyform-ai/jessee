@@ -56,7 +56,9 @@ function drawTicket(pdf: jsPDF, ticket: TicketDraft, session: RecordingSession):
     const naturalHeight = (props.height * maxTextWidth) / props.width;
     const imageHeight = Math.min(maxImageHeight, naturalHeight);
     const imageWidth = Math.min(maxTextWidth, (props.width * imageHeight) / props.height);
-    const cardHeight = imageHeight + 68;
+    const captionLines = pdf.splitTextToSize(caption, imageWidth - 24);
+    const captionHeight = Math.max(1, captionLines.length) * 11;
+    const cardHeight = imageHeight + captionHeight + 58;
     ensureSpace(cardHeight);
     pdf.setFillColor(250, 250, 250);
     pdf.setDrawColor(228, 228, 231);
@@ -65,12 +67,11 @@ function drawTicket(pdf: jsPDF, ticket: TicketDraft, session: RecordingSession):
     pdf.setFontSize(10);
     pdf.setTextColor(24, 24, 27);
     pdf.text(`Evidence ${index + 1}  ·  ${formatTimestamp(screenshot.capturedAtMs)}`, margin + 12, y + 18);
-    const captionLines = pdf.splitTextToSize(caption, imageWidth - 24).slice(0, 2);
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(9);
     pdf.setTextColor(82, 82, 91);
     pdf.text(captionLines, margin + 12, y + 32);
-    const imageY = y + 48;
+    const imageY = y + 38 + captionHeight;
     const format = screenshot.dataUrl.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
     pdf.addImage(screenshot.dataUrl, format, margin + (maxTextWidth - imageWidth) / 2, imageY, imageWidth, imageHeight, undefined, "SLOW");
     y += cardHeight + 10;
