@@ -102,7 +102,12 @@ test("loads extension settings page", async () => {
     const capturePage = await context.newPage();
     await capturePage.route("https://jessee.test/**", (route) => route.fulfill({
       contentType: "text/html",
-      body: "<main><h1>Keyboard annotation test</h1><p>Drag over this page.</p></main>"
+      body: `<main><h1>Keyboard annotation test</h1><p>Drag over this page.</p></main>
+        <script>
+          window.shortcutEvents = [];
+          window.addEventListener("keydown", (event) => window.shortcutEvents.push("down:" + event.key.toLowerCase()));
+          window.addEventListener("keyup", (event) => window.shortcutEvents.push("up:" + event.key.toLowerCase()));
+        </script>`
     }));
     await capturePage.goto("https://jessee.test/demo");
     await serviceWorker.evaluate(async () => {
@@ -125,6 +130,8 @@ test("loads extension settings page", async () => {
     await capturePage.mouse.up();
     await capturePage.keyboard.up("r");
     await expect(capturePage.locator(".str-box.str-redact")).toHaveCount(1);
+
+    await expect.poll(() => capturePage.evaluate(() => (window as unknown as { shortcutEvents: string[] }).shortcutEvents)).toEqual([]);
 
     await capturePage.keyboard.press("c");
     await expect(capturePage.locator(".str-box")).toHaveCount(0);

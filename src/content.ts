@@ -39,15 +39,14 @@ if (!window.__screenTicketRecorderLoaded) {
     if (key === "c") {
       clearAnnotations();
       void chrome.runtime.sendMessage({ type: "CONTENT_CLEAR_ANNOTATIONS" });
-      event.preventDefault();
-      event.stopPropagation();
+      consumeShortcut(event);
       return;
     }
     if (key !== "b" && key !== "r") return;
     heldMode = key === "r" ? "redact" : "highlight";
     ensureOverlay();
     updateOverlayState();
-    event.preventDefault();
+    consumeShortcut(event);
   }, true);
 
   window.addEventListener("keyup", (event) => {
@@ -56,7 +55,7 @@ if (!window.__screenTicketRecorderLoaded) {
     if (!releasedActiveShortcut) return;
     if (!startPoint) heldMode = undefined;
     updateOverlayState();
-    event.preventDefault();
+    consumeShortcut(event);
   }, true);
 
   window.addEventListener("mousedown", (event) => {
@@ -81,7 +80,6 @@ if (!window.__screenTicketRecorderLoaded) {
     startPoint = undefined;
     draftRect = undefined;
     interactionMode = undefined;
-    heldMode = undefined;
     suppressNextClick = true;
     updateOverlayState();
     event.preventDefault();
@@ -213,6 +211,11 @@ function showShortcutConfirmation(message: string): void {
 function isTypingTarget(target: EventTarget | null): boolean {
   const element = target instanceof HTMLElement ? target : undefined;
   return Boolean(element?.isContentEditable || element?.closest("input, textarea, select, [contenteditable='true']"));
+}
+
+function consumeShortcut(event: KeyboardEvent): void {
+  event.preventDefault();
+  event.stopImmediatePropagation();
 }
 
 function normalizeRect(x1: number, y1: number, x2: number, y2: number): Rect {
