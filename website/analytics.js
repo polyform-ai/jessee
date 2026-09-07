@@ -1,6 +1,25 @@
 (() => {
   const measurementId = "G-CVSL3MJE66";
-  const pageLocation = `${window.location.origin}${window.location.pathname}`;
+  const campaignParameters = [
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+    "gclid",
+    "dclid",
+    "gbraid",
+    "wbraid",
+  ];
+  const sourceUrl = new URL(window.location.href);
+  const analyticsUrl = new URL(sourceUrl.pathname, sourceUrl.origin);
+
+  for (const parameter of campaignParameters) {
+    const value = sourceUrl.searchParams.get(parameter);
+    if (value && !/[^@\s]+@[^@\s]+\.[^@\s]+/.test(value)) {
+      analyticsUrl.searchParams.set(parameter, value);
+    }
+  }
 
   window.dataLayer = window.dataLayer || [];
   window.gtag = window.gtag || function gtag() {
@@ -9,7 +28,7 @@
 
   window.gtag("js", new Date());
   window.gtag("config", measurementId, {
-    page_location: pageLocation,
+    page_location: analyticsUrl.toString(),
     page_title: document.title,
   });
 
