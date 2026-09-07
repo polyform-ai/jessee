@@ -72,7 +72,7 @@ function drawPlan(pdf: jsPDF, session: RecordingSession): void {
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(10);
     pdf.setTextColor(24, 24, 27);
-    pdf.text(`Story step ${index + 1}  ·  ${formatTimestamp(screenshot.capturedAtMs)}`, margin + 12, y + 18);
+    pdf.text(`Story step ${index + 1} - ${formatTimestamp(screenshot.capturedAtMs)}`, margin + 12, y + 18);
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(9);
     pdf.setTextColor(82, 82, 91);
@@ -95,10 +95,10 @@ function drawPlan(pdf: jsPDF, session: RecordingSession): void {
   addHeading("Story");
   storySteps.forEach((step, index) => {
     addHeading(`${index + 1}. ${step.title}`, 14);
-    addParagraph(`${formatSeconds(step.startSeconds)}${step.endSeconds !== step.startSeconds ? `–${formatSeconds(step.endSeconds)}` : ""} · ${storyKindLabel(step)}`, [113, 113, 122]);
+    addParagraph(`${formatSeconds(step.startSeconds)}${step.endSeconds !== step.startSeconds ? ` - ${formatSeconds(step.endSeconds)}` : ""} - ${storyKindLabel(step)}`, [113, 113, 122]);
     addParagraph(step.narrative);
     if (step.transcript) addParagraph(`What the user said: “${step.transcript}”`, [39, 39, 42]);
-    if (step.pageUrl) addParagraph(`Page: ${step.pageTitle || step.pageUrl}${step.pageTitle ? ` — ${step.pageUrl}` : ""}`, [3, 105, 161]);
+    if (step.pageUrl) addParagraph(`Page: ${step.pageTitle || step.pageUrl}${step.pageTitle ? ` - ${step.pageUrl}` : ""}`, [3, 105, 161]);
     const screenshot = step.screenshotId ? session.screenshots.find((shot) => shot.id === step.screenshotId) : undefined;
     if (screenshot) {
       try {

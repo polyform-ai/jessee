@@ -15,6 +15,7 @@ let heldMode: "highlight" | "redact" | undefined;
 let interactionMode: "highlight" | "redact" | undefined;
 let shortcutBadge: HTMLDivElement | undefined;
 let shortcutBadgeTimeout: number | undefined;
+let cursorClickTimeout: number | undefined;
 let suppressNextClick = false;
 
 if (!window.__screenTicketRecorderLoaded) {
@@ -28,7 +29,7 @@ if (!window.__screenTicketRecorderLoaded) {
   });
 
   window.addEventListener("mousemove", (event) => {
-    if (cursor) cursor.style.transform = `translate(${event.clientX - 27}px, ${event.clientY - 27}px)`;
+    if (cursor) cursor.style.transform = `translate3d(${event.clientX - 4}px, ${event.clientY - 3}px, 0)`;
     if (!startPoint || !draftRect) return;
     Object.assign(draftRect.style, toStyleRect(normalizeRect(startPoint.x, startPoint.y, event.clientX, event.clientY)));
   }, true);
@@ -60,6 +61,7 @@ if (!window.__screenTicketRecorderLoaded) {
 
   window.addEventListener("mousedown", (event) => {
     const drawingMode = heldMode ?? (mode === "highlight" || mode === "redact" ? mode : undefined);
+    if (!drawingMode && mode === "cursor") setCursorPressed(true);
     if (!drawingMode) return;
     interactionMode = drawingMode;
     startPoint = { x: event.clientX, y: event.clientY };
@@ -71,6 +73,7 @@ if (!window.__screenTicketRecorderLoaded) {
   }, true);
 
   window.addEventListener("mouseup", (event) => {
+    if (mode === "cursor" && !heldMode) animateCursorClick();
     if (!startPoint || !draftRect || !interactionMode) return;
     const rect = normalizeRect(startPoint.x, startPoint.y, event.clientX, event.clientY);
     const kind = interactionMode === "redact" ? "redaction" : "highlight";
@@ -85,6 +88,8 @@ if (!window.__screenTicketRecorderLoaded) {
     event.preventDefault();
     event.stopPropagation();
   }, true);
+
+  window.addEventListener("blur", () => setCursorPressed(false), true);
 
   window.addEventListener("click", (event) => {
     if (suppressNextClick) {
@@ -110,18 +115,81 @@ function ensureOverlay(): void {
       z-index: 2147483647;
       font-family: Inter, system-ui, sans-serif;
     }
+    html.str-recording-cursor-active,
+    html.str-recording-cursor-active * {
+      cursor: none !important;
+    }
     #screen-ticket-recorder-overlay .str-cursor {
       position: fixed;
-      width: 54px;
-      height: 54px;
-      border: 5px solid #ff2d20;
-      border-radius: 999px;
-      background: rgba(255, 214, 10, 0.2);
-      box-shadow: 0 0 0 7px rgba(255, 45, 32, 0.26), 0 0 30px rgba(255, 45, 32, 0.62);
+      width: 38px;
+      height: 42px;
       pointer-events: none;
       left: 0;
       top: 0;
-      transform: translate(calc(50vw - 27px), calc(50vh - 27px));
+      transform: translate3d(calc(50vw - 4px), calc(50vh - 3px), 0);
+      will-change: transform;
+    }
+    #screen-ticket-recorder-overlay .str-pointer-glow {
+      position: absolute;
+      left: -7px;
+      top: -7px;
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      background: radial-gradient(circle, rgba(91, 94, 248, 0.42) 0%, rgba(91, 94, 248, 0.12) 48%, transparent 72%);
+      filter: blur(2px);
+      animation: str-glow-breathe 1.8s ease-in-out infinite;
+    }
+    #screen-ticket-recorder-overlay .str-pointer-shape {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 28px;
+      height: 34px;
+      overflow: visible;
+      transform-origin: 4px 3px;
+      transition: transform 90ms cubic-bezier(0.2, 0.9, 0.2, 1);
+      filter: drop-shadow(0 2px 2px rgba(24, 24, 27, 0.32)) drop-shadow(0 0 7px rgba(91, 94, 248, 0.72));
+    }
+    #screen-ticket-recorder-overlay .str-cursor.is-pressing .str-pointer-shape {
+      transform: scale(0.78);
+    }
+    #screen-ticket-recorder-overlay .str-cursor.is-clicking .str-pointer-shape {
+      animation: str-pointer-pop 280ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    #screen-ticket-recorder-overlay .str-click-pulse {
+      position: absolute;
+      left: -8px;
+      top: -8px;
+      width: 24px;
+      height: 24px;
+      border: 2px solid rgba(91, 94, 248, 0.85);
+      border-radius: 999px;
+      opacity: 0;
+      transform: scale(0.3);
+    }
+    #screen-ticket-recorder-overlay .str-cursor.is-clicking .str-click-pulse {
+      animation: str-click-pulse 420ms ease-out;
+    }
+    @keyframes str-pointer-pop {
+      0% { transform: scale(0.78); }
+      48% { transform: scale(1.18); }
+      100% { transform: scale(1); }
+    }
+    @keyframes str-click-pulse {
+      0% { opacity: 0.95; transform: scale(0.3); }
+      100% { opacity: 0; transform: scale(1.7); }
+    }
+    @keyframes str-glow-breathe {
+      0%, 100% { opacity: 0.72; transform: scale(0.9); }
+      50% { opacity: 1; transform: scale(1.12); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #screen-ticket-recorder-overlay .str-pointer-glow,
+      #screen-ticket-recorder-overlay .str-cursor.is-clicking .str-pointer-shape,
+      #screen-ticket-recorder-overlay .str-cursor.is-clicking .str-click-pulse {
+        animation: none;
+      }
     }
     #screen-ticket-recorder-overlay .str-draft,
     #screen-ticket-recorder-overlay .str-box {
@@ -171,18 +239,35 @@ function updateOverlayState(): void {
     draftRect = undefined;
     interactionMode = undefined;
     heldMode = undefined;
+    document.documentElement.classList.remove("str-recording-cursor-active");
   }
   if (mode === "cursor" && !cursor) {
     cursor = document.createElement("div");
     cursor.className = "str-cursor";
+    cursor.innerHTML = `<span class="str-pointer-glow"></span><svg class="str-pointer-shape" viewBox="0 0 28 34" aria-hidden="true"><path d="M3.4 2.2 23.7 21c1.2 1.1.4 3.1-1.2 3.1h-8l-3.9 7.1c-.8 1.5-3.1.9-3.1-.8V4.1c0-2 2.2-3.2 3.4-1.9Z" fill="#fff" stroke="#18181b" stroke-width="2.2" stroke-linejoin="round"/></svg><span class="str-click-pulse"></span>`;
     root.appendChild(cursor);
   }
   if (cursor) cursor.style.display = mode === "cursor" && !heldMode ? "block" : "none";
+  document.documentElement.classList.toggle("str-recording-cursor-active", mode === "cursor" && !heldMode);
   root.style.pointerEvents = heldMode || mode === "highlight" || mode === "redact" ? "auto" : "none";
   if (shortcutBadge) {
     shortcutBadge.textContent = heldMode === "redact" ? "R · Drag to redact" : heldMode === "highlight" ? "B · Drag an outline box" : "";
     shortcutBadge.style.display = heldMode ? "flex" : "none";
   }
+}
+
+function setCursorPressed(pressed: boolean): void {
+  cursor?.classList.toggle("is-pressing", pressed);
+}
+
+function animateCursorClick(): void {
+  if (!cursor) return;
+  setCursorPressed(false);
+  if (cursorClickTimeout) window.clearTimeout(cursorClickTimeout);
+  cursor.classList.remove("is-clicking");
+  void cursor.offsetWidth;
+  cursor.classList.add("is-clicking");
+  cursorClickTimeout = window.setTimeout(() => cursor?.classList.remove("is-clicking"), 430);
 }
 
 function clearAnnotations(): void {

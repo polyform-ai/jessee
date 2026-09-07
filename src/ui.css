@@ -45,6 +45,24 @@
     @apply w-[min(100vw,408px)] bg-zinc-50 p-3;
   }
 
+  .recorder-page {
+    @apply mx-auto min-h-screen w-full max-w-3xl p-6;
+  }
+
+  .recorder-page .header-panel,
+  .recorder-page > .stack {
+    @apply w-full;
+  }
+
+  .safari-note {
+    @apply mt-3 border border-violet-200 bg-violet-50 px-3 py-2 text-xs leading-5 text-violet-800;
+    border-radius: 8px;
+  }
+
+  .safari-note strong {
+    @apply font-semibold text-violet-950;
+  }
+
   .page {
     @apply min-h-screen max-w-4xl bg-zinc-50 p-6;
   }
@@ -54,13 +72,13 @@
   }
 
   .plan-header {
-    @apply mx-auto mb-5 flex max-w-7xl items-center justify-between gap-4 border border-zinc-200/80 bg-white/95 p-4 shadow-sm;
+    @apply sticky top-3 z-20 mx-auto mb-5 flex max-w-[1440px] items-center justify-between gap-4 border border-zinc-200/80 bg-white/95 p-4 shadow-sm backdrop-blur;
     border-radius: 12px;
   }
 
   .plan-layout {
-    @apply mx-auto grid max-w-7xl items-start gap-5;
-    grid-template-columns: minmax(320px, 0.8fr) minmax(520px, 1.4fr);
+    @apply mx-auto grid max-w-[1440px] items-start gap-5;
+    grid-template-columns: minmax(320px, 380px) minmax(620px, 1fr);
   }
 
   .plan-copy {
@@ -69,6 +87,176 @@
 
   .evidence-inspector {
     @apply min-w-0;
+  }
+
+  .playbook-panel {
+    @apply gap-4;
+  }
+
+  .section-eyebrow {
+    @apply mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#5B5EF8];
+  }
+
+  .playbook-piece {
+    @apply grid gap-3 border-t border-zinc-100 pt-4;
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .piece-number {
+    @apply flex size-7 items-center justify-center bg-zinc-950 text-[10px] font-bold text-white;
+    border-radius: 8px;
+  }
+
+  .story-inspector {
+    @apply gap-5;
+  }
+
+  .story-outline {
+    @apply grid max-h-52 grid-cols-2 gap-2 overflow-y-auto border-y border-zinc-100 py-3;
+  }
+
+  .story-outline-item {
+    @apply flex min-w-0 cursor-pointer items-start gap-3 border border-zinc-200 bg-white p-3 text-left transition;
+    border-radius: 9px;
+  }
+
+  .story-outline-item:hover {
+    @apply border-zinc-300 bg-zinc-50;
+  }
+
+  .story-outline-item.active {
+    @apply border-[#5B5EF8] bg-violet-50 ring-1 ring-[#5B5EF8]/20;
+  }
+
+  .story-outline-number {
+    @apply flex size-7 shrink-0 items-center justify-center bg-zinc-100 text-[10px] font-bold text-zinc-600;
+    border-radius: 7px;
+  }
+
+  .story-outline-item.active .story-outline-number {
+    @apply bg-[#5B5EF8] text-white;
+  }
+
+  .story-outline-item > span:last-child {
+    @apply min-w-0;
+  }
+
+  .story-outline-item strong {
+    @apply block truncate text-xs font-semibold text-zinc-900;
+  }
+
+  .story-outline-item small {
+    @apply mt-1 block text-[10px] font-medium text-zinc-500;
+  }
+
+  .image-picker-section,
+  .selected-image-panel {
+    @apply flex flex-col gap-3 border-t border-zinc-100 pt-5;
+  }
+
+  .image-picker-header,
+  .selected-image-heading {
+    @apply flex items-start justify-between gap-4;
+  }
+
+  .image-picker-header > div:first-child,
+  .selected-image-heading > div:first-child {
+    @apply min-w-0;
+  }
+
+  .image-picker-header p:not(.section-eyebrow) {
+    @apply mt-1 max-w-2xl text-xs leading-5 text-zinc-500;
+  }
+
+  .segmented-control {
+    @apply flex shrink-0 items-center bg-zinc-100 p-1;
+    border-radius: 9px;
+  }
+
+  .segmented-control button {
+    @apply cursor-pointer border-0 bg-transparent px-3 py-1.5 text-xs font-semibold text-zinc-500;
+    border-radius: 7px;
+  }
+
+  .segmented-control button.active {
+    @apply bg-white text-zinc-950 shadow-sm;
+  }
+
+  .image-choice-grid {
+    @apply grid grid-cols-3 gap-3;
+  }
+
+  .image-choice {
+    @apply relative flex min-w-0 cursor-pointer flex-col items-stretch gap-1.5 overflow-hidden border border-zinc-200 bg-white p-2 text-left transition;
+    border-radius: 10px;
+  }
+
+  .image-choice:hover {
+    @apply border-zinc-400 shadow-sm;
+  }
+
+  .image-choice.selected {
+    @apply border-[#5B5EF8] bg-violet-50 ring-2 ring-[#5B5EF8]/15;
+  }
+
+  .image-choice-preview {
+    @apply relative block aspect-video overflow-hidden bg-zinc-900;
+    border-radius: 7px;
+  }
+
+  .image-choice-preview img {
+    @apply size-full object-cover;
+  }
+
+  .image-choice-index,
+  .recommended-pill,
+  .choice-check {
+    @apply absolute flex items-center justify-center shadow-sm;
+  }
+
+  .image-choice-index {
+    @apply bottom-1.5 left-1.5 bg-zinc-950/85 px-1.5 py-0.5 text-[9px] font-bold text-white;
+    border-radius: 5px;
+  }
+
+  .recommended-pill {
+    @apply left-1.5 top-1.5 bg-[#5B5EF8] px-2 py-1 text-[9px] font-bold text-white;
+    border-radius: 999px;
+  }
+
+  .choice-check {
+    @apply right-1.5 top-1.5 size-6 bg-white text-xs font-bold text-[#5B5EF8];
+    border-radius: 999px;
+  }
+
+  .image-choice > strong {
+    @apply truncate px-0.5 text-xs font-semibold text-zinc-900;
+  }
+
+  .image-choice > small {
+    @apply truncate px-0.5 text-[10px] leading-4 text-zinc-500;
+  }
+
+  .image-choice-none {
+    @apply justify-start;
+  }
+
+  .image-choice-empty {
+    @apply flex aspect-video items-center justify-center border border-dashed border-zinc-300 bg-zinc-50 text-xs font-semibold text-zinc-400;
+    border-radius: 7px;
+  }
+
+  .image-pagination {
+    @apply flex items-center justify-between gap-3 border-t border-zinc-100 pt-3;
+  }
+
+  .image-pagination span {
+    @apply text-xs font-medium text-zinc-500;
+  }
+
+  .selected-pill {
+    @apply shrink-0 bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700;
+    border-radius: 999px;
   }
 
   .stack {
@@ -89,6 +277,70 @@
 
   .flow-actions > .button:nth-child(2):last-child {
     @apply col-span-2;
+  }
+
+  .capture-coach {
+    @apply mt-1 border border-violet-100 bg-violet-50/70 p-3;
+    border-radius: 9px;
+  }
+
+  .capture-coach-heading {
+    @apply flex items-start gap-2.5;
+  }
+
+  .capture-coach-heading > div {
+    @apply min-w-0;
+  }
+
+  .capture-coach-heading strong {
+    @apply block text-xs font-semibold text-violet-950;
+  }
+
+  .capture-coach-heading p {
+    @apply mt-0.5 text-[11px] leading-4 text-violet-700;
+  }
+
+  .coach-status-dot {
+    @apply mt-1.5 size-2 shrink-0 bg-[#5B5EF8];
+    border-radius: 999px;
+    box-shadow: 0 0 0 4px rgba(91, 94, 248, 0.12);
+  }
+
+  .capture-coach.recording .coach-status-dot {
+    @apply bg-rose-500;
+    box-shadow: 0 0 0 4px rgba(244, 63, 94, 0.12);
+    animation: coach-pulse 1.5s ease-in-out infinite;
+  }
+
+  .capture-coach-grid {
+    @apply mt-3 grid list-none grid-cols-3 gap-2 p-0;
+  }
+
+  .capture-coach-grid li {
+    @apply flex min-w-0 items-start gap-2 border-t border-violet-200/70 pt-2;
+  }
+
+  .capture-coach-grid li > span {
+    @apply flex size-5 shrink-0 items-center justify-center bg-white text-[9px] font-bold text-[#5B5EF8] shadow-sm;
+    border-radius: 6px;
+  }
+
+  .capture-coach-grid strong,
+  .capture-coach-grid small {
+    @apply block;
+  }
+
+  .capture-coach-grid strong {
+    @apply text-[10px] font-semibold text-violet-950;
+  }
+
+  .capture-coach-grid small {
+    @apply mt-0.5 text-[9px] leading-3 text-violet-600;
+  }
+
+  @keyframes coach-pulse {
+    0%, 100% { opacity: 0.65; transform: scale(0.88); }
+    50% { opacity: 1; transform: scale(1); }
   }
 
   .shortcut-grid {
@@ -508,6 +760,49 @@
 
     .plan-copy {
       @apply static max-h-none overflow-visible;
+    }
+
+    .story-outline,
+    .image-choice-grid {
+      @apply grid-cols-2;
+    }
+  }
+
+  @media (max-width: 620px) {
+    .plan-page,
+    .recorder-page {
+      @apply p-3;
+    }
+
+    .plan-header,
+    .image-picker-header,
+    .selected-image-heading {
+      @apply static flex-col items-stretch;
+    }
+
+    .header-actions,
+    .segmented-control {
+      @apply w-full;
+    }
+
+    .header-actions .button,
+    .segmented-control button {
+      @apply flex-1;
+    }
+
+    .story-outline,
+    .image-choice-grid {
+      @apply grid-cols-1;
+    }
+
+    .story-stepper,
+    .image-stepper {
+      @apply grid grid-cols-2;
+    }
+
+    .story-stepper span,
+    .image-stepper span {
+      @apply col-span-2 row-start-1 text-center;
     }
   }
 }

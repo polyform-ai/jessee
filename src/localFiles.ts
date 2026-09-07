@@ -1,3 +1,5 @@
+import { supportsDirectoryPicker } from "./browserSupport";
+
 const DB_NAME = "screen-ticket-recorder-files";
 const DB_VERSION = 1;
 const STORE_NAME = "handles";
@@ -18,11 +20,22 @@ export function hasExportFolder(): boolean {
   return Boolean(rootDirectory);
 }
 
+export function supportsExportFolderSelection(): boolean {
+  return supportsDirectoryPicker();
+}
+
+export function hasCaptureStorage(): boolean {
+  return hasExportFolder() || !supportsExportFolderSelection();
+}
+
 export function exportFolderName(): string | undefined {
   return rootDirectoryName;
 }
 
 export async function chooseExportFolder(): Promise<void> {
+  if (!supportsExportFolderSelection()) {
+    throw new Error("This browser keeps captures in JesSee storage and downloads finished PDFs. Direct folder export is not available.");
+  }
   try {
     rootDirectory = await window.showDirectoryPicker({
       id: "screen-ticket-output",
@@ -135,7 +148,7 @@ function folderPickerErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   if (/abort/i.test(message)) return "Folder selection was cancelled.";
   if (/system|sensitive|dangerous|permission|not allowed|denied/i.test(message)) {
-    return "Chrome blocked that folder because it is protected or managed by the system. Create or choose a normal folder such as Documents/JesSee Captures, Desktop/JesSee Captures, or another project folder you own.";
+    return "The browser blocked that folder because it is protected or managed by the system. Create or choose a normal folder such as Documents/JesSee Captures, Desktop/JesSee Captures, or another project folder you own.";
   }
   return `Could not use that folder. ${message}`;
 }
@@ -144,7 +157,7 @@ function folderPermissionErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   if (/dismiss|abort|cancel/i.test(message)) return "Folder permission was dismissed. Click Start Capture again and allow folder access.";
   if (/activation|gesture/i.test(message)) return "Folder permission must be approved from the Start Capture click. Click Start Capture again and allow folder access.";
-  if (/permission|not allowed|denied/i.test(message)) return "Chrome denied access to the capture folder. Choose or allow a folder before starting.";
+  if (/permission|not allowed|denied/i.test(message)) return "The browser denied access to the capture folder. Choose or allow a folder before starting.";
   return `Could not confirm folder access. ${message}`;
 }
 

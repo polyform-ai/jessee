@@ -1,10 +1,17 @@
 node_modules/
 dist/
-output/
+output/*
+!output/pdf/
+output/pdf/*
+!output/pdf/jessee-explains-jessee.pdf
+site-dist/
 tmp/
 test-results/
 playwright-report/
 release/
+release-dist/
+safari/build/
+safari/JesSee Extension/Resources/
 .DS_Store
 .env
 .env.*

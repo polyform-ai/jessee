@@ -1,7 +1,7 @@
 {
   "name": "jessee-extension",
   "version": "0.1.0",
-  "description": "Chrome extension that turns screen walkthroughs into structured AI-ready documents.",
+  "description": "Chrome and Safari extension that turns screen walkthroughs into structured AI-ready documents.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -10,10 +10,18 @@
   "bugs": {
     "url": "https://github.com/polyform-ai/jessee/issues"
   },
-  "homepage": "https://github.com/polyform-ai/jessee#readme",
+  "homepage": "https://jessee.ai",
   "type": "module",
   "scripts": {
     "build": "vite build",
+    "safari:resources": "npm run build && node scripts/prepare-safari-resources.mjs",
+    "build:safari": "npm run safari:resources && xcodebuild -project safari/JesSee.xcodeproj -scheme JesSee -configuration Debug -derivedDataPath safari/build build",
+    "build:safari:unsigned": "npm run safari:resources && xcodebuild -project safari/JesSee.xcodeproj -scheme JesSee -configuration Debug -derivedDataPath safari/build CODE_SIGNING_ALLOWED=NO build",
+    "release:package": "npm run safari:resources && node scripts/package-release.mjs",
+    "site:build": "node scripts/prepare-website.mjs",
+    "site:preview": "npm run site:build && wrangler pages dev ./site-dist",
+    "deploy:cloudflare": "npm run site:build && wrangler pages deploy ./site-dist --project-name jessee --branch main",
+    "deploy:cloudflare:preview": "npm run site:build && wrangler pages deploy ./site-dist --project-name jessee --branch codex-safari-web-extension",
     "dev": "vite build --watch",
     "test": "vitest run",
     "test:e2e": "playwright test",
@@ -21,7 +29,7 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.7.0",
-    "jspdf": "^3.0.4",
+    "jspdf": "^4.2.1",
     "vite": "^7.0.3"
   },
   "devDependencies": {
@@ -33,6 +41,7 @@
     "sharp": "^0.35.3",
     "tailwindcss": "^4.3.2",
     "typescript": "^5.8.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "wrangler": "^4.129.1"
   }
 }
