@@ -121,9 +121,9 @@ Ultimately, I don't think we're building a better screen recorder.
 
 We're building a better way to communicate.
 
-## Current Chrome Extension
+## Current Browser Extension
 
-JesSee currently ships as a Chrome MV3 extension that captures screen context, microphone narration, cursor movement, and timestamped screenshots. GPT-5.6 Sol prepares an editable plan where the goal, summary, and key points remain visible beside a step-through story of timestamped transcript sentences, page changes, and selected screenshots. The reviewed plan is then rendered directly into a clean local PDF.
+JesSee ships as a Chrome MV3 extension and a macOS Safari Web Extension that capture screen context, microphone narration, cursor movement, and timestamped screenshots. GPT-5.6 Sol prepares an editable plan where the outcome, summary, and key points remain visible beside a step-through story of timestamped transcript sentences, page changes, and selected screenshots. The reviewed plan is then rendered directly into a clean local PDF.
 
 ### What JesSee captures and sends
 
@@ -150,23 +150,31 @@ Captures, recordings, and generated PDFs stay on your computer. When you choose 
 
 6. Open the extension, add your email, a fresh OpenAI API key, and choose a local output folder.
 7. Click **Start Capture**, choose the tab/window/screen in Chrome's picker, explain the flow, then click **Close Capture**.
-8. While recording, hold **B** and drag to draw an outline box, or hold **R** and drag to blur/redact an area. Press **C** to clear every annotation and redaction from the current capture. Marked frames are captured automatically.
-9. Create the plan to open the visual plan editor. Edits save automatically; step through the story, add your own story steps, and use the screenshot controls to inspect or change the exact evidence used in the PDF.
+8. While recording, the glowing pointer compresses and rebounds on every click so actions remain clear without covering the page. Hold **B** and drag to draw an outline box, or hold **R** and drag to blur/redact an area. Press **C** to clear every annotation and redaction from the current capture. Clicks and marked frames are captured automatically.
+9. Create the plan to open the visual playbook editor. Edits save automatically; refine the outcome, takeaways, and summary, then work through each story section. **Best matches** ranks screenshots by timing, page context, and useful markup; **All images** lets you browse the complete capture without loading hundreds of thumbnails at once.
 10. Generate and download the PDF from the plan editor or the recorder.
 
 Mic narration and cursor highlighting are always enabled. JesSee captures timestamped screenshots automatically and pairs them with a sentence-level timestamped transcript. Planning aligns narration to the end of each sentence so evidence reflects the completed action or resulting screen state. Representative transition images help the model understand major changes, while the full screenshot timeline remains available by ID so the plan can choose an earlier or later frame when it tells the story better.
 
+For a concise product walkthrough, use the [two-minute demo playbook](docs/DEMO_PLAYBOOK.md). It keeps the story focused on the transformation from a short explanation to a reviewed, image-backed handoff.
+
+## Website
+
+The open-source product site lives in `website/` and is hosted at [jessee-hcp.pages.dev](https://jessee-hcp.pages.dev) on Cloudflare Pages. Preview it locally with `npm run site:preview`. Maintainers can deploy a branch preview with `npm run deploy:cloudflare:preview`; `npm run deploy:cloudflare` publishes the `main` production branch.
+
 ## Safari
 
-JesSee also includes a macOS Safari Web Extension wrapper in `safari/`. Safari opens the recorder in its own extension tab because Safari does not support Chrome's side panel API. Safari also keeps capture artifacts in extension storage and downloads the finished PDF because Chrome's directory picker is unavailable there.
+JesSee also includes a macOS Safari Web Extension wrapper in `safari/` for Safari 16.4 and newer. Safari opens the recorder in its own extension tab because Safari does not support Chrome's side panel API. Safari also keeps capture artifacts in extension storage and downloads the finished PDF because Chrome's directory picker is unavailable there.
 
-Build the Safari app and extension without code signing:
+Build the Safari app and extension for local use:
 
 ```bash
 npm run build:safari
 ```
 
-For local use, open `safari/JesSee.xcodeproj` in Xcode, select your Development Team for both targets, and run the **JesSee** scheme. Then enable JesSee in Safari under **Settings → Extensions** and allow website access when Safari asks. Click the toolbar icon from the page you want to explain; JesSee remembers that page while the recorder runs in its extension tab.
+The local build uses Xcode's **Sign to Run Locally** identity when a development certificate is not configured, which makes the extension discoverable by Safari on the same Mac. For a normal development setup, open `safari/JesSee.xcodeproj` in Xcode, select your Development Team for both targets, and run the **JesSee** scheme. Then enable JesSee in Safari under **Settings → Extensions** and allow website access when Safari asks. Click the toolbar icon from the page you want to explain; JesSee remembers that page while the recorder runs in a full-width extension tab.
+
+If you only need an unsigned compilation check, run `npm run build:safari:unsigned`. Safari will not register that build as an extension.
 
 The Safari resource bundle is generated from the same Vite build as Chrome. Run `npm run safari:resources` after frontend changes before building or running from Xcode. Generated Safari resources and Xcode build output are intentionally excluded from git.
 

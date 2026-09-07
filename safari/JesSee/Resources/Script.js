@@ -1,11 +1,4 @@
 function show(enabled, useSettingsInsteadOfPreferences) {
-    if (useSettingsInsteadOfPreferences) {
-        document.getElementsByClassName('state-on')[0].innerText = "JesSee’s extension is currently on. You can turn it off in the Extensions section of Safari Settings.";
-        document.getElementsByClassName('state-off')[0].innerText = "JesSee’s extension is currently off. You can turn it on in the Extensions section of Safari Settings.";
-        document.getElementsByClassName('state-unknown')[0].innerText = "You can turn on JesSee’s extension in the Extensions section of Safari Settings.";
-        document.getElementsByClassName('open-preferences')[0].innerText = "Quit and Open Safari Settings…";
-    }
-
     if (typeof enabled === "boolean") {
         document.body.classList.toggle(`state-on`, enabled);
         document.body.classList.toggle(`state-off`, !enabled);
@@ -13,6 +6,10 @@ function show(enabled, useSettingsInsteadOfPreferences) {
         document.body.classList.remove(`state-on`);
         document.body.classList.remove(`state-off`);
     }
+
+    document.querySelector(".open-preferences").innerText = useSettingsInsteadOfPreferences
+        ? "Open Safari Extension Settings"
+        : "Open Safari Extension Preferences";
 }
 
 function openPreferences() {

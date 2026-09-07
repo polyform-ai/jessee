@@ -24,7 +24,14 @@ manifest.browser_specific_settings = {
   ...(manifest.browser_specific_settings ?? {}),
   safari: {
     ...(manifest.browser_specific_settings?.safari ?? {}),
-    strict_min_version: "16.0"
+    strict_min_version: "16.4"
   }
 };
+
+const safariMinimumVersion = Number.parseFloat(
+  manifest.browser_specific_settings.safari.strict_min_version
+);
+if (manifest.background?.type === "module" && safariMinimumVersion < 16.4) {
+  throw new Error("Safari background modules require Safari 16.4 or newer.");
+}
 writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);

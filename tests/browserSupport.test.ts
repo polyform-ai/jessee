@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createCompatibleMediaRecorder,
   mediaFileExtension,
-  supportsDirectoryPicker
+  screenCaptureOptions,
+  supportsDirectoryPicker,
+  usesFullPageRecorder
 } from "../src/browserSupport";
 
 afterEach(() => {
@@ -46,5 +48,21 @@ describe("Safari media compatibility", () => {
 
     vi.stubGlobal("window", { showDirectoryPicker: vi.fn() });
     expect(supportsDirectoryPicker()).toBe(true);
+  });
+
+  it("uses a full page recorder when the side panel API is unavailable", () => {
+    vi.stubGlobal("chrome", {});
+    expect(usesFullPageRecorder()).toBe(true);
+
+    vi.stubGlobal("chrome", { sidePanel: {} });
+    expect(usesFullPageRecorder()).toBe(false);
+  });
+
+  it("avoids Safari's fragile display-size constraints in full-page mode", () => {
+    expect(screenCaptureOptions(true)).toEqual({ video: true, audio: false });
+    expect(screenCaptureOptions(false)).toEqual(expect.objectContaining({
+      video: expect.objectContaining({ width: { ideal: 3840 } }),
+      audio: false
+    }));
   });
 });

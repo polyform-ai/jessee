@@ -1,6 +1,6 @@
 import "./ui.css";
 import { artifactRef, putArtifact } from "./artifacts";
-import { createCompatibleMediaRecorder, mediaFileExtension } from "./browserSupport";
+import { createCompatibleMediaRecorder, mediaFileExtension, screenCaptureOptions, usesFullPageRecorder } from "./browserSupport";
 import { shouldStartWithFreshCapture } from "./captureHome";
 import { saveCaptureHistory } from "./captureHistory";
 import { getCaptureFlowView, type CaptureFlowButton } from "./captureFlow";
@@ -57,7 +57,7 @@ void refresh();
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local") return;
   const latestEvent = (changes.recordingSession?.newValue as RecordingSession | undefined)?.timeline.at(-1);
-  if (latestEvent?.type === "annotation" || latestEvent?.type === "redaction") requestAnnotationCapture();
+  if (latestEvent?.type === "annotation" || latestEvent?.type === "redaction" || latestEvent?.type === "click") requestForcedCapture();
   if (changes.recordingSession || changes.settings) void refresh();
 });
 
@@ -95,7 +95,7 @@ function render(): void {
   const isMicrophoneReady = Boolean(settings?.microphoneEnabledAt);
   const flow = getCaptureFlowView(current, isMicrophoneReady, hasEvidence);
   root.innerHTML = `
-    <main class="app">
+    <main class="app ${usesFullPageRecorder() ? "recorder-page" : ""}">
       <div class="header header-panel">
         <div class="title-row">
           <img class="brand-mark" src="/icon.svg" alt="" />
@@ -115,10 +115,12 @@ function render(): void {
           <div class="panel-header">
             <div>
               <h2>${escapeHtml(flow.title)}</h2>
-              <p>${escapeHtml(flow.description)}</p>
+            <p>${escapeHtml(flow.description)}</p>
+            ${usesFullPageRecorder() && current?.status === "idle" ? `<p class="safari-note"><strong>Safari tip:</strong> choose the page, window, or screen you want to explain in the share picker. This recorder can stay open in its own tab.</p>` : ""}
             </div>
           </div>
           ${flow.buttons.length ? `<div class="flow-actions">${flow.buttons.map(renderFlowButton).join("")}</div>` : ""}
+          ${current?.status === "recording" || current?.status === "paused" || current?.status === "idle" || !current ? renderCaptureCoach(current?.status === "recording" || current?.status === "paused") : ""}
           ${flow.showShortcuts ? `<div class="stack">
             <div class="shortcut-grid" aria-label="Screen annotation shortcuts">
               <div class="shortcut"><kbd>B</kbd><span>Hold and drag an outline box</span></div>
@@ -180,6 +182,20 @@ function render(): void {
   updateLiveRender();
 }
 
+function renderCaptureCoach(recording: boolean): string {
+  return `<div class="capture-coach ${recording ? "recording" : ""}">
+    <div class="capture-coach-heading">
+      <span class="coach-status-dot" aria-hidden="true"></span>
+      <div><strong>${recording ? "Keep this rhythm" : "A strong walkthrough takes about a minute"}</strong><p>${recording ? "Move naturally. JesSee is collecting the moments that prove each step." : "Give the viewer a clear beginning, middle, and result."}</p></div>
+    </div>
+    <ol class="capture-coach-grid">
+      <li><span>1</span><div><strong>Frame it</strong><small>Say what should be understood.</small></div></li>
+      <li><span>2</span><div><strong>Show it</strong><small>Take one action at a time.</small></div></li>
+      <li><span>3</span><div><strong>Land it</strong><small>Pause, then click the result.</small></div></li>
+    </ol>
+  </div>`;
+}
+
 function renderFlowButton(button: CaptureFlowButton): string {
   return `<button class="button ${button.tone}" id="${button.id}">${escapeHtml(button.label)}</button>`;
 }
@@ -189,7 +205,7 @@ function renderOnboarding(settings: Awaited<ReturnType<typeof getSettings>> | un
   const apiKeyValue = onboardingDraft?.apiKey ?? (settings?.openAiKey ? "••••••••••••••••" : "");
   const retentionDays = onboardingDraft?.retentionDays ?? settings?.retentionDays ?? 30;
   root.innerHTML = `
-    <main class="app">
+    <main class="app ${usesFullPageRecorder() ? "recorder-page" : ""}">
       <div class="header header-panel">
         <div class="title-row">
           <img class="brand-mark" src="/icon.svg" alt="" />
@@ -462,15 +478,7 @@ async function clearCurrentError(): Promise<void> {
 
 async function requestScreenStream(): Promise<MediaStream> {
   try {
-    return await navigator.mediaDevices.getDisplayMedia({
-      video: {
-        cursor: "always",
-        width: { ideal: 3840 },
-        height: { ideal: 2160 },
-        frameRate: { ideal: 30, max: 60 }
-      } as MediaTrackConstraints & { cursor: "always" },
-      audio: false
-    });
+    return await navigator.mediaDevices.getDisplayMedia(screenCaptureOptions(usesFullPageRecorder()));
   } catch (error) {
     throw new Error(`Screen permission was dismissed. Click Start Capture again and choose a screen, window, or tab. ${rawErrorMessage(error)}`);
   }
@@ -611,7 +619,7 @@ async function captureMoment(type: TimelineEvent["type"] = "screenshot", force =
   }
 }
 
-function requestAnnotationCapture(): void {
+function requestForcedCapture(): void {
   if (screenshotInFlight) {
     queuedAnnotationCapture = true;
     return;
