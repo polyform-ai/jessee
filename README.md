@@ -129,7 +129,7 @@ JesSee ships as a Chrome MV3 extension and a macOS Safari Web Extension that cap
 
 JesSee only captures a tab, window, or screen after you explicitly choose it in Chrome's share picker. Microphone narration is enabled separately in Settings and is required before a capture can begin.
 
-Captures, recordings, and generated PDFs stay on your computer. When you choose **Create Plan**, JesSee sends the narration, timestamps, timeline metadata, screenshot metadata, and a curated set of up to 20 transition screenshots to OpenAI using the API key you provide. In **Private Mode**, no screenshot pixels are sent; only narration and timeline metadata, including local screenshot IDs, are used to plan where local evidence belongs. **Generate PDF** performs no additional AI request and renders the reviewed plan with its selected local images. The public source has no analytics endpoint configured.
+Captures, recordings, and generated PDFs stay on your computer. When you choose **Create Plan**, JesSee sends the narration, timestamps, timeline metadata, screenshot metadata, and a curated set of up to 20 transition screenshots to OpenAI using the API key you provide. In **Private Mode**, no screenshot pixels are sent; only narration and timeline metadata, including local screenshot IDs, are used to plan where local evidence belongs. **Generate PDF** performs no additional AI request and renders the reviewed plan with its selected local images. The browser extension has no product analytics or telemetry endpoint configured. The public website uses GA4 for page, download, and GitHub-link measurement; it does not send extension content, API keys, email addresses, or URL query strings to GA4.
 
 ## Local Use
 
