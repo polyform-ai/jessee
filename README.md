@@ -160,7 +160,9 @@ For a concise product walkthrough, use the [two-minute demo playbook](docs/DEMO_
 
 ## Website
 
-The open-source product site lives in `website/` and is hosted at [jessee-hcp.pages.dev](https://jessee-hcp.pages.dev) on Cloudflare Pages. Preview it locally with `npm run site:preview`. Maintainers can deploy a branch preview with `npm run deploy:cloudflare:preview`; `npm run deploy:cloudflare` publishes the `main` production branch.
+The open-source product site lives in `website/` and is hosted at [jessee.ai](https://jessee.ai) on Cloudflare Pages. Preview it locally with `npm run site:preview`. Maintainers can deploy a branch preview with `npm run deploy:cloudflare:preview`; `npm run deploy:cloudflare` publishes the `main` production branch.
+
+Early Chrome and Safari downloads are published as GitHub prerelease assets. Run `npm run release:package` to produce both ZIP files and their checksums. See [the developer-preview installation guide](docs/INSTALL_PREVIEW.md) for the deliberate installation steps and current verification limits.
 
 ## Safari
 

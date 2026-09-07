@@ -8,9 +8,9 @@
     <meta property="og:title" content="JesSee — Show the work once. Leave with a playbook." />
     <meta property="og:description" content="An open-source screen explainer for turning narrated workflows into useful visual documents." />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://jessee-hcp.pages.dev/" />
-    <meta property="og:image" content="assets/playbook-review.png" />
-    <link rel="canonical" href="https://jessee-hcp.pages.dev/" />
+    <meta property="og:url" content="https://jessee.ai/" />
+    <meta property="og:image" content="https://jessee.ai/assets/playbook-review.png" />
+    <link rel="canonical" href="https://jessee.ai/" />
     <title>JesSee — Help AI see what you see</title>
     <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
@@ -28,6 +28,7 @@
         <a href="#problem">The problem</a>
         <a href="#how">How it works</a>
         <a href="#uses">Use cases</a>
+        <a href="#download">Download</a>
       </nav>
       <a class="nav-cta" href="https://github.com/polyform-ai/jessee" target="_blank" rel="noreferrer">
         <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 .7a11.5 11.5 0 0 0-3.6 22.4c.6.1.8-.2.8-.6v-2.2c-3.4.7-4.1-1.5-4.1-1.5-.5-1.4-1.3-1.8-1.3-1.8-1.1-.8.1-.8.1-.8 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.6.1-3.1 0 0 1-.3 3.2 1.2a11.1 11.1 0 0 1 5.8 0C16 4.6 17 4.9 17 4.9c.6 1.5.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.8 5.4-5.5 5.7.4.4.8 1.1.8 2.2v3.5c0 .4.2.7.8.6A11.5 11.5 0 0 0 12 .7Z"/></svg>
@@ -42,7 +43,7 @@
           <h1>Show the work once.<br /><em>Leave with a playbook.</em></h1>
           <p class="hero-lede">JesSee turns a narrated screen walkthrough into a clear, image-backed PDF—so people and AI can understand what happened without piecing together a prompt, five screenshots, and a long video.</p>
           <div class="hero-actions">
-            <a class="button primary" href="https://github.com/polyform-ai/jessee" target="_blank" rel="noreferrer">Try the open-source project <span aria-hidden="true">↗</span></a>
+            <a class="button primary" href="#download">Download the preview <span aria-hidden="true">↓</span></a>
             <a class="text-link" href="#how">See how it works <span aria-hidden="true">↓</span></a>
           </div>
           <p class="hero-note"><span class="status-dot"></span> Built for Chrome and Safari · Local capture storage · Bring your own OpenAI key</p>
@@ -136,7 +137,7 @@
               <ul><li>Narration stays aligned with the screen</li><li>Important clicks become evidence moments</li><li>Private Mode can keep screenshot pixels local</li></ul>
             </div>
             <button class="product-shot compact-shot" type="button" data-lightbox="assets/capture-coach.png" aria-label="Enlarge the JesSee capture coach screenshot">
-              <img src="assets/capture-coach.png" alt="JesSee capture window showing the Frame it, Show it, Land it coaching rhythm" />
+              <img src="assets/capture-coach.png" alt="JesSee capture window showing the Frame it, Show it, Land it coaching rhythm" loading="lazy" decoding="async" />
               <span>Actual JesSee interface <b>↗</b></span>
             </button>
           </article>
@@ -149,7 +150,7 @@
               <ul><li>Review one piece at a time</li><li>Swap any suggested image</li><li>Edit every word before export</li></ul>
             </div>
             <button class="product-shot playbook-shot" type="button" data-lightbox="assets/playbook-review.png" aria-label="Enlarge the JesSee visual playbook screenshot">
-              <img src="assets/playbook-review.png" alt="JesSee playbook editor with story sections and ranked screenshot choices" />
+              <img src="assets/playbook-review.png" alt="JesSee playbook editor with story sections and ranked screenshot choices" loading="lazy" decoding="async" />
               <span>Actual JesSee interface <b>↗</b></span>
             </button>
           </article>
@@ -159,12 +160,16 @@
               <span>STEP 03</span>
               <h3>Hand off something useful</h3>
               <p>Generate a structured PDF that another person can scan, discuss, or give to an AI agent. The important words and visual proof travel together.</p>
-              <a class="artifact-link" href="assets/jessee-explains-jessee.pdf" target="_blank">Open the PDF JesSee made from this site <span aria-hidden="true">↗</span></a>
+              <a class="artifact-link" href="assets/jessee-explains-jessee.pdf" download="JesSee-example-playbook.pdf">
+                <span class="artifact-type">PDF</span>
+                <span><strong>Download example PDF</strong><small>Two-page playbook made by JesSee from this site</small></span>
+                <b aria-hidden="true">↓</b>
+              </a>
             </div>
             <div class="pdf-result" aria-label="A visual playbook ready to share">
               <div class="pdf-page back"></div>
               <div class="pdf-page front">
-                <img class="pdf-preview" src="assets/jessee-explains-jessee-page.png" alt="First page of the PDF JesSee generated while explaining this website" />
+                <img class="pdf-preview" src="assets/jessee-explains-jessee-page.png" alt="First page of the PDF JesSee generated while explaining this website" loading="lazy" decoding="async" />
               </div>
               <span class="pdf-badge">READY TO SHARE · PDF</span>
             </div>
@@ -172,8 +177,35 @@
         </div>
       </section>
 
+      <section class="downloads section" id="download">
+        <div class="section-label reveal"><span>03</span> Try the developer preview</div>
+        <div class="download-intro reveal">
+          <div>
+            <p class="eyebrow"><span></span> Open source · v0.1.0 alpha</p>
+            <h2>Choose your browser.<br /><em>See if JesSee helps.</em></h2>
+          </div>
+          <p>These are early, unverified builds from the public GitHub repository. They are not yet listed in the Chrome Web Store or Mac App Store, so installation takes a few deliberate steps.</p>
+        </div>
+        <div class="download-grid">
+          <article class="download-card reveal">
+            <div class="download-card-head"><span class="browser-mark chrome-mark" aria-hidden="true"></span><div><small>DEVELOPER PREVIEW</small><h3>Chrome</h3></div><b>LOAD UNPACKED</b></div>
+            <p>Download and unzip the extension, then load its folder from Chrome's Extensions page.</p>
+            <ol><li>Open <strong>chrome://extensions</strong></li><li>Turn on <strong>Developer mode</strong></li><li>Choose <strong>Load unpacked</strong> and select the unzipped folder</li></ol>
+            <a class="button primary download-button" href="https://github.com/polyform-ai/jessee/releases/download/v0.1.0-alpha.1/JesSee-Chrome-v0.1.0-alpha.1.zip">Download for Chrome <span aria-hidden="true">↓</span></a>
+          </article>
+          <article class="download-card safari-card reveal" data-delay="1">
+            <div class="download-card-head"><span class="browser-mark safari-mark" aria-hidden="true">◉</span><div><small>TEMPORARY BETA</small><h3>Safari</h3></div><b>SAFARI 17+</b></div>
+            <p>Safari can load the open-source extension ZIP temporarily while the signed and notarized release is being prepared.</p>
+            <ol><li>Enable <strong>Show features for web developers</strong></li><li>In Safari Settings → Developer, allow unsigned extensions</li><li>Choose <strong>Add Temporary Extension</strong> and select the ZIP</li></ol>
+            <a class="button safari-button download-button" href="https://github.com/polyform-ai/jessee/releases/download/v0.1.0-alpha.1/JesSee-Safari-v0.1.0-alpha.1.zip">Download for Safari <span aria-hidden="true">↓</span></a>
+            <small class="preview-note">Temporary Safari extensions are removed when Safari quits or after 24 hours. The GitHub source includes the persistent Xcode build for Safari 16.4+.</small>
+          </article>
+        </div>
+        <div class="download-foot reveal"><span>Not store-reviewed or notarized yet</span><a href="https://github.com/polyform-ai/jessee/blob/v0.1.0-alpha.1/docs/INSTALL_PREVIEW.md" target="_blank" rel="noreferrer">Read the complete installation guide ↗</a></div>
+      </section>
+
       <section class="uses section" id="uses">
-        <div class="section-label reveal"><span>03</span> How I use JesSee</div>
+        <div class="section-label reveal"><span>04</span> How I use JesSee</div>
         <div class="uses-layout">
           <div class="uses-title reveal">
             <h2>For the work that is easier to show than write.</h2>
@@ -239,7 +271,7 @@
 
     <footer>
       <a class="brand" href="#top"><img src="assets/icon.svg" alt="" width="32" height="32" /><span>JesSee</span></a>
-      <p>An open-source experiment by <a href="https://polyform.ai" target="_blank" rel="noreferrer">Polyform</a>.</p>
+      <a class="made-by" href="https://polyform.ai" target="_blank" rel="noreferrer">Created by Polyform <span aria-hidden="true">↗</span></a>
       <div><a href="https://github.com/polyform-ai/jessee" target="_blank" rel="noreferrer">GitHub</a><a href="https://github.com/polyform-ai/jessee/issues" target="_blank" rel="noreferrer">Issues</a><a href="mailto:ahmed@polyform.ai">Contact</a></div>
     </footer>
 

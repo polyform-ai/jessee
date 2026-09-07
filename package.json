@@ -10,13 +10,14 @@
   "bugs": {
     "url": "https://github.com/polyform-ai/jessee/issues"
   },
-  "homepage": "https://jessee-hcp.pages.dev",
+  "homepage": "https://jessee.ai",
   "type": "module",
   "scripts": {
     "build": "vite build",
     "safari:resources": "npm run build && node scripts/prepare-safari-resources.mjs",
     "build:safari": "npm run safari:resources && xcodebuild -project safari/JesSee.xcodeproj -scheme JesSee -configuration Debug -derivedDataPath safari/build build",
     "build:safari:unsigned": "npm run safari:resources && xcodebuild -project safari/JesSee.xcodeproj -scheme JesSee -configuration Debug -derivedDataPath safari/build CODE_SIGNING_ALLOWED=NO build",
+    "release:package": "npm run safari:resources && node scripts/package-release.mjs",
     "site:build": "node scripts/prepare-website.mjs",
     "site:preview": "npm run site:build && wrangler pages dev ./site-dist",
     "deploy:cloudflare": "npm run site:build && wrangler pages deploy ./site-dist --project-name jessee --branch main",

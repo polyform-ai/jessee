@@ -13,6 +13,7 @@ test("loads extension settings page", async () => {
   const userDataDir = mkdtempSync(resolve(tmpdir(), "jessee-extension-"));
   const context = await chromium.launchPersistentContext(userDataDir, {
     headless: false,
+    deviceScaleFactor: 2,
     args: [
       "--no-first-run",
       "--no-default-browser-check",
@@ -63,7 +64,7 @@ test("loads extension settings page", async () => {
           status: "planned",
           startedAt: Date.now() - 10_000,
           stoppedAt: Date.now(),
-          timeline: [{ id: "page-change", type: "url-change", atMs: 6_000, url: "https://jessee-hcp.pages.dev/#problem", title: "JesSee - The communication gap" }],
+          timeline: [{ id: "page-change", type: "url-change", atMs: 6_000, url: "https://jessee.ai/#problem", title: "JesSee - The communication gap" }],
           transcript: {
             text: "Start with the problem: text, screenshots, and video all lose a different part of the explanation. Then show how JesSee turns the walkthrough into a visual playbook.",
             segments: [
@@ -72,8 +73,8 @@ test("loads extension settings page", async () => {
             ]
           },
           screenshots: [
-            { id: "shot-1", capturedAtMs: 4_000, url: "https://jessee-hcp.pages.dev/", title: "JesSee - Help AI see what you see", dataUrl: overviewScreenshot, annotations: [], redactions: [] },
-            { id: "shot-2", capturedAtMs: 7_000, url: "https://jessee-hcp.pages.dev/#problem", title: "JesSee - The communication gap", dataUrl: problemScreenshot, annotations: [], redactions: [] }
+            { id: "shot-1", capturedAtMs: 4_000, url: "https://jessee.ai/", title: "JesSee - Help AI see what you see", dataUrl: overviewScreenshot, annotations: [], redactions: [] },
+            { id: "shot-2", capturedAtMs: 7_000, url: "https://jessee.ai/#problem", title: "JesSee - The communication gap", dataUrl: problemScreenshot, annotations: [], redactions: [] }
           ],
           captureAnalysis: {
             userGoal: "Explain why JesSee turns walkthroughs into visual playbooks",
@@ -86,8 +87,8 @@ test("loads extension settings page", async () => {
               { screenshotId: "shot-2", atSeconds: 7, reason: "Shows the three disconnected input problems" }
             ],
             storySteps: [
-              { startSeconds: 0.5, endSeconds: 4, title: "Frame the communication problem", narrative: "Text, screenshots, and video each lose a different part of the explanation.", transcript: "Start with the problem: text, screenshots, and video all lose a different part of the explanation.", screenshotId: "shot-1", pageUrl: "https://jessee-hcp.pages.dev/", pageTitle: "JesSee - Help AI see what you see", kind: "narration" },
-              { startSeconds: 6, endSeconds: 7, title: "Show what gets lost", narrative: "The problem becomes concrete before JesSee introduces the solution.", transcript: "Then show how JesSee turns the walkthrough into a visual playbook.", screenshotId: "shot-2", pageUrl: "https://jessee-hcp.pages.dev/#problem", pageTitle: "JesSee - The communication gap", kind: "page-change" }
+              { startSeconds: 0.5, endSeconds: 4, title: "Frame the communication problem", narrative: "Text, screenshots, and video each lose a different part of the explanation.", transcript: "Start with the problem: text, screenshots, and video all lose a different part of the explanation.", screenshotId: "shot-1", pageUrl: "https://jessee.ai/", pageTitle: "JesSee - Help AI see what you see", kind: "narration" },
+              { startSeconds: 6, endSeconds: 7, title: "Show what gets lost", narrative: "The problem becomes concrete before JesSee introduces the solution.", transcript: "Then show how JesSee turns the walkthrough into a visual playbook.", screenshotId: "shot-2", pageUrl: "https://jessee.ai/#problem", pageTitle: "JesSee - The communication gap", kind: "page-change" }
             ]
           }
         }
