@@ -7,6 +7,7 @@ import {
   restoreExportFolder,
   supportsExportFolderSelection
 } from "./localFiles";
+import { sendRuntimeMessage } from "./runtimeMessaging";
 import { clearApiKey, getSession, getSettings, pruneCaptureHistory, saveSession, saveSettings } from "./storage";
 import { postWebhook } from "./webhook";
 
@@ -137,7 +138,7 @@ async function render(message = ""): Promise<void> {
     const draftKey = input?.value.trim();
     const candidateKey = draftKey && !draftKey.includes("•") ? draftKey : undefined;
     try {
-      const response = await chrome.runtime.sendMessage({ type: "TEST_AI_SETUP", apiKey: candidateKey }) as { ok?: boolean; error?: string };
+      const response = await sendRuntimeMessage({ type: "TEST_AI_SETUP", apiKey: candidateKey });
       if (!response.ok) throw new Error(response.error ?? "AI setup test failed.");
       if (candidateKey) await saveSettings({ openAiKey: candidateKey });
       await render("AI setup is ready: GPT-5.6 Sol and GPT-4o Transcribe Diarize are available.");

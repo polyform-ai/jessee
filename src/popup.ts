@@ -23,6 +23,7 @@ import { visiblePageRects } from "./captureEvidence";
 import { getSession, getSettings, pruneCaptureHistory, resetSession, saveSession, saveSettings } from "./storage";
 import type { CaptureHistoryItem, RecordingSession, RuntimeMessage, ScreenshotEvidence, TimelineEvent } from "./types";
 import { postWebhook } from "./webhook";
+import { sendRuntimeMessage } from "./runtimeMessaging";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("Missing #app");
@@ -61,6 +62,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (changes.recordingSession || changes.settings) void refresh();
 });
 
+chrome.runtime.onMessage.addListener((message: RuntimeMessage) => {
+  if (message.type === "STOP_CAPTURE") void stopRecording();
+});
+
 async function refresh(): Promise<void> {
   await restoreExportFolder();
   settingsCache = await getSettings();
@@ -69,7 +74,7 @@ async function refresh(): Promise<void> {
     void cleanupOldCaptures(settingsCache.retentionDays ?? 30);
   }
   const response = await send({ type: "GET_SESSION" });
-  session = response.session;
+  session = response.session ?? await getSession();
   if (!initialSessionChecked && session && shouldStartWithFreshCapture(session)) {
     initialSessionChecked = true;
     session = await resetSession();
@@ -369,11 +374,11 @@ async function startRecording(): Promise<void> {
   // Both media requests must begin directly from this click. Chrome's share
   // picker suspends the handler, so requesting the microphone afterwards can
   // be rejected even when it was enabled in Settings.
-  const startedAt = Date.now();
+  const requestedAt = Date.now();
   // The persisted File System Access handle can be temporarily unavailable
   // after Chrome reloads an unpacked extension. Local export is useful, but it
   // must never block the actual recording.
-  const recordingFolderPromise = startRecordingFolder(`${new Date(startedAt).toISOString().slice(0, 19)}-jessee-capture`).catch((error: unknown) => {
+  const recordingFolderPromise = startRecordingFolder(`${new Date(requestedAt).toISOString().slice(0, 19)}-jessee-capture`).catch((error: unknown) => {
     console.warn("Local capture folder is unavailable; keeping the recording in JesSee.", error);
     return undefined;
   });
@@ -404,6 +409,8 @@ async function startRecording(): Promise<void> {
     await previewVideo.play();
 
     const target = await getBestActiveTab();
+    await focusCaptureTarget(target);
+    const startedAt = Date.now();
     const captureId = crypto.randomUUID();
     const exportFolderName = await recordingFolderPromise;
     const initialSession: RecordingSession = {
@@ -531,7 +538,7 @@ async function finishLocalRecording(): Promise<void> {
     ? await putArtifact(`audio:${captureId}`, await blobToDataUrl(audioBlob))
     : undefined;
   cleanupRecorder();
-  localStatus = "Capture saved. Create PDF when ready.";
+  localStatus = "Capture saved. Creating your plan…";
   const nextSession: RecordingSession = {
     ...current,
     status: "stopped",
@@ -548,6 +555,7 @@ async function finishLocalRecording(): Promise<void> {
     image_count: nextSession.screenshots.length
   });
   await refresh();
+  await prepareCapturePlan();
 }
 
 async function hardCleanupInterruptedRecording(message?: string): Promise<void> {
@@ -685,6 +693,13 @@ async function getBestActiveTab(): Promise<chrome.tabs.Tab | undefined> {
   return [...normalTabs].reverse().find((tab) => tab.url && /^https?:\/\//.test(tab.url));
 }
 
+async function focusCaptureTarget(target: chrome.tabs.Tab | undefined): Promise<void> {
+  if (!target?.id) return;
+  await chrome.tabs.update(target.id, { active: true });
+  if (target.windowId) await chrome.windows.update(target.windowId, { focused: true });
+  await new Promise<void>((resolve) => window.setTimeout(resolve, 350));
+}
+
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -714,7 +729,7 @@ function bind(selector: string, event: string, handler: EventListener): void {
 }
 
 function send(message: RuntimeMessage): Promise<{ ok: boolean; session?: RecordingSession; error?: string }> {
-  return chrome.runtime.sendMessage(message);
+  return sendRuntimeMessage(message);
 }
 
 function escapeHtml(value: string): string {

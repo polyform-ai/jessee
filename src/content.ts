@@ -13,8 +13,6 @@ let startPoint: { x: number; y: number } | undefined;
 let draftRect: HTMLDivElement | undefined;
 let heldMode: "highlight" | "redact" | undefined;
 let interactionMode: "highlight" | "redact" | undefined;
-let shortcutBadge: HTMLDivElement | undefined;
-let shortcutBadgeTimeout: number | undefined;
 let cursorClickTimeout: number | undefined;
 let suppressNextClick = false;
 
@@ -208,27 +206,8 @@ function ensureOverlay(): void {
       backdrop-filter: blur(14px);
       -webkit-backdrop-filter: blur(14px);
     }
-    #screen-ticket-recorder-overlay .str-shortcut-badge {
-      position: fixed;
-      left: 50%;
-      bottom: 28px;
-      transform: translateX(-50%);
-      display: none;
-      align-items: center;
-      border: 1px solid rgba(255, 255, 255, 0.24);
-      border-radius: 999px;
-      background: rgba(24, 24, 27, 0.9);
-      color: white;
-      padding: 9px 14px;
-      font-size: 13px;
-      font-weight: 650;
-      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.28);
-    }
   </style>`;
   document.documentElement.appendChild(root);
-  shortcutBadge = document.createElement("div");
-  shortcutBadge.className = "str-shortcut-badge";
-  root.appendChild(shortcutBadge);
 }
 
 function updateOverlayState(): void {
@@ -250,10 +229,6 @@ function updateOverlayState(): void {
   if (cursor) cursor.style.display = mode === "cursor" && !heldMode ? "block" : "none";
   document.documentElement.classList.toggle("str-recording-cursor-active", mode === "cursor" && !heldMode);
   root.style.pointerEvents = heldMode || mode === "highlight" || mode === "redact" ? "auto" : "none";
-  if (shortcutBadge) {
-    shortcutBadge.textContent = heldMode === "redact" ? "R · Drag to redact" : heldMode === "highlight" ? "B · Drag an outline box" : "";
-    shortcutBadge.style.display = heldMode ? "flex" : "none";
-  }
 }
 
 function setCursorPressed(pressed: boolean): void {
@@ -278,19 +253,6 @@ function clearAnnotations(): void {
   heldMode = undefined;
   suppressNextClick = false;
   updateOverlayState();
-  showShortcutConfirmation("C · Annotations cleared");
-}
-
-function showShortcutConfirmation(message: string): void {
-  if (!shortcutBadge) return;
-  if (shortcutBadgeTimeout) window.clearTimeout(shortcutBadgeTimeout);
-  shortcutBadge.textContent = message;
-  shortcutBadge.style.display = "flex";
-  shortcutBadgeTimeout = window.setTimeout(() => {
-    if (!shortcutBadge || heldMode) return;
-    shortcutBadge.textContent = "";
-    shortcutBadge.style.display = "none";
-  }, 1_200);
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {
