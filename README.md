@@ -174,7 +174,7 @@ Build the Safari app and extension for local use:
 npm run build:safari
 ```
 
-The local build uses Xcode's **Sign to Run Locally** identity when a development certificate is not configured, which makes the extension discoverable by Safari on the same Mac. For a normal development setup, open `safari/JesSee.xcodeproj` in Xcode, select your Development Team for both targets, and run the **JesSee** scheme. Then enable JesSee in Safari under **Settings → Extensions** and allow website access when Safari asks. Click the toolbar icon from the page you want to explain; JesSee remembers that page while the recorder runs in a full-width extension tab.
+The local build uses Xcode's **Sign to Run Locally** identity when a development certificate is not configured, which makes the extension discoverable by Safari on the same Mac. For a normal development setup, open `safari/JesSee.xcodeproj` in Xcode, select your Development Team for both targets, and run the **JesSee** scheme. Then enable JesSee in Safari under **Settings → Extensions** and allow website access when Safari asks. Click the toolbar icon from the page you want to explain; JesSee remembers that page while the recorder runs in a full-width extension tab. After recording begins, the toolbar popover keeps the annotation shortcuts and Finish Recording control available without covering the captured page. Finishing the recording automatically creates and opens the visual plan for review before the PDF is generated.
 
 If you only need an unsigned compilation check, run `npm run build:safari:unsigned`. Safari will not register that build as an extension.
 

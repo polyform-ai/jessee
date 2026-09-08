@@ -51,6 +51,23 @@ test("loads extension settings page", async () => {
     await page.goto(`chrome-extension://${extensionId}/popup.html`);
     await expect(page.getByRole("button", { name: "Open Settings" })).toBeVisible();
 
+    const controlsPage = await context.newPage();
+    await controlsPage.goto(`chrome-extension://${extensionId}/controls.html`);
+    await controlsPage.evaluate(async () => {
+      await chrome.storage.local.set({
+        settings: { email: "demo@example.test", openAiKey: "demo-key", microphoneEnabledAt: Date.now(), retentionDays: 30 },
+        recordingSession: { status: "recording", startedAt: Date.now(), timeline: [], screenshots: [] }
+      });
+    });
+    await controlsPage.reload();
+    await expect(controlsPage.getByRole("heading", { name: "Recording your walkthrough" })).toBeVisible();
+    await expect(controlsPage.getByText("Hold + drag to outline")).toBeVisible();
+    await controlsPage.getByRole("button", { name: "Finish Recording" }).click();
+    await expect.poll(() => page.evaluate(async () => {
+      const stored = await chrome.storage.local.get("recordingSession");
+      return stored.recordingSession?.status;
+    })).toBe("error");
+
     const fallbackScreenshot = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=";
     const overviewScreenshot = process.env.JESSEE_VISUAL_QA
       ? `data:image/png;base64,${readFileSync(resolve(__dirname, "../website/assets/site-overview.png")).toString("base64")}`
@@ -206,7 +223,7 @@ test("loads extension settings page", async () => {
 
     await capturePage.keyboard.press("c");
     await expect(capturePage.locator(".str-box")).toHaveCount(0);
-    await expect(capturePage.getByText("Annotations cleared")).toBeVisible();
+    await expect(capturePage.locator(".str-shortcut-badge")).toHaveCount(0);
   } finally {
     await context.close();
   }

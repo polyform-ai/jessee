@@ -65,6 +65,11 @@ async function handleMessage(message: RuntimeMessage, sender: chrome.runtime.Mes
   switch (message.type) {
     case "GET_SESSION":
       return { ok: true, session: await getSession() };
+    case "OPEN_RECORDER":
+      await openRecorder();
+      return { ok: true, session: await getSession() };
+    case "STOP_CAPTURE":
+      return { ok: true, session: await getSession() };
     case "SET_OVERLAY_MODE":
       await sendToCaptureTab({ type: "SET_OVERLAY_MODE", mode: message.mode });
       return { ok: true };

@@ -111,6 +111,8 @@ export interface CaptureStoryStep {
 
 export type RuntimeMessage =
   | { type: "GET_SESSION" }
+  | { type: "OPEN_RECORDER" }
+  | { type: "STOP_CAPTURE" }
   | { type: "PREPARE_CAPTURE_PLAN" }
   | { type: "GENERATE_PDF" }
   | { type: "TEST_AI_SETUP"; apiKey?: string }

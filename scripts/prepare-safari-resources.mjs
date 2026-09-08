@@ -11,6 +11,10 @@ cpSync(chromeBuild, safariResources, { recursive: true });
 const manifestPath = resolve(safariResources, "manifest.json");
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 delete manifest.side_panel;
+manifest.action = {
+  ...(manifest.action ?? {}),
+  default_popup: "controls.html"
+};
 manifest.permissions = (manifest.permissions ?? []).filter(
   (permission) => !["sidePanel", "downloads", "<all_urls>"].includes(permission)
 );

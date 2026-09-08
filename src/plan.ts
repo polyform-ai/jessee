@@ -5,6 +5,7 @@ import { saveCaptureHistory } from "./captureHistory";
 import { getPlanPdfAction } from "./captureFlow";
 import { downloadPlanPdf } from "./pdfDownload";
 import { rankScreenshotsForStep, screenshotTimingLabel, type ScreenshotCandidate } from "./imagePicker";
+import { sendRuntimeMessage } from "./runtimeMessaging";
 import { getSession, saveSession } from "./storage";
 import type { CaptureAnalysis, CaptureStoryStep, RecordingSession, RuntimeMessage, TranscriptionResult } from "./types";
 
@@ -392,7 +393,7 @@ function setStatus(message: string): void {
 }
 
 function send(message: RuntimeMessage): Promise<{ ok: boolean; session?: RecordingSession; error?: string }> {
-  return chrome.runtime.sendMessage(message);
+  return sendRuntimeMessage(message);
 }
 
 function formatMs(ms: number): string {

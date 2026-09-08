@@ -45,6 +45,22 @@
     @apply w-[min(100vw,408px)] bg-zinc-50 p-3;
   }
 
+  .control-popover {
+    @apply min-h-0 w-[360px];
+  }
+
+  .control-panel {
+    @apply mt-3 gap-3;
+  }
+
+  .control-panel .button {
+    @apply w-full;
+  }
+
+  .recording-state {
+    @apply flex items-center gap-2 text-sm text-red-700;
+  }
+
   .recorder-page {
     @apply mx-auto min-h-screen w-full max-w-3xl p-6;
   }
