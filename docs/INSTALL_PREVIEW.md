@@ -2,11 +2,11 @@
 
 JesSee is open source, but these early downloads are not yet reviewed or signed by the Chrome Web Store or Apple. Install only if you are comfortable testing code from the public repository.
 
-Alpha 2 fixes Safari's missing runtime-message response, which could appear as `undefined is not an object (evaluating 'a.session')`. It also adds recording controls to the Safari toolbar popover and automatically starts plan creation when a recording finishes.
+Alpha 3 includes the Safari recording and plan-flow fixes from Alpha 2 and ensures the new toolbar controls page is included in the native Safari app bundle.
 
 ## Chrome
 
-1. Download `JesSee-Chrome-v0.1.0-alpha.2.zip` from the [GitHub prerelease](https://github.com/polyform-ai/jessee/releases/tag/v0.1.0-alpha.2).
+1. Download `JesSee-Chrome-v0.1.0-alpha.3.zip` from the [GitHub prerelease](https://github.com/polyform-ai/jessee/releases/tag/v0.1.0-alpha.3).
 2. Unzip the download.
 3. Open `chrome://extensions` in Chrome.
 4. Turn on **Developer mode**.
@@ -16,7 +16,7 @@ Chrome only allows ordinary one-click installation for extensions signed and hos
 
 ## Safari 17 or newer
 
-1. Download `JesSee-Safari-v0.1.0-alpha.2.zip` from the [GitHub prerelease](https://github.com/polyform-ai/jessee/releases/tag/v0.1.0-alpha.2). Do not unzip it.
+1. Download `JesSee-Safari-v0.1.0-alpha.3.zip` from the [GitHub prerelease](https://github.com/polyform-ai/jessee/releases/tag/v0.1.0-alpha.3). Do not unzip it.
 2. In Safari, open **Settings → Advanced** and enable **Show features for web developers**.
 3. Open **Settings → Developer** and enable **Allow unsigned extensions**.
 4. Choose **Add Temporary Extension…** and select the downloaded ZIP.
