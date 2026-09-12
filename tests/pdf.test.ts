@@ -126,7 +126,17 @@ describe("createPlanPdf", () => {
                     {
                       type: "bulletList",
                       content: [
-                        { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Staging" }] }] }
+                        {
+                          type: "listItem",
+                          content: [{
+                            type: "paragraph",
+                            content: [
+                              { type: "text", text: "Staging" },
+                              { type: "hardBreak" },
+                              { type: "text", text: "Production" }
+                            ]
+                          }]
+                        }
                       ]
                     }
                   ]
@@ -146,10 +156,43 @@ describe("createPlanPdf", () => {
     expect(text).toContain("Open settings");
     expect(text).toContain("Deploy to:");
     expect(text).toContain("Staging");
+    expect(text).toContain("Production");
     expect(text).not.toContain("Deploy to:Staging");
     expect(text).toContain("Retry save");
     const nestedBulletX = Number(text.match(/([\d.]+) [\d.]+ Td\n\(- Staging\) Tj/)?.[1]);
+    const nestedContinuationX = Number(text.match(/([\d.]+) [\d.]+ Td\n\(Production\) Tj/)?.[1]);
     expect(nestedBulletX).toBeGreaterThan(44);
+    expect(nestedContinuationX).toBe(nestedBulletX);
+  });
+
+  it("keeps editor-cleared key points out of the PDF", async () => {
+    const session = planSession();
+    session.captureAnalysis!.keyPoints = ["Stale structured point"];
+    session.captureAnalysis!.editorDocument = {
+      type: "doc",
+      content: [
+        {
+          type: "storyOverview",
+          content: [
+            { type: "storyTitle", content: [{ type: "text", text: "Explain the save failure" }] },
+            { type: "storySummary", content: [{ type: "text", text: "Saving does not complete" }] }
+          ]
+        },
+        {
+          type: "storyStep",
+          content: [
+            { type: "heading", content: [{ type: "text", text: "Save fails" }] },
+            { type: "paragraph", content: [{ type: "text", text: "Retry the save" }] },
+            { type: "storyImage" }
+          ]
+        }
+      ]
+    };
+
+    const text = await createPlanPdf(session).text();
+
+    expect(text).not.toContain("Key points");
+    expect(text).not.toContain("Stale structured point");
   });
 
   it("scales an unusually long story without clipping its final step", async () => {

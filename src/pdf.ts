@@ -13,6 +13,7 @@ interface RichTextRun {
   bold: boolean;
   italic: boolean;
   indent?: number;
+  resetIndent?: boolean;
 }
 
 interface PositionedRun extends RichTextRun {
@@ -158,7 +159,7 @@ function drawPlan(
 
   const keyPoints = analysis.keyPoints?.length ? analysis.keyPoints : analysis.breakingPoints ?? [];
   const editorKeyPointRuns = overviewNode ? runsFromBulletList(childOfType(overviewNode, "bulletList")) : [];
-  if (hasVisibleText(editorKeyPointRuns) || keyPoints.length) {
+  if (overviewNode ? hasVisibleText(editorKeyPointRuns) : keyPoints.length > 0) {
     addHeading(plainRuns("Key points"));
     if (overviewNode) addParagraph(editorKeyPointRuns);
     else keyPoints.forEach((point) => addParagraph([{ text: "- ", bold: false, italic: false }, ...plainRuns(point)]));
@@ -235,8 +236,8 @@ function wrapRichText(pdf: jsPDF, runs: RichTextRun[], maxWidth: number, fontSiz
   for (const run of runs.length ? runs : plainRuns("")) {
     for (const piece of run.text.replace(/\r/g, "").split(/(\n|[ \t]+)/)) {
       if (piece === "\n") {
-        activeIndent = 0;
-        nextLine(0);
+        if (run.resetIndent) activeIndent = 0;
+        nextLine(activeIndent);
       }
       else addPiece(/^[ \t]+$/.test(piece) ? " " : piece, run);
     }
@@ -258,7 +259,7 @@ function runsFromBodyNodes(nodes: SerializedEditorNode[], fallback: string): Ric
   if (!nodes.length) return plainRuns(fallback);
   const runs: RichTextRun[] = [];
   nodes.forEach((node, index) => {
-    if (index) runs.push({ text: "\n", bold: false, italic: false });
+    if (index) runs.push({ text: "\n", bold: false, italic: false, resetIndent: true });
     if (node.type !== "bulletList") {
       runs.push(...runsFromNode(node, ""));
       return;
@@ -278,13 +279,13 @@ function runsFromBulletList(node: SerializedEditorNode | undefined, depth = 0): 
     });
     const nestedLists = childrenOfType(item, "bulletList");
     if (hasVisibleText(directRuns)) {
-      if (runs.length) runs.push({ text: "\n", bold: false, italic: false });
+      if (runs.length) runs.push({ text: "\n", bold: false, italic: false, resetIndent: true });
       runs.push({ text: "- ", bold: false, italic: false, indent: depth }, ...directRuns);
     }
     nestedLists.forEach((nestedList) => {
       const nestedRuns = runsFromBulletList(nestedList, hasVisibleText(directRuns) ? depth + 1 : depth);
       if (!hasVisibleText(nestedRuns)) return;
-      if (runs.length) runs.push({ text: "\n", bold: false, italic: false });
+      if (runs.length) runs.push({ text: "\n", bold: false, italic: false, resetIndent: true });
       runs.push(...nestedRuns);
     });
   });
