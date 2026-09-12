@@ -68,6 +68,26 @@ describe("visual story editor document", () => {
 
     expect(updated.storySteps?.[0].narrative).toBe("- First detail\n  - Nested detail\n- Second detail");
   });
+
+  it("keeps nested overview bullets as separate saved key points", () => {
+    const document = buildEditorDocument(analysis(), steps(), screenshots());
+    document.content![0].content![2].content![0] = {
+      type: "listItem",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "Deploy to:" }] },
+        {
+          type: "bulletList",
+          content: [
+            { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Staging" }] }] }
+          ]
+        }
+      ]
+    };
+
+    const updated = parseEditorDocument(document, analysis());
+
+    expect(updated.keyPoints).toEqual(["Deploy to:", "Staging", "Keep the useful images"]);
+  });
 });
 
 function analysis(): CaptureAnalysis {

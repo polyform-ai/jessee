@@ -296,9 +296,8 @@ export function parseEditorDocument(document: JSONContent, current: CaptureAnaly
   const summaryNode = overview?.content?.find((node) => node.type === "storySummary");
   const title = titleNode ? jsonText(titleNode) : current.userGoal;
   const summary = summaryNode ? jsonText(summaryNode) : current.story;
-  const keyPoints = overview?.content?.find((node) => node.type === "bulletList")?.content
-    ?.map((item) => jsonText(item).trim())
-    .filter(Boolean) ?? [];
+  const keyPointList = overview?.content?.find((node) => node.type === "bulletList");
+  const keyPoints = keyPointList ? storyListEntries(keyPointList) : [];
   const storySteps = (document.content ?? []).filter((node) => node.type === "storyStep").map((node) => {
     const heading = node.content?.find((child) => child.type === "heading");
     const bodyBlocks = node.content?.filter((child) => child.type === "paragraph" || child.type === "bulletList") ?? [];
@@ -340,11 +339,7 @@ function storyListText(node: JSONContent, depth = 0): string {
   return (node.content ?? [])
     .filter((item) => item.type === "listItem")
     .flatMap((item) => {
-      const directText = (item.content ?? [])
-        .filter((child) => child.type === "paragraph")
-        .map((paragraph) => jsonText(paragraph).trim())
-        .filter(Boolean)
-        .join(" ");
+      const directText = storyListItemText(item);
       const lines = directText ? [`${"  ".repeat(depth)}- ${directText}`] : [];
       const nestedDepth = directText ? depth + 1 : depth;
       for (const nestedList of (item.content ?? []).filter((child) => child.type === "bulletList")) {
@@ -355,6 +350,24 @@ function storyListText(node: JSONContent, depth = 0): string {
     })
     .filter(Boolean)
     .join("\n");
+}
+
+function storyListEntries(node: JSONContent): string[] {
+  return (node.content ?? [])
+    .filter((item) => item.type === "listItem")
+    .flatMap((item) => [
+      storyListItemText(item),
+      ...(item.content ?? []).filter((child) => child.type === "bulletList").flatMap(storyListEntries)
+    ])
+    .filter(Boolean);
+}
+
+function storyListItemText(item: JSONContent): string {
+  return (item.content ?? [])
+    .filter((child) => child.type === "paragraph")
+    .map((paragraph) => jsonText(paragraph).trim())
+    .filter(Boolean)
+    .join(" ");
 }
 
 function hydrateStoryStep(node: JSONContent, step: CaptureStoryStep, index: number, screenshots: ScreenshotEvidence[]): void {

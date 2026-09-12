@@ -12,10 +12,16 @@ interface RichTextRun {
   text: string;
   bold: boolean;
   italic: boolean;
+  indent?: number;
 }
 
 interface PositionedRun extends RichTextRun {
   width: number;
+}
+
+interface PositionedLine {
+  runs: PositionedRun[];
+  offset: number;
 }
 
 interface ImageDimensions {
@@ -89,8 +95,8 @@ function drawPlan(
     if (shouldRender) {
       pdf.setTextColor(...color);
       lines.forEach((line) => {
-        let x = MARGIN;
-        line.forEach((run) => {
+        let x = MARGIN + line.offset;
+        line.runs.forEach((run) => {
           setFont(pdf, baseBold || run.bold, run.italic);
           pdf.setFontSize(fontSize);
           pdf.text(run.text, x, y);
@@ -131,8 +137,8 @@ function drawPlan(
       pdf.setTextColor(82, 82, 91);
       let captionY = y + 32 * scale;
       captionLines.forEach((line) => {
-        let captionX = MARGIN + 12 * scale;
-        line.forEach((run) => {
+        let captionX = MARGIN + 12 * scale + line.offset;
+        line.runs.forEach((run) => {
           setFont(pdf, run.bold, run.italic);
           pdf.setFontSize(captionFontSize);
           pdf.text(run.text, captionX, captionY);
@@ -178,24 +184,30 @@ function drawPlan(
   return y;
 }
 
-function wrapRichText(pdf: jsPDF, runs: RichTextRun[], maxWidth: number, fontSize: number, baseBold: boolean): PositionedRun[][] {
-  const lines: PositionedRun[][] = [[]];
+function wrapRichText(pdf: jsPDF, runs: RichTextRun[], maxWidth: number, fontSize: number, baseBold: boolean): PositionedLine[] {
+  const lines: PositionedLine[] = [{ runs: [], offset: 0 }];
   let lineWidth = 0;
+  let activeIndent = 0;
 
-  const nextLine = () => {
-    lines.push([]);
-    lineWidth = 0;
+  const nextLine = (offset = activeIndent) => {
+    lines.push({ runs: [], offset });
+    lineWidth = offset;
   };
 
   const addPiece = (piece: string, run: RichTextRun) => {
     if (!piece) return;
+    if (lineWidth === 0 && run.indent) {
+      activeIndent = run.indent * fontSize * 1.4;
+      lines.at(-1)!.offset = activeIndent;
+      lineWidth = activeIndent;
+    }
     setFont(pdf, baseBold || run.bold, run.italic);
     pdf.setFontSize(fontSize);
     const pieceWidth = pdf.getTextWidth(piece);
     if (lineWidth > 0 && lineWidth + pieceWidth > maxWidth) nextLine();
     if (pieceWidth <= maxWidth) {
       if (!piece.trim() && lineWidth === 0) return;
-      appendPositionedRun(lines.at(-1)!, { ...run, text: piece, width: pieceWidth });
+      appendPositionedRun(lines.at(-1)!.runs, { ...run, text: piece, width: pieceWidth });
       lineWidth += pieceWidth;
       return;
     }
@@ -206,7 +218,7 @@ function wrapRichText(pdf: jsPDF, runs: RichTextRun[], maxWidth: number, fontSiz
       const candidateWidth = pdf.getTextWidth(candidate);
       if (fragment && lineWidth + candidateWidth > maxWidth) {
         const fragmentWidth = pdf.getTextWidth(fragment);
-        appendPositionedRun(lines.at(-1)!, { ...run, text: fragment, width: fragmentWidth });
+        appendPositionedRun(lines.at(-1)!.runs, { ...run, text: fragment, width: fragmentWidth });
         nextLine();
         fragment = character;
       } else {
@@ -215,18 +227,21 @@ function wrapRichText(pdf: jsPDF, runs: RichTextRun[], maxWidth: number, fontSiz
     }
     if (fragment) {
       const fragmentWidth = pdf.getTextWidth(fragment);
-      appendPositionedRun(lines.at(-1)!, { ...run, text: fragment, width: fragmentWidth });
+      appendPositionedRun(lines.at(-1)!.runs, { ...run, text: fragment, width: fragmentWidth });
       lineWidth += fragmentWidth;
     }
   };
 
   for (const run of runs.length ? runs : plainRuns("")) {
     for (const piece of run.text.replace(/\r/g, "").split(/(\n|[ \t]+)/)) {
-      if (piece === "\n") nextLine();
+      if (piece === "\n") {
+        activeIndent = 0;
+        nextLine(0);
+      }
       else addPiece(/^[ \t]+$/.test(piece) ? " " : piece, run);
     }
   }
-  return lines.length ? lines : [[]];
+  return lines.length ? lines : [{ runs: [], offset: 0 }];
 }
 
 function appendPositionedRun(line: PositionedRun[], run: PositionedRun): void {
@@ -264,7 +279,7 @@ function runsFromBulletList(node: SerializedEditorNode | undefined, depth = 0): 
     const nestedLists = childrenOfType(item, "bulletList");
     if (hasVisibleText(directRuns)) {
       if (runs.length) runs.push({ text: "\n", bold: false, italic: false });
-      runs.push({ text: `${"  ".repeat(depth)}- `, bold: false, italic: false }, ...directRuns);
+      runs.push({ text: "- ", bold: false, italic: false, indent: depth }, ...directRuns);
     }
     nestedLists.forEach((nestedList) => {
       const nestedRuns = runsFromBulletList(nestedList, hasVisibleText(directRuns) ? depth + 1 : depth);

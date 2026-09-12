@@ -148,6 +148,8 @@ describe("createPlanPdf", () => {
     expect(text).toContain("Staging");
     expect(text).not.toContain("Deploy to:Staging");
     expect(text).toContain("Retry save");
+    const nestedBulletX = Number(text.match(/([\d.]+) [\d.]+ Td\n\(- Staging\) Tj/)?.[1]);
+    expect(nestedBulletX).toBeGreaterThan(44);
   });
 
   it("scales an unusually long story without clipping its final step", async () => {
