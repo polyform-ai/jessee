@@ -94,7 +94,16 @@ test("loads extension settings page", async () => {
     const problemScreenshot = process.env.JESSEE_VISUAL_QA
       ? `data:image/png;base64,${readFileSync(resolve(__dirname, "../website/assets/site-problem.png")).toString("base64")}`
       : fallbackScreenshot;
-    await page.evaluate(async ({ overviewScreenshot, problemScreenshot }) => {
+    await page.evaluate(async ({ overviewScreenshot, problemScreenshot, fallbackScreenshot }) => {
+      const additionalScreenshots = Array.from({ length: 24 }, (_, index) => ({
+        id: `shot-${index + 3}`,
+        capturedAtMs: 8_000 + index * 500,
+        url: "https://jessee.ai/#problem",
+        title: `Captured follow-up ${index + 1}`,
+        dataUrl: fallbackScreenshot,
+        annotations: [],
+        redactions: []
+      }));
       await chrome.storage.local.set({
         recordingSession: {
           status: "planned",
@@ -110,7 +119,8 @@ test("loads extension settings page", async () => {
           },
           screenshots: [
             { id: "shot-1", capturedAtMs: 4_000, url: "https://jessee.ai/", title: "JesSee - Help AI see what you see", dataUrl: overviewScreenshot, annotations: [], redactions: [] },
-            { id: "shot-2", capturedAtMs: 7_000, url: "https://jessee.ai/#problem", title: "JesSee - The communication gap", dataUrl: problemScreenshot, annotations: [], redactions: [] }
+            { id: "shot-2", capturedAtMs: 7_000, url: "https://jessee.ai/#problem", title: "JesSee - The communication gap", dataUrl: problemScreenshot, annotations: [], redactions: [] },
+            ...additionalScreenshots
           ],
           captureAnalysis: {
             userGoal: "Explain why JesSee turns walkthroughs into visual playbooks",
@@ -129,7 +139,7 @@ test("loads extension settings page", async () => {
           }
         }
       });
-    }, { overviewScreenshot, problemScreenshot });
+    }, { overviewScreenshot, problemScreenshot, fallbackScreenshot });
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto(`chrome-extension://${extensionId}/plan.html`);
     await expect(page.getByRole("heading", { name: "Make the document sound like you" })).toBeVisible();
@@ -143,6 +153,7 @@ test("loads extension settings page", async () => {
     await firstStepBody.locator("p").first().click();
     await page.getByRole("button", { name: "Bullet list" }).click();
     await expect(firstStepBody.locator("ul")).toBeVisible();
+    await expect(firstStepBody.locator("ul")).toHaveCSS("list-style-type", "disc");
     await page.getByRole("button", { name: "Undo" }).click();
     await expect(firstStepBody.locator("ul")).toHaveCount(0);
     if (process.env.JESSEE_VISUAL_QA) {
@@ -154,8 +165,11 @@ test("loads extension settings page", async () => {
     if (process.env.JESSEE_VISUAL_QA) {
       await page.screenshot({ path: resolve(__dirname, "../test-results/image-picker-modal.png") });
     }
+    await page.getByRole("button", { name: "All images" }).click();
+    await expect(page.getByText("1 of 26", { exact: true })).toBeVisible();
+    await expect(page.locator("[data-candidate-index]")).toHaveCount(9);
     await page.getByRole("button", { name: "Next captured image" }).click();
-    await expect(page.getByText("2 of 2", { exact: true })).toBeVisible();
+    await expect(page.getByText("2 of 26", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Use this image" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page.getByRole("img", { name: /Selected visual for step 1: JesSee - The communication gap/ })).toBeVisible();

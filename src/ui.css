@@ -380,10 +380,23 @@
     @apply mb-0 mt-3 max-w-3xl text-[15px] leading-7 text-zinc-700;
   }
 
+  .story-editor-content [data-story-step] > ul {
+    @apply mb-0 mt-4 max-w-3xl list-disc space-y-2 pl-6 text-[15px] leading-7 text-zinc-700;
+  }
+
+  .story-editor-content [data-story-step] > ul > li {
+    @apply pl-1 marker:text-violet-500;
+  }
+
+  .story-editor-content [data-story-step] > ul > li > p {
+    @apply m-0;
+  }
+
   .story-editor-content.is-editable [data-story-title],
   .story-editor-content.is-editable [data-story-summary],
   .story-editor-content.is-editable [data-story-step] > h2,
   .story-editor-content.is-editable [data-story-step] > p,
+  .story-editor-content.is-editable [data-story-step] li p,
   .story-editor-content.is-editable [data-story-overview] li p {
     @apply transition;
   }
@@ -392,6 +405,7 @@
   .story-editor-content.is-editable [data-story-summary]:hover,
   .story-editor-content.is-editable [data-story-step] > h2:hover,
   .story-editor-content.is-editable [data-story-step] > p:hover,
+  .story-editor-content.is-editable [data-story-step] li p:hover,
   .story-editor-content.is-editable [data-story-overview] li p:hover {
     @apply bg-violet-50/70;
     box-shadow: 0 0 0 5px rgba(91, 94, 248, 0.07);

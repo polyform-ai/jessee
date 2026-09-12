@@ -16,6 +16,8 @@ const root = app;
 
 type PlanMode = "read" | "edit";
 
+const FILMSTRIP_WINDOW_SIZE = 9;
+
 let session: RecordingSession;
 let hydrated: RecordingSession;
 let planMode: PlanMode = "edit";
@@ -130,6 +132,14 @@ function renderImageDialog(step: CaptureStoryStep, stepIndex: number): string {
   const candidate = candidates[imageCandidateIndex];
   const selected = candidate?.shot.id === step.screenshotId;
   const topSuggestionId = rankScreenshotsForStep(step, hydrated.screenshots)[0]?.shot.id;
+  const filmstripStart = clamp(
+    imageCandidateIndex - Math.floor(FILMSTRIP_WINDOW_SIZE / 2),
+    0,
+    Math.max(0, candidates.length - FILMSTRIP_WINDOW_SIZE)
+  );
+  const filmstripCandidates = candidates
+    .slice(filmstripStart, filmstripStart + FILMSTRIP_WINDOW_SIZE)
+    .map((item, offset) => ({ item, index: filmstripStart + offset }));
 
   return `<dialog class="image-dialog image-carousel-dialog" id="imageDialog" aria-labelledby="imageDialogTitle">
     <div class="image-dialog-card image-carousel-card">
@@ -160,7 +170,7 @@ function renderImageDialog(step: CaptureStoryStep, stepIndex: number): string {
         <button class="button primary" id="useCandidate" ${selected ? "disabled" : ""}>${selected ? "Currently selected" : "Use this image"}</button>
       </div>
       <div class="image-filmstrip" role="listbox" aria-label="Captured image thumbnails">
-        ${candidates.map((item, index) => `<button class="image-filmstrip-item ${index === imageCandidateIndex ? "active" : ""} ${item.shot.id === step.screenshotId ? "selected" : ""}" data-candidate-index="${index}" role="option" aria-selected="${index === imageCandidateIndex}" aria-label="View image ${item.index + 1}, ${escapeHtml(item.reason)}"><img src="${item.shot.dataUrl}" alt="" loading="lazy" /><span>${String(item.index + 1).padStart(2, "0")}</span></button>`).join("")}
+        ${filmstripCandidates.map(({ item, index }) => `<button class="image-filmstrip-item ${index === imageCandidateIndex ? "active" : ""} ${item.shot.id === step.screenshotId ? "selected" : ""}" data-candidate-index="${index}" role="option" aria-selected="${index === imageCandidateIndex}" aria-posinset="${index + 1}" aria-setsize="${candidates.length}" aria-label="View image ${item.index + 1}, ${escapeHtml(item.reason)}"><img src="${item.shot.dataUrl}" alt="" loading="lazy" /><span>${String(item.index + 1).padStart(2, "0")}</span></button>`).join("")}
       </div>` : `<div class="image-carousel-empty"><strong>No captured images are available</strong><p>This step will remain text only.</p></div>`}
     </div>
   </dialog>`;
