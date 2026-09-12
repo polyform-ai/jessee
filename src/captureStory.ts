@@ -55,7 +55,7 @@ export function buildCaptureStory(
       ...modelStep,
       startSeconds: segment.start,
       endSeconds: segment.end,
-      title: modelStep?.title || "What the user explained",
+      title: modelStep?.title || "Key point",
       narrative: modelStep?.narrative || segment.text,
       transcript: segment.text,
       screenshotId: modelStep?.screenshotId || screenshot?.id,

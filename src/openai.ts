@@ -123,15 +123,18 @@ export async function analyzeCapture(
     screenshotAtSentenceEnd: screenshotAtOrAfter(evidenceFrames, segment.end)
   }));
   const instructions = [
-    "You turn a narrated screen capture into a clear visual story plan. The reviewed plan will be rendered directly as the PDF, with no later AI formatting pass.",
+    "You turn a narrated screen capture into a polished visual walkthrough. The reviewed plan will be rendered directly as the PDF, with no later AI formatting pass.",
     "Start with the transcript and timestamped timeline. Identify what the user is trying to communicate before looking for screenshots.",
+    "Write the output in the narrator's direct, reader-facing voice, as if they had written the finished walkthrough themselves.",
+    "Never describe the narrator as 'the user' and never use meta phrases such as 'the user said', 'the user explained', 'the narrator mentions', or 'this recording shows'. State the explanation, request, problem, and intended result directly.",
     "Return only valid JSON. Do not wrap it in code fences.",
     "The JSON schema is: userGoal:string, keyPoints:string[], story:string, storySteps:{startSeconds:number,endSeconds:number,title:string,narrative:string,transcript:string,screenshotId?:string,pageUrl?:string,pageTitle?:string,kind:'narration'|'page-change'|'action'}[].",
     "userGoal should capture the user's intended outcome.",
     "keyPoints should preserve every important claim, request, problem, expectation, and decision made by the user. Prefer detail over compression.",
-    "story should be a concise but complete summary of what the user is trying to communicate.",
+    "story should be a concise but complete reader-facing summary of the message, not a summary of the act of recording it.",
     "storySteps are the detailed chronological plan. Create a step for every meaningful transcript sentence, action, page change, annotation, redaction, error, and visible state transition unless it is truly redundant.",
-    "Each story step must explain what is happening in narrative, preserve the exact relevant transcript sentence in transcript, and select the screenshot that best illustrates the resulting state.",
+    "Each story step must explain the point directly in narrative, preserve the exact relevant transcript sentence in transcript as private source material, and select the screenshot that best illustrates the resulting state.",
+    "Titles and narratives must make sense without the transcript. The transcript is provenance for editing and is not part of the reader-facing PDF.",
     "Every URL change in the timeline must appear as a page-change story step with pageUrl and pageTitle. Page changes are part of the story, not incidental metadata.",
     "Transcript timestamps mark when a sentence starts and ends. For screenshot selection, use selectionAtSeconds and screenshotAtSentenceEnd so the chosen image reflects the completed sentence and resulting UI state, not the beginning of the narration.",
     "Prefer the first screenshot at or after a sentence ends. Use the closest prior screenshot only when no later screenshot exists. Return the exact screenshotId from evidenceFrames whenever possible.",

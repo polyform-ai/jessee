@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "JesSee",
   "description": "Turn narrated screen walkthroughs into polished, evidence-backed PDF tickets and guides.",
-  "version": "0.1.0.2",
-  "version_name": "0.1.0 alpha 2",
+  "version": "0.1.0.3",
+  "version_name": "0.1.0 alpha 3",
   "action": {
     "default_title": "JesSee",
     "default_icon": {

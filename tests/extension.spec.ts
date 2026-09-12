@@ -1,4 +1,4 @@
-import { test, expect, chromium } from "@playwright/test";
+import { test, expect, chromium, type Locator } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,9 +7,24 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+async function replaceEditorText(locator: Locator, value: string): Promise<void> {
+  await locator.click();
+  await locator.evaluate((element, replacement) => {
+    (element as HTMLElement).focus();
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    document.execCommand("insertText", false, replacement);
+  }, value);
+}
+
 test("loads extension settings page", async () => {
   execFileSync("npm", ["run", "build"], { cwd: resolve(__dirname, ".."), stdio: "inherit" });
-  const extensionPath = resolve(__dirname, "../dist");
+  const extensionPath = process.env.JESSEE_EXTENSION_PATH
+    ? resolve(process.env.JESSEE_EXTENSION_PATH)
+    : resolve(__dirname, "../dist");
   const userDataDir = mkdtempSync(resolve(tmpdir(), "jessee-extension-"));
   const context = await chromium.launchPersistentContext(userDataDir, {
     headless: false,
@@ -30,6 +45,10 @@ test("loads extension settings page", async () => {
     await expect(page.getByRole("heading", { name: "JesSee" })).toBeVisible();
     await expect(page.getByLabel("OpenAI API key")).toBeVisible();
     await expect(page.getByRole("button", { name: "Test AI setup" })).toBeVisible();
+    await page.getByRole("button", { name: "Test AI setup" }).click();
+    const openAiPanel = page.locator("section.panel").filter({ has: page.getByRole("heading", { name: "OpenAI" }) });
+    await expect(openAiPanel.locator("#aiTestResult")).toBeVisible();
+    await expect(openAiPanel.locator("#aiTestResult")).toContainText("OpenAI API key");
 
     if (process.env.JESSEE_VISUAL_QA) {
       const coachPage = await context.newPage();
@@ -75,7 +94,16 @@ test("loads extension settings page", async () => {
     const problemScreenshot = process.env.JESSEE_VISUAL_QA
       ? `data:image/png;base64,${readFileSync(resolve(__dirname, "../website/assets/site-problem.png")).toString("base64")}`
       : fallbackScreenshot;
-    await page.evaluate(async ({ overviewScreenshot, problemScreenshot }) => {
+    await page.evaluate(async ({ overviewScreenshot, problemScreenshot, fallbackScreenshot }) => {
+      const additionalScreenshots = Array.from({ length: 24 }, (_, index) => ({
+        id: `shot-${index + 3}`,
+        capturedAtMs: 8_000 + index * 500,
+        url: "https://jessee.ai/#problem",
+        title: `Captured follow-up ${index + 1}`,
+        dataUrl: fallbackScreenshot,
+        annotations: [],
+        redactions: []
+      }));
       await chrome.storage.local.set({
         recordingSession: {
           status: "planned",
@@ -91,7 +119,8 @@ test("loads extension settings page", async () => {
           },
           screenshots: [
             { id: "shot-1", capturedAtMs: 4_000, url: "https://jessee.ai/", title: "JesSee - Help AI see what you see", dataUrl: overviewScreenshot, annotations: [], redactions: [] },
-            { id: "shot-2", capturedAtMs: 7_000, url: "https://jessee.ai/#problem", title: "JesSee - The communication gap", dataUrl: problemScreenshot, annotations: [], redactions: [] }
+            { id: "shot-2", capturedAtMs: 7_000, url: "https://jessee.ai/#problem", title: "JesSee - The communication gap", dataUrl: problemScreenshot, annotations: [], redactions: [] },
+            ...additionalScreenshots
           ],
           captureAnalysis: {
             userGoal: "Explain why JesSee turns walkthroughs into visual playbooks",
@@ -110,35 +139,97 @@ test("loads extension settings page", async () => {
           }
         }
       });
-    }, { overviewScreenshot, problemScreenshot });
+    }, { overviewScreenshot, problemScreenshot, fallbackScreenshot });
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto(`chrome-extension://${extensionId}/plan.html`);
-    await expect(page.getByRole("heading", { name: "Build the playbook one piece at a time" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Pick the image that proves this section" })).toBeVisible();
-    await expect(page.getByRole("radio", { name: /Choose image 1/ })).toHaveAttribute("aria-checked", "true");
-    await expect(page.getByRole("blockquote")).toContainText("Start with the problem");
-    await expect(page.getByRole("img", { name: "Screenshot captured at 4s" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Make the document sound like you" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Edit" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("toolbar", { name: "Story formatting" })).toBeVisible();
+    await expect(page.locator("[data-story-step]" )).toHaveCount(2);
+    await expect(page.getByRole("img", { name: /Selected visual for step 1/ })).toBeVisible();
+    await expect(page.getByRole("img", { name: /Selected visual for step 2/ })).toBeVisible();
+    await expect(page.getByText("What the user said", { exact: false })).toHaveCount(0);
+    const firstStepBody = page.locator("[data-story-step]").first();
+    await firstStepBody.locator("p").first().click();
+    await page.getByRole("button", { name: "Bullet list" }).click();
+    await expect(firstStepBody.locator("ul")).toBeVisible();
+    await expect(firstStepBody.locator("ul")).toHaveCSS("list-style-type", "disc");
+    const nestedListStyle = await page.evaluate(() => {
+      const editor = document.createElement("div");
+      editor.className = "story-editor-content";
+      const step = document.createElement("section");
+      step.dataset.storyStep = "";
+      const outerList = document.createElement("ul");
+      const item = document.createElement("li");
+      const nestedList = document.createElement("ul");
+      item.append(nestedList);
+      outerList.append(item);
+      step.append(outerList);
+      editor.append(step);
+      document.body.append(editor);
+      const style = getComputedStyle(nestedList);
+      const result = { listStyleType: style.listStyleType, paddingLeft: Number.parseFloat(style.paddingLeft) };
+      editor.remove();
+      return result;
+    });
+    expect(nestedListStyle.listStyleType).toBe("circle");
+    expect(nestedListStyle.paddingLeft).toBeGreaterThan(0);
+    const nestedOverviewListStyle = await page.evaluate(() => {
+      const editor = document.createElement("div");
+      editor.className = "story-editor-content";
+      const overview = document.createElement("section");
+      overview.dataset.storyOverview = "";
+      const outerList = document.createElement("ul");
+      const item = document.createElement("li");
+      const nestedList = document.createElement("ul");
+      item.append(nestedList);
+      outerList.append(item);
+      overview.append(outerList);
+      editor.append(overview);
+      document.body.append(editor);
+      const style = getComputedStyle(nestedList);
+      const result = { listStyleType: style.listStyleType, paddingLeft: Number.parseFloat(style.paddingLeft) };
+      editor.remove();
+      return result;
+    });
+    expect(nestedOverviewListStyle.listStyleType).toBe("circle");
+    expect(nestedOverviewListStyle.paddingLeft).toBeGreaterThan(0);
+    await page.getByRole("button", { name: "Undo" }).click();
+    await expect(firstStepBody.locator("ul")).toHaveCount(0);
     if (process.env.JESSEE_VISUAL_QA) {
       await page.screenshot({ path: resolve(__dirname, "../website/assets/playbook-review.png") });
     }
-    await page.getByRole("radio", { name: /Choose image 2/ }).click();
-    await expect(page.getByRole("img", { name: "Screenshot captured at 7s" })).toBeVisible();
+    await page.getByRole("button", { name: "Change image for step 1" }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Step through the captured moments" })).toBeVisible();
+    if (process.env.JESSEE_VISUAL_QA) {
+      await page.screenshot({ path: resolve(__dirname, "../test-results/image-picker-modal.png") });
+    }
+    await page.getByRole("button", { name: "All images" }).click();
+    await expect(page.getByText("1 of 26", { exact: true })).toBeVisible();
+    await expect(page.locator("[data-candidate-index]")).toHaveCount(9);
+    await page.getByRole("button", { name: "Next captured image" }).click();
+    await expect(page.getByText("2 of 26", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Use this image" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByRole("img", { name: /Selected visual for step 1: JesSee - The communication gap/ })).toBeVisible();
     await expect.poll(() => page.evaluate(async () => {
       const stored = await chrome.storage.local.get("recordingSession");
       return stored.recordingSession?.captureAnalysis?.storySteps?.[0]?.screenshotId;
     })).toBe("shot-2");
-    await page.getByRole("button", { name: "Next section" }).click();
-    await expect(page.getByText("Page changed to", { exact: true })).toBeVisible();
-    await expect(page.getByRole("img", { name: "Screenshot captured at 7s" })).toBeVisible();
-    await page.getByRole("button", { name: "Add step" }).click();
-    await expect(page.getByText("Added step", { exact: true })).toBeVisible();
-    await page.getByLabel("What this part of the story communicates").fill("Add the final confirmation to the story.");
+    if (process.env.JESSEE_VISUAL_QA) {
+      await page.screenshot({ path: resolve(__dirname, "../test-results/playbook-edit.png") });
+    }
+    await page.getByRole("button", { name: "Add another step" }).click();
+    await expect(page.locator("[data-story-step]")).toHaveCount(3);
+    const newStepNarrative = page.locator("[data-story-step]").nth(2).locator("p").first();
+    await replaceEditorText(newStepNarrative, "Add the final confirmation to the story.");
     await expect.poll(() => page.evaluate(async () => {
       const stored = await chrome.storage.local.get("recordingSession");
       return stored.recordingSession?.captureAnalysis?.storySteps?.find((step: { kind?: string }) => step.kind === "manual")?.narrative;
     })).toBe("Add the final confirmation to the story.");
     await expect(page.getByText("Saved automatically", { exact: true })).toBeVisible();
-    await page.getByLabel("Outcome").fill("Show the updated visual workflow");
+    await replaceEditorText(page.locator("[data-story-title]"), "Show the updated visual workflow");
     await expect.poll(() => page.evaluate(async () => {
       const stored = await chrome.storage.local.get("recordingSession");
       return stored.recordingSession?.captureAnalysis?.userGoal;
@@ -165,8 +256,15 @@ test("loads extension settings page", async () => {
       const download = await downloadPromise;
       await download.saveAs(resolve(pdfDirectory, "jessee-explains-jessee.pdf"));
     }
-    await page.getByLabel("Executive summary").fill("A revised story must be regenerated.");
+    await replaceEditorText(page.locator("[data-story-summary]"), "A revised story must be regenerated.");
     await expect(page.getByRole("button", { name: "Generate PDF" })).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("button", { name: "Preview" }).click();
+    await expect(page.getByRole("button", { name: "Preview" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: "Change image for step 1" })).toBeVisible();
+    if (process.env.JESSEE_VISUAL_QA) {
+      await page.screenshot({ path: resolve(__dirname, "../test-results/playbook-mobile.png") });
+    }
 
     const capturePage = await context.newPage();
     await capturePage.route("https://jessee.test/**", (route) => route.fulfill({

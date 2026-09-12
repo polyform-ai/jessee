@@ -82,6 +82,9 @@ describe("analyzeCapture", () => {
     const request = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     expect(request.model).toBe("gpt-5.6-sol");
     expect(request.reasoning).toEqual({ effort: "medium" });
+    expect(request.input[0].content[0].text).toContain("direct, reader-facing voice");
+    expect(request.input[0].content[0].text).toContain("Never describe the narrator as 'the user'");
+    expect(request.input[0].content[0].text).toContain("not part of the reader-facing PDF");
     expect(request.input[1].content.some((item: { type: string }) => item.type === "input_image")).toBe(true);
     expect(request.input[1].content[0].text).toContain("shownTransitionScreenshotIds");
     expect(result.analysis.keyPoints).toEqual(["Saving fails"]);

@@ -95,6 +95,16 @@ export interface CaptureAnalysis {
   }>;
   story: string;
   storySteps?: CaptureStoryStep[];
+  /** Tiptap JSON preserves inline formatting while the structured fields keep AI and PDF generation deterministic. */
+  editorDocument?: SerializedEditorNode;
+}
+
+export interface SerializedEditorNode {
+  type?: string;
+  attrs?: Record<string, unknown>;
+  content?: SerializedEditorNode[];
+  marks?: Array<{ type: string; attrs?: Record<string, unknown> }>;
+  text?: string;
 }
 
 export interface CaptureStoryStep {

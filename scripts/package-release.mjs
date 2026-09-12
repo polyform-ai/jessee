@@ -3,7 +3,8 @@ import { execFileSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-const version = process.env.JESSEE_RELEASE_VERSION ?? "0.1.0-alpha.2";
+const packageMetadata = JSON.parse(readFileSync(resolve("package.json"), "utf8"));
+const version = process.env.JESSEE_RELEASE_VERSION ?? packageMetadata.version;
 const outputDirectory = resolve("release-dist");
 const stagingDirectory = resolve(outputDirectory, "staging");
 const chromeDirectory = resolve(stagingDirectory, "chrome");
@@ -53,5 +54,10 @@ const checksums = archives.map(({ name }) => {
 });
 writeFileSync(resolve(outputDirectory, "SHA256SUMS.txt"), `${checksums.join("\n")}\n`);
 rmSync(stagingDirectory, { recursive: true, force: true });
+
+execFileSync(process.execPath, [resolve("scripts/validate-release-packages.mjs")], {
+  env: { ...process.env, JESSEE_RELEASE_VERSION: version },
+  stdio: "inherit"
+});
 
 console.log(`Packaged JesSee v${version} in ${outputDirectory}`);
