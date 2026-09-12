@@ -16,8 +16,10 @@ describe("createPlanPdf", () => {
 
   it("embeds a selected screenshot in its timestamped story step", async () => {
     const text = await createPlanPdf(planSession(true)).text();
-    expect(text).toContain("Story step 1");
+    expect(text).toContain("Step 1 - selected visual");
     expect(text).toContain("0:12");
+    expect(text).not.toContain("What the user said");
+    expect(text).not.toContain("The save is failing here");
   });
 });
 
@@ -38,7 +40,7 @@ function planSession(withImage = false): RecordingSession {
     captureAnalysis: {
       userGoal: "Explain the save failure",
       keyPoints: ["The save action fails"],
-      story: "The user attempts to save and sees a failure.",
+      story: "Saving does not complete and the failure is visible.",
       helpfulImageMoments: withImage ? [{ screenshotId: "shot-1", atSeconds: 12, reason: "The failure is visible." }] : [],
       storySteps: [{
         startSeconds: 10,

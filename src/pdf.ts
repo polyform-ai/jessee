@@ -8,10 +8,10 @@ export function createPlanPdf(session: RecordingSession): Blob {
   const pdf = new jsPDF({ unit: "pt", format: "letter" });
   pdf.setProperties({
     title,
-    subject: "JesSee visual story",
+    subject: "JesSee visual walkthrough",
     author: "JesSee",
     creator: "JesSee",
-    keywords: "capture, visual story, transcript, evidence"
+    keywords: "capture, visual walkthrough, explanation, evidence"
   });
   drawPlan(pdf, session);
   addFooter(pdf);
@@ -61,7 +61,7 @@ function drawPlan(pdf: jsPDF, session: RecordingSession): void {
     const naturalHeight = (props.height * maxTextWidth) / props.width;
     const imageHeight = Math.min(maxImageHeight, naturalHeight);
     const imageWidth = Math.min(maxTextWidth, (props.width * imageHeight) / props.height);
-    const caption = step.narrative || step.title;
+    const caption = screenshot.title || step.title;
     const captionLines = pdf.splitTextToSize(caption, imageWidth - 24);
     const captionHeight = Math.max(1, captionLines.length) * 11;
     const cardHeight = imageHeight + captionHeight + 58;
@@ -72,7 +72,7 @@ function drawPlan(pdf: jsPDF, session: RecordingSession): void {
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(10);
     pdf.setTextColor(24, 24, 27);
-    pdf.text(`Story step ${index + 1} - ${formatTimestamp(screenshot.capturedAtMs)}`, margin + 12, y + 18);
+    pdf.text(`Step ${index + 1} - selected visual at ${formatTimestamp(screenshot.capturedAtMs)}`, margin + 12, y + 18);
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(9);
     pdf.setTextColor(82, 82, 91);
@@ -89,17 +89,16 @@ function drawPlan(pdf: jsPDF, session: RecordingSession): void {
   const keyPoints = analysis.keyPoints?.length ? analysis.keyPoints : analysis.breakingPoints ?? [];
   if (keyPoints.length) {
     addHeading("Key points");
-    keyPoints.forEach((point) => addParagraph(`• ${point}`));
+    keyPoints.forEach((point) => addParagraph(`- ${point}`));
   }
 
-  addHeading("Story");
+  addHeading("Walkthrough");
   storySteps.forEach((step, index) => {
-    addHeading(`${index + 1}. ${step.title}`, 14);
-    addParagraph(`${formatSeconds(step.startSeconds)}${step.endSeconds !== step.startSeconds ? ` - ${formatSeconds(step.endSeconds)}` : ""} - ${storyKindLabel(step)}`, [113, 113, 122]);
-    addParagraph(step.narrative);
-    if (step.transcript) addParagraph(`What the user said: “${step.transcript}”`, [39, 39, 42]);
-    if (step.pageUrl) addParagraph(`Page: ${step.pageTitle || step.pageUrl}${step.pageTitle ? ` - ${step.pageUrl}` : ""}`, [3, 105, 161]);
     const screenshot = step.screenshotId ? session.screenshots.find((shot) => shot.id === step.screenshotId) : undefined;
+    ensureSpace(130);
+    addHeading(`${index + 1}. ${step.title}`, 14);
+    addParagraph(step.narrative);
+    if (step.pageUrl) addParagraph(`Reference: ${step.pageTitle || step.pageUrl}${step.pageTitle ? ` - ${step.pageUrl}` : ""}`, [3, 105, 161]);
     if (screenshot) {
       try {
         addEvidenceImage(step, screenshot, index);
@@ -108,13 +107,6 @@ function drawPlan(pdf: jsPDF, session: RecordingSession): void {
       }
     }
   });
-}
-
-function storyKindLabel(step: CaptureStoryStep): string {
-  if (step.kind === "page-change") return "Page change";
-  if (step.kind === "manual") return "Added story step";
-  if (step.kind === "action") return "Action";
-  return "User narration";
 }
 
 function formatTimestamp(milliseconds: number): string {
@@ -138,7 +130,7 @@ function addFooter(pdf: jsPDF): void {
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(8);
     pdf.setTextColor(113, 113, 122);
-    pdf.text("JesSee visual story", 44, height - 17);
+    pdf.text("JesSee visual walkthrough", 44, height - 17);
     pdf.text(`Page ${page} of ${pageCount}`, width - 44, height - 17, { align: "right" });
   }
 }

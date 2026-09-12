@@ -123,7 +123,7 @@ We're building a better way to communicate.
 
 ## Current Browser Extension
 
-JesSee ships as a Chrome MV3 extension and a macOS Safari Web Extension that capture screen context, microphone narration, cursor movement, and timestamped screenshots. GPT-5.6 Sol prepares an editable plan where the outcome, summary, and key points remain visible beside a step-through story of timestamped transcript sentences, page changes, and selected screenshots. The reviewed plan is then rendered directly into a clean local PDF.
+JesSee ships as a Chrome MV3 extension and a macOS Safari Web Extension that capture screen context, microphone narration, cursor movement, and timestamped screenshots. GPT-5.6 Sol prepares a reader-facing walkthrough where the outcome, summary, steps, and selected screenshots form one continuous document. Read mode previews the handoff as its audience will receive it; Edit mode exposes the source narration and document controls. The reviewed walkthrough is then rendered directly into a clean local PDF.
 
 ### What JesSee captures and sends
 
@@ -151,7 +151,7 @@ Captures, recordings, and generated PDFs stay on your computer. When you choose 
 6. Open the extension, add your email, a fresh OpenAI API key, and choose a local output folder.
 7. Click **Start Capture**, choose the tab/window/screen in Chrome's picker, explain the flow, then click **Close Capture**.
 8. While recording, the glowing pointer compresses and rebounds on every click so actions remain clear without covering the page. Hold **B** and drag to draw an outline box, or hold **R** and drag to blur/redact an area. Press **C** to clear every annotation and redaction from the current capture. Clicks and marked frames are captured automatically.
-9. Create the plan to open the visual playbook editor. Edits save automatically; refine the outcome, takeaways, and summary, then work through each story section. **Best matches** ranks screenshots by timing, page context, and useful markup; **All images** lets you browse the complete capture without loading hundreds of thumbnails at once.
+9. Create the plan to open the visual walkthrough. Read every step and selected image in one scroll, switch to **Edit** to refine the reader-facing words, and click any large image to compare alternatives. **Best matches** ranks screenshots by timing, page context, and useful markup; **All images** keeps the complete capture available in the focused image picker without overwhelming the document.
 10. Generate and download the PDF from the plan editor or the recorder.
 
 Mic narration and cursor highlighting are always enabled. JesSee captures timestamped screenshots automatically and pairs them with a sentence-level timestamped transcript. Planning aligns narration to the end of each sentence so evidence reflects the completed action or resulting screen state. Representative transition images help the model understand major changes, while the full screenshot timeline remains available by ID so the plan can choose an earlier or later frame when it tells the story better.

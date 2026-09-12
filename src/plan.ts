@@ -1,24 +1,27 @@
 import "./ui.css";
 import { hydrateSession } from "./artifacts";
-import { buildCaptureStory, splitTranscriptIntoSentences } from "./captureStory";
+import { buildCaptureStory } from "./captureStory";
 import { saveCaptureHistory } from "./captureHistory";
 import { getPlanPdfAction } from "./captureFlow";
 import { downloadPlanPdf } from "./pdfDownload";
 import { rankScreenshotsForStep, screenshotTimingLabel, type ScreenshotCandidate } from "./imagePicker";
 import { sendRuntimeMessage } from "./runtimeMessaging";
 import { getSession, saveSession } from "./storage";
-import type { CaptureAnalysis, CaptureStoryStep, RecordingSession, RuntimeMessage, TranscriptionResult } from "./types";
+import type { CaptureAnalysis, CaptureStoryStep, RecordingSession, RuntimeMessage } from "./types";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("Missing #app");
 const root = app;
 
+type PlanMode = "read" | "edit";
+
 let session: RecordingSession;
 let hydrated: RecordingSession;
-let activeStoryIndex = 0;
+let planMode: PlanMode = "read";
 let saveTimer: number | undefined;
 let statusMessage = "Saved automatically";
 let planDirty = false;
+let imageDialogStepIndex: number | undefined;
 let showAllScreenshots = false;
 let imagePage = 0;
 
@@ -39,27 +42,10 @@ function render(): void {
     return;
   }
 
-  const transcriptSegments = splitTranscriptIntoSentences(session.transcript?.segments ?? []);
   const storySteps = buildCaptureStory(analysis, session.transcript, session.timeline, hydrated.screenshots);
-  activeStoryIndex = Math.min(activeStoryIndex, Math.max(0, storySteps.length - 1));
-  const activeStep = storySteps[activeStoryIndex];
-  const selectedShot = hydrated.screenshots.find((shot) => shot.id === activeStep?.screenshotId);
-  const selectedShotIndex = selectedShot ? hydrated.screenshots.findIndex((shot) => shot.id === selectedShot.id) : -1;
-  const suggestedImages = activeStep ? rankScreenshotsForStep(activeStep, hydrated.screenshots) : [];
-  const imagePageCount = Math.max(1, Math.ceil(hydrated.screenshots.length / IMAGES_PER_PAGE));
-  imagePage = Math.min(imagePage, imagePageCount - 1);
-  const visibleImages = activeStep
-    ? showAllScreenshots
-      ? hydrated.screenshots.slice(imagePage * IMAGES_PER_PAGE, (imagePage + 1) * IMAGES_PER_PAGE).map((shot) => ({
-          shot,
-          index: hydrated.screenshots.findIndex((candidate) => candidate.id === shot.id),
-          score: 0,
-          reason: screenshotTimingLabel(shot, activeStep)
-        }))
-      : suggestedImages
-    : [];
-  const topSuggestionId = suggestedImages[0]?.shot.id;
+  if (imageDialogStepIndex !== undefined && !storySteps[imageDialogStepIndex]) imageDialogStepIndex = undefined;
   const keyPoints = analysis.keyPoints?.length ? analysis.keyPoints : analysis.breakingPoints ?? [];
+  const selectedVisualCount = storySteps.filter((step) => step.screenshotId).length;
   const pdfAction = getPlanPdfAction(session.status, planDirty);
 
   root.innerHTML = `
@@ -68,144 +54,164 @@ function render(): void {
         <div class="title-row">
           <img class="brand-mark" src="/icon.svg" alt="" />
           <div>
-            <p class="kicker">Visual playbook</p>
+            <p class="kicker">Shareable walkthrough</p>
             <h1>${escapeHtml(session.tabTitle || analysis.userGoal || "JesSee capture")}</h1>
-            <p class="hint">${storySteps.length} story section${storySteps.length === 1 ? "" : "s"} · ${hydrated.screenshots.length} captured image${hydrated.screenshots.length === 1 ? "" : "s"}</p>
+            <p class="hint">${storySteps.length} step${storySteps.length === 1 ? "" : "s"} · ${selectedVisualCount} selected visual${selectedVisualCount === 1 ? "" : "s"}</p>
           </div>
         </div>
-        <div class="header-actions">
-          <span class="save-status" id="saveStatus">${escapeHtml(statusMessage)}</span>
+        <div class="header-actions plan-header-actions">
+          <div class="segmented-control mode-switch" aria-label="Walkthrough mode">
+            <button id="readMode" class="${planMode === "read" ? "active" : ""}" aria-pressed="${planMode === "read"}">Read</button>
+            <button id="editMode" class="${planMode === "edit" ? "active" : ""}" aria-pressed="${planMode === "edit"}">Edit</button>
+          </div>
+          <span class="save-status" id="saveStatus" role="status" aria-live="polite">${escapeHtml(statusMessage)}</span>
           <button class="button secondary compact" id="settings">Settings</button>
           <button class="button primary compact" id="generatePdf" ${pdfAction.disabled ? "disabled" : ""}>${pdfAction.label}</button>
         </div>
       </header>
 
-      <div class="plan-layout">
-        <aside class="panel plan-copy playbook-panel">
-          <div class="panel-header"><div><p class="section-eyebrow">Playbook</p><h2>The whole story at a glance</h2><p>Refine the intent here, then work through each section on the right.</p></div></div>
-          <div class="playbook-piece">
-            <span class="piece-number">01</span>
-            <div class="field"><label for="planGoal">Outcome</label><textarea id="planGoal" rows="3">${escapeHtml(analysis.userGoal)}</textarea></div>
-          </div>
-          <div class="playbook-piece">
-            <span class="piece-number">02</span>
-            <div class="field"><label for="planKeyPoints">Key takeaways</label><textarea id="planKeyPoints" rows="6">${escapeHtml(keyPoints.join("\n"))}</textarea><p class="field-help">One important point per line.</p></div>
-          </div>
-          <div class="playbook-piece">
-            <span class="piece-number">03</span>
-            <div class="field"><label for="planStory">Executive summary</label><textarea id="planStory" rows="5">${escapeHtml(analysis.story)}</textarea></div>
-          </div>
-          <details class="transcript-panel">
-            <summary><span>Transcript</span><strong>${transcriptSegments.length} timestamped sentence${transcriptSegments.length === 1 ? "" : "s"}</strong></summary>
-            <div class="transcript-list">
-              ${renderTranscript(transcriptSegments, storySteps)}
+      <div class="walkthrough-document">
+        ${renderOverview(analysis, keyPoints)}
+        <section class="walkthrough-steps" aria-labelledby="walkthroughStepsTitle">
+          <div class="walkthrough-section-header">
+            <div>
+              <p class="section-eyebrow">The walkthrough</p>
+              <h2 id="walkthroughStepsTitle">The complete explanation, step by step</h2>
+              <p>${planMode === "read" ? "Read it as your audience will. Open any image to compare the other captured moments." : "Edit the reader-facing words, add steps, and choose the strongest visual for each moment."}</p>
             </div>
-          </details>
-        </aside>
-
-        <section class="panel evidence-inspector story-inspector">
-          <div class="panel-header">
-            <div><p class="section-eyebrow">Story sections</p><h2>Build the playbook one piece at a time</h2><p>${storySteps.length ? `Section ${activeStoryIndex + 1} of ${storySteps.length} · choose the words and image that make this moment clear` : "No story sections available"}</p></div>
-            <button class="button secondary compact" id="addStory">+ Add step</button>
+            ${planMode === "edit" ? `<button class="button secondary compact" id="addStory">+ Add step</button>` : ""}
           </div>
-          ${storySteps.length && activeStep ? `
-            <nav class="story-outline" aria-label="Playbook sections">
-              ${storySteps.map((item, index) => `<button class="story-outline-item ${index === activeStoryIndex ? "active" : ""}" data-story="${index}" aria-current="${index === activeStoryIndex ? "step" : "false"}">
-                <span class="story-outline-number">${String(index + 1).padStart(2, "0")}</span>
-                <span><strong>${escapeHtml(item.title)}</strong><small>${storyKindLabel(item)} · ${formatTimeRange(item.startSeconds, item.endSeconds)}</small></span>
-              </button>`).join("")}
-            </nav>
-            <div class="story-stepper">
-              <button class="button secondary" id="previousStory" ${activeStoryIndex === 0 ? "disabled" : ""}>← Previous</button>
-              <span>Section ${activeStoryIndex + 1} of ${storySteps.length}</span>
-              <button class="button secondary" id="nextStory" ${activeStoryIndex === storySteps.length - 1 ? "disabled" : ""}>Next section →</button>
-            </div>
-            <article class="story-card">
-              <div class="story-meta">
-                <span class="story-kind ${activeStep.kind ?? "narration"}">${activeStep.kind === "page-change" ? "Page change" : activeStep.kind === "manual" ? "Added step" : activeStep.kind === "action" ? "Action" : "User narration"}</span>
-                <span>${formatTimeRange(activeStep.startSeconds, activeStep.endSeconds)}</span>
-              </div>
-              <div class="field"><label for="planStepTitle">Story heading</label><input id="planStepTitle" value="${escapeHtml(activeStep.title)}" /></div>
-              <div class="field"><label for="planNarrative">What this part of the story communicates</label><textarea id="planNarrative" rows="4">${escapeHtml(activeStep.narrative)}</textarea></div>
-              ${activeStep.transcript ? `<div class="transcript-quote"><span>What the user said · ${formatTimeRange(activeStep.startSeconds, activeStep.endSeconds)}</span><blockquote>${escapeHtml(activeStep.transcript)}</blockquote></div>` : ""}
-              ${activeStep.pageUrl ? `<div class="page-context"><span>${activeStep.kind === "page-change" ? "Page changed to" : "Page context"}</span><strong>${escapeHtml(activeStep.pageTitle || activeStep.pageUrl)}</strong><small>${escapeHtml(activeStep.pageUrl)}</small></div>` : ""}
-            </article>
-            <section class="image-picker-section">
-              <input id="planShot" type="hidden" value="${escapeHtml(activeStep.screenshotId ?? "")}" />
-              <div class="image-picker-header">
-                <div>
-                  <p class="section-eyebrow">Visual evidence</p>
-                  <h2>Pick the image that proves this section</h2>
-                  <p>JesSee starts with the closest resulting state on the same page. You stay in control of the final choice.</p>
-                </div>
-                <div class="segmented-control" aria-label="Screenshot view">
-                  <button id="suggestedImages" class="${showAllScreenshots ? "" : "active"}" aria-pressed="${!showAllScreenshots}">Best matches</button>
-                  <button id="allImages" class="${showAllScreenshots ? "active" : ""}" aria-pressed="${showAllScreenshots}">All images</button>
-                </div>
-              </div>
-              <div class="image-choice-grid" role="radiogroup" aria-label="Choose screenshot for this section">
-                <button class="image-choice image-choice-none ${!activeStep.screenshotId ? "selected" : ""}" data-image-id="" role="radio" aria-checked="${!activeStep.screenshotId}">
-                  <span class="image-choice-empty">No image</span>
-                  <strong>Text only</strong>
-                  <small>Use when the image adds no proof</small>
-                </button>
-                ${visibleImages.map((candidate) => renderImageChoice(candidate, activeStep, topSuggestionId)).join("")}
-              </div>
-              ${showAllScreenshots && imagePageCount > 1 ? `<div class="image-pagination">
-                <button class="button secondary compact" id="previousImagePage" ${imagePage === 0 ? "disabled" : ""}>← Earlier</button>
-                <span>Images ${imagePage * IMAGES_PER_PAGE + 1}–${Math.min((imagePage + 1) * IMAGES_PER_PAGE, hydrated.screenshots.length)} of ${hydrated.screenshots.length}</span>
-                <button class="button secondary compact" id="nextImagePage" ${imagePage === imagePageCount - 1 ? "disabled" : ""}>Later →</button>
-              </div>` : ""}
-            </section>
-            <section class="selected-image-panel">
-              <div class="selected-image-heading">
-                <div><p class="section-eyebrow">Selected image</p><h2>${selectedShot ? `${formatMs(selectedShot.capturedAtMs)} · ${escapeHtml(selectedShot.title || selectedShot.url || "Captured screen")}` : "No image selected"}</h2></div>
-                ${selectedShot ? `<span class="selected-pill">✓ Included in PDF</span>` : ""}
-              </div>
-              <div class="screenshot-stage">
-                ${selectedShot ? `<img src="${selectedShot.dataUrl}" alt="Screenshot captured at ${formatMs(selectedShot.capturedAtMs)}" />` : `<div class="screenshot-empty">Choose a best match above, or keep this section text-only.</div>`}
-              </div>
-              ${selectedShot ? `<div class="screenshot-meta"><strong>${formatMs(selectedShot.capturedAtMs)}</strong><span>${escapeHtml(selectedShot.title || selectedShot.url)}</span></div>` : ""}
-              <div class="image-stepper">
-                <button class="button secondary" id="previousImage" ${selectedShotIndex <= 0 ? "disabled" : ""}>← Previous captured image</button>
-                <span>${selectedShotIndex >= 0 ? `${selectedShotIndex + 1} of ${hydrated.screenshots.length}` : `${hydrated.screenshots.length} images available`}</span>
-                <button class="button secondary" id="nextImage" ${selectedShotIndex < 0 || selectedShotIndex >= hydrated.screenshots.length - 1 ? "disabled" : ""}>Next captured image →</button>
-              </div>
-            </section>
-          ` : `<div class="screenshot-empty">This capture does not have a timestamped transcript or story yet. Return to the recorder and create a plan to build the walkthrough.</div>`}
+          <div class="story-document">
+            ${storySteps.map((step, index) => renderStoryStep(step, index)).join("")}
+          </div>
         </section>
       </div>
+      ${imageDialogStepIndex === undefined ? "" : renderImageDialog(storySteps[imageDialogStepIndex], imageDialogStepIndex)}
     </main>`;
 
-  bindAutosave("#planGoal");
-  bindAutosave("#planKeyPoints");
-  bindAutosave("#planStory");
-  bindAutosave("#planStepTitle");
-  bindAutosave("#planNarrative");
-  for (const tab of document.querySelectorAll<HTMLButtonElement>(".story-outline-item")) {
-    tab.addEventListener("click", async () => {
-      await persistPlan();
-      activeStoryIndex = Number(tab.dataset.story ?? 0);
-      showAllScreenshots = false;
-      imagePage = 0;
-      render();
-    });
+  bindEvents();
+  const dialog = document.querySelector<HTMLDialogElement>("#imageDialog");
+  if (dialog && !dialog.open) dialog.showModal();
+}
+
+function renderOverview(analysis: CaptureAnalysis, keyPoints: string[]): string {
+  if (planMode === "edit") {
+    return `<section class="panel walkthrough-overview edit-overview" aria-labelledby="overviewTitle">
+      <div class="walkthrough-section-header">
+        <div><p class="section-eyebrow">Document overview</p><h2 id="overviewTitle">Shape the explanation</h2><p>These reader-facing words introduce the walkthrough and become the opening of the PDF.</p></div>
+      </div>
+      <div class="overview-edit-grid">
+        <div class="field"><label for="planGoal">Outcome</label><textarea class="plan-field" id="planGoal" rows="3">${escapeHtml(analysis.userGoal)}</textarea></div>
+        <div class="field"><label for="planStory">Summary</label><textarea class="plan-field" id="planStory" rows="4">${escapeHtml(analysis.story)}</textarea></div>
+        <div class="field overview-key-points"><label for="planKeyPoints">Key points</label><textarea class="plan-field" id="planKeyPoints" rows="5">${escapeHtml(keyPoints.join("\n"))}</textarea><p class="field-help">One important point per line.</p></div>
+      </div>
+    </section>`;
   }
-  for (const choice of document.querySelectorAll<HTMLButtonElement>(".image-choice")) {
-    choice.addEventListener("click", () => void selectImage(choice.dataset.imageId ?? ""));
-  }
-  for (const row of document.querySelectorAll<HTMLButtonElement>(".transcript-row[data-story-index]")) {
-    row.addEventListener("click", async () => {
-      await persistPlan();
-      activeStoryIndex = Number(row.dataset.storyIndex ?? 0);
-      render();
-    });
-  }
-  document.querySelector("#previousStory")?.addEventListener("click", () => void stepStory(-1));
-  document.querySelector("#nextStory")?.addEventListener("click", () => void stepStory(1));
+
+  return `<section class="panel walkthrough-overview read-overview" aria-labelledby="overviewTitle">
+    <p class="section-eyebrow">What this walkthrough communicates</p>
+    <h2 id="overviewTitle" class="document-title">${escapeHtml(analysis.userGoal || session.tabTitle || "Visual walkthrough")}</h2>
+    ${analysis.story ? `<p class="document-summary">${escapeHtml(analysis.story)}</p>` : ""}
+    ${keyPoints.length ? `<div class="takeaway-block"><h3>Key points</h3><ul>${keyPoints.map((point) => `<li>${escapeHtml(point)}</li>`).join("")}</ul></div>` : ""}
+  </section>`;
+}
+
+function renderStoryStep(step: CaptureStoryStep, index: number): string {
+  const selectedShot = hydrated.screenshots.find((shot) => shot.id === step.screenshotId);
+  const imageLabel = selectedShot ? `View alternative images for step ${index + 1}` : `Choose an image for step ${index + 1}`;
+  const imageButton = `<button class="story-image-trigger ${selectedShot ? "" : "empty"}" data-image-step="${index}" aria-label="${imageLabel}" ${hydrated.screenshots.length ? "" : "disabled"}>
+    ${selectedShot
+      ? `<span class="story-image-frame"><img src="${selectedShot.dataUrl}" alt="Selected visual for step ${index + 1}: ${escapeHtml(selectedShot.title || selectedShot.url || "Captured screen")}" /><span class="image-action">See alternatives</span></span>
+         <span class="story-image-caption"><strong>${formatMs(selectedShot.capturedAtMs)}</strong><span>${escapeHtml(selectedShot.title || selectedShot.url || "Captured screen")}</span><em>Included in PDF</em></span>`
+      : `<span class="story-image-empty">${hydrated.screenshots.length ? "Choose the visual that best completes this step" : "No captured images are available"}</span>`}
+  </button>`;
+
+  return `<article class="walkthrough-step" id="story-step-${index + 1}">
+    <div class="step-rail" aria-hidden="true"><span>${String(index + 1).padStart(2, "0")}</span><i></i></div>
+    <div class="step-content">
+      <div class="story-meta">
+        <span class="story-kind ${step.kind ?? "narration"}">${storyKindLabel(step)}</span>
+        <span>${formatTimeRange(step.startSeconds, step.endSeconds)}</span>
+      </div>
+      ${planMode === "edit"
+        ? `<div class="step-edit-fields">
+            <div class="field"><label for="planStepTitle-${index}">Step heading</label><input class="plan-field" id="planStepTitle-${index}" value="${escapeHtml(step.title)}" /></div>
+            <div class="field"><label for="planNarrative-${index}">Reader-facing explanation</label><textarea class="plan-field" id="planNarrative-${index}" rows="4">${escapeHtml(step.narrative)}</textarea></div>
+          </div>`
+        : `<h2 class="step-title">${escapeHtml(step.title)}</h2><p class="step-narrative">${escapeHtml(step.narrative)}</p>`}
+      ${imageButton}
+      ${step.pageUrl ? `<div class="page-context compact-context"><span>${step.kind === "page-change" ? "Opened" : "Page"}</span><strong>${escapeHtml(step.pageTitle || step.pageUrl)}</strong><small>${escapeHtml(step.pageUrl)}</small></div>` : ""}
+      ${planMode === "edit" && step.transcript ? `<details class="source-narration"><summary>Original narration <span>${formatTimeRange(step.startSeconds, step.endSeconds)}</span></summary><blockquote>${escapeHtml(step.transcript)}</blockquote></details>` : ""}
+    </div>
+  </article>`;
+}
+
+function renderImageDialog(step: CaptureStoryStep, stepIndex: number): string {
+  const suggestedImages = rankScreenshotsForStep(step, hydrated.screenshots);
+  const imagePageCount = Math.max(1, Math.ceil(hydrated.screenshots.length / IMAGES_PER_PAGE));
+  imagePage = Math.min(imagePage, imagePageCount - 1);
+  const visibleImages = showAllScreenshots
+    ? hydrated.screenshots.slice(imagePage * IMAGES_PER_PAGE, (imagePage + 1) * IMAGES_PER_PAGE).map((shot) => ({
+        shot,
+        index: hydrated.screenshots.findIndex((candidate) => candidate.id === shot.id),
+        score: 0,
+        reason: screenshotTimingLabel(shot, step)
+      }))
+    : suggestedImages;
+  const topSuggestionId = suggestedImages[0]?.shot.id;
+
+  return `<dialog class="image-dialog" id="imageDialog" aria-labelledby="imageDialogTitle">
+    <div class="image-dialog-card">
+      <div class="image-dialog-header">
+        <div><p class="section-eyebrow">Step ${stepIndex + 1} visual</p><h2 id="imageDialogTitle">Choose the clearest moment</h2><p>${escapeHtml(step.title)} · JesSee recommends the closest resulting state, but every captured image remains available.</p></div>
+        <button class="icon-button" id="closeImageDialog" aria-label="Close image choices">×</button>
+      </div>
+      <div class="image-dialog-toolbar">
+        <div class="segmented-control" aria-label="Screenshot choices">
+          <button id="suggestedImages" class="${showAllScreenshots ? "" : "active"}" aria-pressed="${!showAllScreenshots}">Best matches</button>
+          <button id="allImages" class="${showAllScreenshots ? "active" : ""}" aria-pressed="${showAllScreenshots}">All images</button>
+        </div>
+        <span>${hydrated.screenshots.length} captured image${hydrated.screenshots.length === 1 ? "" : "s"}</span>
+      </div>
+      <div class="image-choice-grid dialog-image-grid" role="radiogroup" aria-label="Choose screenshot for step ${stepIndex + 1}">
+        <button class="image-choice image-choice-none ${!step.screenshotId ? "selected" : ""}" data-image-step="${stepIndex}" data-image-id="" role="radio" aria-checked="${!step.screenshotId}">
+          <span class="image-choice-empty">No image</span><strong>Text only</strong><small>Use when a visual adds no clarity</small>
+        </button>
+        ${visibleImages.map((candidate) => renderImageChoice(candidate, step, stepIndex, topSuggestionId)).join("")}
+      </div>
+      ${showAllScreenshots && imagePageCount > 1 ? `<div class="image-pagination">
+        <button class="button secondary compact" id="previousImagePage" ${imagePage === 0 ? "disabled" : ""}>← Earlier</button>
+        <span>Images ${imagePage * IMAGES_PER_PAGE + 1}-${Math.min((imagePage + 1) * IMAGES_PER_PAGE, hydrated.screenshots.length)} of ${hydrated.screenshots.length}</span>
+        <button class="button secondary compact" id="nextImagePage" ${imagePage === imagePageCount - 1 ? "disabled" : ""}>Later →</button>
+      </div>` : ""}
+    </div>
+  </dialog>`;
+}
+
+function bindEvents(): void {
+  for (const field of document.querySelectorAll<HTMLElement>(".plan-field")) field.addEventListener("input", scheduleSave);
+  document.querySelector("#readMode")?.addEventListener("click", () => void switchMode("read"));
+  document.querySelector("#editMode")?.addEventListener("click", () => void switchMode("edit"));
   document.querySelector("#addStory")?.addEventListener("click", () => void addStoryStep());
-  document.querySelector("#previousImage")?.addEventListener("click", () => void stepImage(-1));
-  document.querySelector("#nextImage")?.addEventListener("click", () => void stepImage(1));
+  document.querySelector("#settings")?.addEventListener("click", async () => {
+    await persistPlan();
+    chrome.runtime.openOptionsPage();
+  });
+  document.querySelector("#generatePdf")?.addEventListener("click", () => void generatePdf());
+  for (const trigger of document.querySelectorAll<HTMLButtonElement>(".story-image-trigger")) {
+    trigger.addEventListener("click", () => void openImageDialog(Number(trigger.dataset.imageStep ?? 0)));
+  }
+  for (const choice of document.querySelectorAll<HTMLButtonElement>(".image-choice[data-image-step]")) {
+    choice.addEventListener("click", () => void selectImage(Number(choice.dataset.imageStep ?? 0), choice.dataset.imageId ?? ""));
+  }
+  document.querySelector("#closeImageDialog")?.addEventListener("click", closeImageDialog);
+  document.querySelector<HTMLDialogElement>("#imageDialog")?.addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) closeImageDialog();
+  });
+  document.querySelector<HTMLDialogElement>("#imageDialog")?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeImageDialog();
+  });
   document.querySelector("#suggestedImages")?.addEventListener("click", () => {
     showAllScreenshots = false;
     imagePage = 0;
@@ -213,7 +219,9 @@ function render(): void {
   });
   document.querySelector("#allImages")?.addEventListener("click", () => {
     showAllScreenshots = true;
-    if (selectedShotIndex >= 0) imagePage = Math.floor(selectedShotIndex / IMAGES_PER_PAGE);
+    const step = currentDialogStep();
+    const selectedIndex = step ? hydrated.screenshots.findIndex((shot) => shot.id === step.screenshotId) : -1;
+    imagePage = selectedIndex >= 0 ? Math.floor(selectedIndex / IMAGES_PER_PAGE) : 0;
     render();
   });
   document.querySelector("#previousImagePage")?.addEventListener("click", () => {
@@ -221,15 +229,36 @@ function render(): void {
     render();
   });
   document.querySelector("#nextImagePage")?.addEventListener("click", () => {
-    imagePage = Math.min(imagePageCount - 1, imagePage + 1);
+    imagePage += 1;
     render();
   });
-  document.querySelector("#settings")?.addEventListener("click", () => chrome.runtime.openOptionsPage());
-  document.querySelector("#generatePdf")?.addEventListener("click", () => void generatePdf());
 }
 
-function bindAutosave(selector: string): void {
-  document.querySelector(selector)?.addEventListener("input", scheduleSave);
+async function switchMode(mode: PlanMode): Promise<void> {
+  if (mode === planMode) return;
+  await persistPlan();
+  planMode = mode;
+  imageDialogStepIndex = undefined;
+  render();
+}
+
+async function openImageDialog(stepIndex: number): Promise<void> {
+  await persistPlan();
+  imageDialogStepIndex = stepIndex;
+  showAllScreenshots = false;
+  imagePage = 0;
+  render();
+}
+
+function closeImageDialog(): void {
+  document.querySelector<HTMLDialogElement>("#imageDialog")?.close();
+  imageDialogStepIndex = undefined;
+  render();
+}
+
+function currentDialogStep(): CaptureStoryStep | undefined {
+  if (imageDialogStepIndex === undefined || !session.captureAnalysis) return undefined;
+  return buildCaptureStory(session.captureAnalysis, session.transcript, session.timeline, hydrated.screenshots)[imageDialogStepIndex];
 }
 
 function scheduleSave(): void {
@@ -245,10 +274,9 @@ async function persistPlan(): Promise<void> {
   if (saveTimer) window.clearTimeout(saveTimer);
   saveTimer = undefined;
   if (!session.captureAnalysis || !planDirty) return;
-  const nextAnalysis = collectAnalysis(session.captureAnalysis);
   session = {
     ...session,
-    captureAnalysis: nextAnalysis,
+    captureAnalysis: collectAnalysis(session.captureAnalysis),
     status: "planned",
     analysisError: undefined
   };
@@ -260,98 +288,69 @@ async function persistPlan(): Promise<void> {
 }
 
 function collectAnalysis(current: CaptureAnalysis): CaptureAnalysis {
-  const storySteps = buildCaptureStory(current, session.transcript, session.timeline, hydrated.screenshots)
-    .map((step, index) => index === activeStoryIndex ? {
-      ...step,
-      title: document.querySelector<HTMLInputElement>("#planStepTitle")?.value.trim() ?? step.title,
-      narrative: document.querySelector<HTMLTextAreaElement>("#planNarrative")?.value.trim() ?? step.narrative,
-      screenshotId: document.querySelector<HTMLInputElement>("#planShot")?.value || undefined
-    } : step);
-  return {
+  const storySteps = buildCaptureStory(current, session.transcript, session.timeline, hydrated.screenshots).map((step, index) => ({
+    ...step,
+    title: document.querySelector<HTMLInputElement>(`#planStepTitle-${index}`)?.value.trim() ?? step.title,
+    narrative: document.querySelector<HTMLTextAreaElement>(`#planNarrative-${index}`)?.value.trim() ?? step.narrative
+  }));
+  const keyPointsField = document.querySelector<HTMLTextAreaElement>("#planKeyPoints");
+  return withStorySteps({
+    ...current,
     userGoal: document.querySelector<HTMLTextAreaElement>("#planGoal")?.value.trim() ?? current.userGoal,
-    keyPoints: (document.querySelector<HTMLTextAreaElement>("#planKeyPoints")?.value ?? "").split("\n").map((item) => item.trim()).filter(Boolean),
-    story: document.querySelector<HTMLTextAreaElement>("#planStory")?.value.trim() ?? current.story,
-    helpfulImageMoments: storySteps.filter((step) => step.screenshotId).map((step) => ({
-      screenshotId: step.screenshotId,
-      atSeconds: step.endSeconds,
-      reason: step.narrative || step.title
-    })),
-    storySteps
-  };
+    keyPoints: keyPointsField ? keyPointsField.value.split("\n").map((item) => item.trim()).filter(Boolean) : current.keyPoints,
+    story: document.querySelector<HTMLTextAreaElement>("#planStory")?.value.trim() ?? current.story
+  }, storySteps);
 }
 
 async function addStoryStep(): Promise<void> {
   await persistPlan();
   if (!session.captureAnalysis) return;
   const storySteps = buildCaptureStory(session.captureAnalysis, session.transcript, session.timeline, hydrated.screenshots);
-  const previous = storySteps[activeStoryIndex] ?? storySteps.at(-1);
+  const previous = storySteps.at(-1);
   const timestamp = previous?.endSeconds ?? session.transcript?.segments.at(-1)?.end ?? 0;
-  const insertionIndex = storySteps.length ? activeStoryIndex + 1 : 0;
-  storySteps.splice(insertionIndex, 0, {
-    startSeconds: timestamp,
-    endSeconds: timestamp,
-    title: "New story step",
-    narrative: "",
-    transcript: "",
-    kind: "manual"
-  });
+  storySteps.push({ startSeconds: timestamp, endSeconds: timestamp, title: "New step", narrative: "", transcript: "", kind: "manual" });
+  await saveStorySteps(storySteps);
+  planMode = "edit";
+  render();
+  document.querySelector(`#story-step-${storySteps.length}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+async function selectImage(stepIndex: number, imageId: string): Promise<void> {
+  await persistPlan();
+  if (!session.captureAnalysis) return;
+  const storySteps = buildCaptureStory(session.captureAnalysis, session.transcript, session.timeline, hydrated.screenshots)
+    .map((step, index) => index === stepIndex ? { ...step, screenshotId: imageId || undefined } : step);
+  await saveStorySteps(storySteps);
+  imageDialogStepIndex = undefined;
+  statusMessage = "Image selected and saved";
+  render();
+  document.querySelector(`#story-step-${stepIndex + 1}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+async function saveStorySteps(storySteps: CaptureStoryStep[]): Promise<void> {
+  if (!session.captureAnalysis) return;
   session = {
     ...session,
     status: "planned",
-    captureAnalysis: {
-      ...session.captureAnalysis,
-      storySteps,
-      helpfulImageMoments: storySteps.filter((step) => step.screenshotId).map((step) => ({
-        screenshotId: step.screenshotId,
-        atSeconds: step.endSeconds,
-        reason: step.narrative || step.title
-      }))
-    }
+    analysisError: undefined,
+    captureAnalysis: withStorySteps(session.captureAnalysis, storySteps)
   };
   await saveSession(session);
   await saveCaptureHistory(session);
-  activeStoryIndex = insertionIndex;
-  showAllScreenshots = false;
-  imagePage = 0;
-  render();
-}
-
-async function stepStory(direction: -1 | 1): Promise<void> {
-  await persistPlan();
-  const storySteps = buildCaptureStory(session.captureAnalysis!, session.transcript, session.timeline, hydrated.screenshots);
-  activeStoryIndex = Math.max(0, Math.min(storySteps.length - 1, activeStoryIndex + direction));
-  showAllScreenshots = false;
-  imagePage = 0;
-  render();
-}
-
-async function stepImage(direction: -1 | 1): Promise<void> {
-  const input = document.querySelector<HTMLInputElement>("#planShot");
-  if (!input) return;
-  const currentIndex = hydrated.screenshots.findIndex((shot) => shot.id === input.value);
-  const next = hydrated.screenshots[currentIndex + direction];
-  if (!next) return;
-  input.value = next.id;
-  planDirty = true;
-  await persistPlan();
-  await refreshHydratedSession();
-}
-
-async function selectImage(imageId: string): Promise<void> {
-  const input = document.querySelector<HTMLInputElement>("#planShot");
-  if (!input || input.value === imageId) return;
-  input.value = imageId;
-  planDirty = true;
-  statusMessage = "Saving…";
-  updateSaveStatus();
-  updatePdfAction();
-  await persistPlan();
-  await refreshHydratedSession();
-}
-
-async function refreshHydratedSession(): Promise<void> {
   hydrated = await hydrateSession(session);
-  render();
+  planDirty = false;
+}
+
+function withStorySteps(analysis: CaptureAnalysis, storySteps: CaptureStoryStep[]): CaptureAnalysis {
+  return {
+    ...analysis,
+    storySteps,
+    helpfulImageMoments: storySteps.filter((step) => step.screenshotId).map((step) => ({
+      screenshotId: step.screenshotId,
+      atSeconds: step.endSeconds,
+      reason: step.narrative || step.title
+    }))
+  };
 }
 
 async function generatePdf(): Promise<void> {
@@ -405,13 +404,13 @@ function formatMs(ms: number): string {
 function formatTimeRange(startSeconds: number, endSeconds: number): string {
   const start = formatMs(startSeconds * 1000);
   const end = formatMs(endSeconds * 1000);
-  return start === end ? start : `${start}–${end}`;
+  return start === end ? start : `${start}-${end}`;
 }
 
-function renderImageChoice(candidate: ScreenshotCandidate, step: CaptureStoryStep, topSuggestionId?: string): string {
+function renderImageChoice(candidate: ScreenshotCandidate, step: CaptureStoryStep, stepIndex: number, topSuggestionId?: string): string {
   const selected = candidate.shot.id === step.screenshotId;
   const recommended = candidate.shot.id === topSuggestionId;
-  return `<button class="image-choice ${selected ? "selected" : ""}" data-image-id="${escapeHtml(candidate.shot.id)}" role="radio" aria-checked="${selected}" aria-label="Choose image ${candidate.index + 1}, captured ${screenshotTimingLabel(candidate.shot, step)}">
+  return `<button class="image-choice ${selected ? "selected" : ""}" data-image-step="${stepIndex}" data-image-id="${escapeHtml(candidate.shot.id)}" role="radio" aria-checked="${selected}" aria-label="Choose image ${candidate.index + 1}, captured ${screenshotTimingLabel(candidate.shot, step)}">
     <span class="image-choice-preview">
       <img src="${candidate.shot.dataUrl}" alt="" loading="lazy" />
       <span class="image-choice-index">${String(candidate.index + 1).padStart(2, "0")}</span>
@@ -425,20 +424,9 @@ function renderImageChoice(candidate: ScreenshotCandidate, step: CaptureStorySte
 
 function storyKindLabel(step: CaptureStoryStep): string {
   if (step.kind === "page-change") return "Page change";
-  if (step.kind === "manual") return "Added section";
+  if (step.kind === "manual") return "Added step";
   if (step.kind === "action") return "Action";
-  return "Narration";
-}
-
-function renderTranscript(segments: TranscriptionResult["segments"], storySteps: CaptureStoryStep[]): string {
-  if (segments.length === 0) return `<p class="transcript-empty">No timestamped transcript is available for this capture.</p>`;
-  return segments.map((segment) => {
-    const storyIndex = storySteps.findIndex((step) => step.transcript === segment.text && step.startSeconds === segment.start);
-    return `<button class="transcript-row ${storyIndex === activeStoryIndex ? "active" : ""}" ${storyIndex >= 0 ? `data-story-index="${storyIndex}"` : "disabled"}>
-      <time>${formatTimeRange(segment.start, segment.end)}</time>
-      <span>${escapeHtml(segment.text)}</span>
-    </button>`;
-  }).join("");
+  return "Narrated step";
 }
 
 function escapeHtml(value: string): string {
