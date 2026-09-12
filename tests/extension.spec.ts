@@ -1,4 +1,4 @@
-import { test, expect, chromium, type Locator, type Page } from "@playwright/test";
+import { test, expect, chromium, type Locator } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,17 +7,17 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-async function replaceEditorText(page: Page, locator: Locator, value: string): Promise<void> {
+async function replaceEditorText(locator: Locator, value: string): Promise<void> {
   await locator.click();
-  await locator.evaluate((element) => {
+  await locator.evaluate((element, replacement) => {
+    (element as HTMLElement).focus();
     const range = document.createRange();
     range.selectNodeContents(element);
     const selection = window.getSelection();
     selection?.removeAllRanges();
     selection?.addRange(range);
-  });
-  await page.keyboard.press("Backspace");
-  await page.keyboard.insertText(value);
+    document.execCommand("insertText", false, replacement);
+  }, value);
 }
 
 test("loads extension settings page", async () => {
@@ -139,6 +139,12 @@ test("loads extension settings page", async () => {
     await expect(page.getByRole("img", { name: /Selected visual for step 1/ })).toBeVisible();
     await expect(page.getByRole("img", { name: /Selected visual for step 2/ })).toBeVisible();
     await expect(page.getByText("What the user said", { exact: false })).toHaveCount(0);
+    const firstStepBody = page.locator("[data-story-step]").first();
+    await firstStepBody.locator("p").first().click();
+    await page.getByRole("button", { name: "Bullet list" }).click();
+    await expect(firstStepBody.locator("ul")).toBeVisible();
+    await page.getByRole("button", { name: "Undo" }).click();
+    await expect(firstStepBody.locator("ul")).toHaveCount(0);
     if (process.env.JESSEE_VISUAL_QA) {
       await page.screenshot({ path: resolve(__dirname, "../website/assets/playbook-review.png") });
     }
@@ -163,13 +169,13 @@ test("loads extension settings page", async () => {
     await page.getByRole("button", { name: "Add another step" }).click();
     await expect(page.locator("[data-story-step]")).toHaveCount(3);
     const newStepNarrative = page.locator("[data-story-step]").nth(2).locator("p").first();
-    await replaceEditorText(page, newStepNarrative, "Add the final confirmation to the story.");
+    await replaceEditorText(newStepNarrative, "Add the final confirmation to the story.");
     await expect.poll(() => page.evaluate(async () => {
       const stored = await chrome.storage.local.get("recordingSession");
       return stored.recordingSession?.captureAnalysis?.storySteps?.find((step: { kind?: string }) => step.kind === "manual")?.narrative;
     })).toBe("Add the final confirmation to the story.");
     await expect(page.getByText("Saved automatically", { exact: true })).toBeVisible();
-    await replaceEditorText(page, page.locator("[data-story-title]"), "Show the updated visual workflow");
+    await replaceEditorText(page.locator("[data-story-title]"), "Show the updated visual workflow");
     await expect.poll(() => page.evaluate(async () => {
       const stored = await chrome.storage.local.get("recordingSession");
       return stored.recordingSession?.captureAnalysis?.userGoal;
@@ -196,7 +202,7 @@ test("loads extension settings page", async () => {
       const download = await downloadPromise;
       await download.saveAs(resolve(pdfDirectory, "jessee-explains-jessee.pdf"));
     }
-    await replaceEditorText(page, page.locator("[data-story-summary]"), "A revised story must be regenerated.");
+    await replaceEditorText(page.locator("[data-story-summary]"), "A revised story must be regenerated.");
     await expect(page.getByRole("button", { name: "Generate PDF" })).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole("button", { name: "Preview" }).click();

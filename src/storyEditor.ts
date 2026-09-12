@@ -52,7 +52,7 @@ const StorySummary = Node.create({
 const StoryStep = Node.create({
   name: "storyStep",
   group: "block",
-  content: "heading paragraph+ storyImage",
+  content: "heading (paragraph | bulletList)+ storyImage",
   defining: true,
   isolating: true,
   addAttributes() {
@@ -301,13 +301,13 @@ export function parseEditorDocument(document: JSONContent, current: CaptureAnaly
     .filter(Boolean) ?? [];
   const storySteps = (document.content ?? []).filter((node) => node.type === "storyStep").map((node) => {
     const heading = node.content?.find((child) => child.type === "heading");
-    const paragraphs = node.content?.filter((child) => child.type === "paragraph") ?? [];
+    const bodyBlocks = node.content?.filter((child) => child.type === "paragraph" || child.type === "bulletList") ?? [];
     const image = node.content?.find((child) => child.type === "storyImage");
     return {
       startSeconds: Number(node.attrs?.startSeconds ?? 0),
       endSeconds: Number(node.attrs?.endSeconds ?? 0),
       title: jsonText(heading).trim() || "Untitled step",
-      narrative: paragraphs.map((paragraph) => jsonText(paragraph).trim()).filter(Boolean).join("\n\n"),
+      narrative: bodyBlocks.map(storyBodyText).filter(Boolean).join("\n\n"),
       transcript: String(node.attrs?.transcript ?? ""),
       screenshotId: String(image?.attrs?.screenshotId || node.attrs?.screenshotId || "") || undefined,
       pageUrl: String(node.attrs?.pageUrl ?? "") || undefined,
@@ -329,6 +329,15 @@ export function parseEditorDocument(document: JSONContent, current: CaptureAnaly
       reason: step.narrative || step.title
     }))
   };
+}
+
+function storyBodyText(node: JSONContent): string {
+  if (node.type !== "bulletList") return jsonText(node).trim();
+  return (node.content ?? [])
+    .map((item) => jsonText(item).trim())
+    .filter(Boolean)
+    .map((item) => `- ${item}`)
+    .join("\n");
 }
 
 function hydrateStoryStep(node: JSONContent, step: CaptureStoryStep, index: number, screenshots: ScreenshotEvidence[]): void {

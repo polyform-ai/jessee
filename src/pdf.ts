@@ -152,11 +152,13 @@ function drawPlan(
 
   const keyPoints = analysis.keyPoints?.length ? analysis.keyPoints : analysis.breakingPoints ?? [];
   const editorKeyPoints = childrenOfType(childOfType(overviewNode, "bulletList"), "listItem");
-  if (keyPoints.length) {
+  const renderedKeyPoints = overviewNode
+    ? editorKeyPoints.map((point) => runsFromNode(point, "")).filter(hasVisibleText)
+    : keyPoints.map(plainRuns);
+  if (renderedKeyPoints.length) {
     addHeading(plainRuns("Key points"));
-    keyPoints.forEach((point, index) => {
-      const richPoint = runsFromNode(editorKeyPoints[index], point);
-      addParagraph([{ text: "- ", bold: false, italic: false }, ...richPoint]);
+    renderedKeyPoints.forEach((point) => {
+      addParagraph([{ text: "- ", bold: false, italic: false }, ...point]);
     });
   }
 
@@ -164,10 +166,10 @@ function drawPlan(
   storySteps.forEach((step, index) => {
     const editorStep = editorSteps[index];
     const headingNode = childOfType(editorStep, "heading");
-    const paragraphNodes = childrenOfType(editorStep, "paragraph");
+    const bodyNodes = editorStep?.content?.filter((child) => child.type === "paragraph" || child.type === "bulletList") ?? [];
     const screenshot = step.screenshotId ? session.screenshots.find((shot) => shot.id === step.screenshotId) : undefined;
     addHeading([{ text: `${index + 1}. `, bold: false, italic: false }, ...runsFromNode(headingNode, step.title)], 14);
-    addParagraph(runsFromNodes(paragraphNodes, step.narrative));
+    addParagraph(runsFromBodyNodes(bodyNodes, step.narrative));
     if (step.pageUrl) addParagraph(plainRuns(`Reference: ${step.pageTitle || step.pageUrl}${step.pageTitle ? ` - ${step.pageUrl}` : ""}`), [3, 105, 161]);
     if (screenshot) {
       try {
@@ -241,14 +243,26 @@ function appendPositionedRun(line: PositionedRun[], run: PositionedRun): void {
   }
 }
 
-function runsFromNodes(nodes: SerializedEditorNode[], fallback: string): RichTextRun[] {
+function runsFromBodyNodes(nodes: SerializedEditorNode[], fallback: string): RichTextRun[] {
   if (!nodes.length) return plainRuns(fallback);
   const runs: RichTextRun[] = [];
   nodes.forEach((node, index) => {
     if (index) runs.push({ text: "\n", bold: false, italic: false });
-    runs.push(...runsFromNode(node, ""));
+    if (node.type !== "bulletList") {
+      runs.push(...runsFromNode(node, ""));
+      return;
+    }
+    const items = childrenOfType(node, "listItem").map((item) => runsFromNode(item, "")).filter(hasVisibleText);
+    items.forEach((item, itemIndex) => {
+      if (itemIndex) runs.push({ text: "\n", bold: false, italic: false });
+      runs.push({ text: "- ", bold: false, italic: false }, ...item);
+    });
   });
   return runs.length ? runs : plainRuns(fallback);
+}
+
+function hasVisibleText(runs: RichTextRun[]): boolean {
+  return runs.some((run) => run.text.trim().length > 0);
 }
 
 function runsFromNode(node: SerializedEditorNode | undefined, fallback: string): RichTextRun[] {

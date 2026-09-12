@@ -42,6 +42,21 @@ describe("visual story editor document", () => {
     expect(updated.userGoal).toBe("");
     expect(updated.story).toBe("");
   });
+
+  it("maps bullet lists in step bodies back to readable story text", () => {
+    const document = buildEditorDocument(analysis(), steps(), screenshots());
+    document.content![1].content![1] = {
+      type: "bulletList",
+      content: [
+        { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "First detail" }] }] },
+        { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Second detail" }] }] }
+      ]
+    };
+
+    const updated = parseEditorDocument(document, analysis());
+
+    expect(updated.storySteps?.[0].narrative).toBe("- First detail\n- Second detail");
+  });
 });
 
 function analysis(): CaptureAnalysis {

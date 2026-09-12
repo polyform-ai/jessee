@@ -91,6 +91,50 @@ describe("createPlanPdf", () => {
     expect(doubleBreakHeight).toBeGreaterThan(singleBreakHeight);
   });
 
+  it("renders surviving overview points and lists inside story steps", async () => {
+    const session = planSession();
+    session.captureAnalysis!.keyPoints = ["Second point remains"];
+    session.captureAnalysis!.editorDocument = {
+      type: "doc",
+      content: [
+        {
+          type: "storyOverview",
+          content: [
+            { type: "storyTitle", content: [{ type: "text", text: "Explain the save failure" }] },
+            { type: "storySummary", content: [{ type: "text", text: "Saving does not complete" }] },
+            {
+              type: "bulletList",
+              content: [
+                { type: "listItem", content: [{ type: "paragraph", content: [] }] },
+                { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Second point remains" }] }] }
+              ]
+            }
+          ]
+        },
+        {
+          type: "storyStep",
+          content: [
+            { type: "heading", content: [{ type: "text", text: "Save fails" }] },
+            {
+              type: "bulletList",
+              content: [
+                { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Open settings" }] }] },
+                { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Retry save" }] }] }
+              ]
+            },
+            { type: "storyImage" }
+          ]
+        }
+      ]
+    };
+
+    const text = await createPlanPdf(session).text();
+
+    expect(text).toContain("Second point remains");
+    expect(text).toContain("Open settings");
+    expect(text).toContain("Retry save");
+  });
+
   it("scales an unusually long story without clipping its final step", async () => {
     const imageProperties = vi.spyOn(
       jsPDF.API as unknown as { getImageProperties: (imageData: string) => unknown },
