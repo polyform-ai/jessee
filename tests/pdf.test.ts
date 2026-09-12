@@ -92,6 +92,7 @@ describe("createPlanPdf", () => {
   });
 
   it("renders surviving overview points and lists inside story steps", async () => {
+    const nestedLongToken = "W".repeat(55);
     const session = planSession();
     session.captureAnalysis!.keyPoints = ["Second point remains"];
     session.captureAnalysis!.editorDocument = {
@@ -133,7 +134,9 @@ describe("createPlanPdf", () => {
                             content: [
                               { type: "text", text: "Staging" },
                               { type: "hardBreak" },
-                              { type: "text", text: "Production" }
+                              { type: "text", text: "Production" },
+                              { type: "hardBreak" },
+                              { type: "text", text: nestedLongToken }
                             ]
                           }]
                         }
@@ -163,6 +166,8 @@ describe("createPlanPdf", () => {
     const nestedContinuationX = Number(text.match(/([\d.]+) [\d.]+ Td\n\(Production\) Tj/)?.[1]);
     expect(nestedBulletX).toBeGreaterThan(44);
     expect(nestedContinuationX).toBe(nestedBulletX);
+    expect(text).not.toContain(`(${nestedLongToken}) Tj`);
+    expect(text.match(/\(W+\) Tj/g)?.length).toBeGreaterThanOrEqual(2);
   });
 
   it("keeps editor-cleared key points out of the PDF", async () => {

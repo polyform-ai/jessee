@@ -305,7 +305,7 @@ export function parseEditorDocument(document: JSONContent, current: CaptureAnaly
     return {
       startSeconds: Number(node.attrs?.startSeconds ?? 0),
       endSeconds: Number(node.attrs?.endSeconds ?? 0),
-      title: heading ? jsonText(heading).trim() : "Untitled step",
+      title: heading ? trimHorizontalWhitespace(jsonText(heading)) : "Untitled step",
       narrative: bodyBlocks.map(storyBodyText).filter(Boolean).join("\n\n"),
       transcript: String(node.attrs?.transcript ?? ""),
       screenshotId: String(image?.attrs?.screenshotId || node.attrs?.screenshotId || "") || undefined,
@@ -317,8 +317,8 @@ export function parseEditorDocument(document: JSONContent, current: CaptureAnaly
 
   return {
     ...current,
-    userGoal: title.trim(),
-    story: summary.trim(),
+    userGoal: trimHorizontalWhitespace(title),
+    story: trimHorizontalWhitespace(summary),
     keyPoints,
     storySteps,
     editorDocument: sanitizeEditorDocument(document),
@@ -331,7 +331,7 @@ export function parseEditorDocument(document: JSONContent, current: CaptureAnaly
 }
 
 function storyBodyText(node: JSONContent): string {
-  if (node.type !== "bulletList") return jsonText(node).trim();
+  if (node.type !== "bulletList") return trimHorizontalWhitespace(jsonText(node));
   return storyListText(node);
 }
 
@@ -365,7 +365,7 @@ function storyListEntries(node: JSONContent): string[] {
 function storyListItemText(item: JSONContent): string {
   return (item.content ?? [])
     .filter((child) => child.type === "paragraph")
-    .map((paragraph) => jsonText(paragraph).trim())
+    .map((paragraph) => trimHorizontalWhitespace(jsonText(paragraph)))
     .filter(Boolean)
     .join(" ");
 }
@@ -468,6 +468,10 @@ function jsonText(node?: JSONContent): string {
   if (node.type === "hardBreak") return "\n";
   if (typeof node.text === "string") return node.text;
   return node.content?.map(jsonText).join("") ?? "";
+}
+
+function trimHorizontalWhitespace(value: string): string {
+  return value.replace(/^[\t ]+|[\t ]+$/g, "");
 }
 
 function storyKind(value: unknown): CaptureStoryStep["kind"] {
