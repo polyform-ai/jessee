@@ -19,7 +19,7 @@ Chrome only allows ordinary one-click installation for extensions signed and hos
 1. Download `JesSee-Safari-v0.1.0-alpha.3.zip` from the [GitHub prerelease](https://github.com/polyform-ai/jessee/releases/tag/v0.1.0-alpha.3). Do not unzip it.
 2. In Safari, open **Settings → Advanced** and enable **Show features for web developers**.
 3. Open **Settings → Developer** and enable **Allow unsigned extensions**.
-4. Choose **Add Temporary Extension…** and select the downloaded ZIP.
+4. Choose **Add Temporary Extension…** and select the downloaded ZIP. Safari also accepts the unzipped extension folder if you prefer to inspect it first.
 5. Open **Settings → Extensions**, enable JesSee, and approve access when Safari asks.
 
 Safari removes temporary extensions when Safari quits or after 24 hours. The unsigned-extension setting also resets when Safari quits.
@@ -28,6 +28,6 @@ For persistent local development on Safari 16.4 or newer, clone the repository, 
 
 ## Verify the downloads
 
-The prerelease includes `SHA256SUMS.txt`. Run `shasum -a 256 <downloaded-file>` and compare the result with the matching entry before installing.
+The prerelease includes `SHA256SUMS.txt`. Run `shasum -a 256 <downloaded-file>` and compare the result with the matching entry before installing. Maintainers can run `npm run release:package`; packaging now fails if either ZIP has a missing manifest resource, a browser-incompatible manifest, or a checksum mismatch.
 
 Report problems through [GitHub Issues](https://github.com/polyform-ai/jessee/issues).

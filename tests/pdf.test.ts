@@ -36,6 +36,51 @@ describe("createPlanPdf", () => {
     expect(text).toContain("/Count 1");
     expect(Number(mediaBox?.[2])).toBeGreaterThan(792);
   });
+
+  it("preserves editor emphasis in the PDF font runs", async () => {
+    const session = planSession();
+    session.captureAnalysis!.editorDocument = {
+      type: "doc",
+      content: [
+        {
+          type: "storyOverview",
+          content: [
+            { type: "storyTitle", content: [{ type: "text", text: "Explain the save failure", marks: [{ type: "italic" }] }] },
+            { type: "storySummary", content: [{ type: "text", text: "Saving does not complete", marks: [{ type: "italic" }] }] },
+            { type: "bulletList", content: [{ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "The save action fails" }] }] }] }
+          ]
+        },
+        {
+          type: "storyStep",
+          content: [
+            { type: "heading", content: [{ type: "text", text: "Save fails", marks: [{ type: "italic" }] }] },
+            { type: "paragraph", content: [{ type: "text", text: "The save action", marks: [{ type: "bold" }] }, { type: "text", text: " does not complete." }] },
+            { type: "storyImage" }
+          ]
+        }
+      ]
+    };
+    const text = await createPlanPdf(session).text();
+    expect(text).toContain("/F3 ");
+    expect(text).toContain("/F4 ");
+  });
+
+  it("scales an unusually long story without clipping its final step", async () => {
+    const session = planSession(true);
+    const firstStep = session.captureAnalysis!.storySteps![0];
+    session.captureAnalysis!.storySteps = Array.from({ length: 80 }, (_, index) => ({
+      ...firstStep,
+      startSeconds: index * 12,
+      endSeconds: (index + 1) * 12,
+      title: index === 79 ? "Final visible step" : `Detailed story step ${index + 1}`,
+      narrative: "This explanation remains visible even when a continuous document contains many words and selected images."
+    }));
+    const text = await createPlanPdf(session).text();
+    const mediaBox = text.match(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/);
+    expect(text).toContain("/Count 1");
+    expect(Number(mediaBox?.[2])).toBeLessThanOrEqual(14_400);
+    expect(text).toContain("Final visible step");
+  });
 });
 
 function planSession(withImage = false): RecordingSession {

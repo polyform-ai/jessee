@@ -1,21 +1,47 @@
 import { jsPDF } from "jspdf";
 import { buildCaptureStory } from "./captureStory";
-import type { CaptureStoryStep, RecordingSession } from "./types";
+import type { CaptureStoryStep, RecordingSession, SerializedEditorNode } from "./types";
+
+const PAGE_WIDTH = 612;
+const MINIMUM_PAGE_HEIGHT = 792;
+const MAXIMUM_PAGE_HEIGHT = 14_400;
+const MARGIN = 44;
+const FOOTER_SPACE = 54;
+
+interface RichTextRun {
+  text: string;
+  bold: boolean;
+  italic: boolean;
+}
+
+interface PositionedRun extends RichTextRun {
+  width: number;
+}
 
 export function createPlanPdf(session: RecordingSession): Blob {
   if (!session.captureAnalysis) throw new Error("A reviewed plan is required before creating the PDF.");
   const title = session.captureAnalysis.userGoal || session.tabTitle || "JesSee capture";
-  const pageWidth = 612;
-  const maximumPageHeight = 14_400;
-  const measurementPdf = new jsPDF({ unit: "pt", format: [pageWidth, maximumPageHeight], orientation: "portrait" });
-  let maxImageHeight = 360;
-  let contentHeight = drawPlan(measurementPdf, session, false, maxImageHeight);
-  if (contentHeight + 54 > maximumPageHeight) {
-    maxImageHeight = Math.max(120, Math.floor(maxImageHeight * ((maximumPageHeight - 54) / contentHeight)));
-    contentHeight = drawPlan(measurementPdf, session, false, maxImageHeight);
+  const measurementPdf = new jsPDF({ unit: "pt", format: [PAGE_WIDTH, MAXIMUM_PAGE_HEIGHT], orientation: "portrait" });
+  const availableHeight = MAXIMUM_PAGE_HEIGHT - FOOTER_SPACE;
+  let contentScale = 1;
+  let contentHeight = drawPlan(measurementPdf, session, false, contentScale);
+
+  if (contentHeight > availableHeight) {
+    let lowerScale = 0.001;
+    let upperScale = 1;
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      const candidateScale = (lowerScale + upperScale) / 2;
+      const candidateHeight = drawPlan(measurementPdf, session, false, candidateScale);
+      if (candidateHeight <= availableHeight) lowerScale = candidateScale;
+      else upperScale = candidateScale;
+    }
+    contentScale = lowerScale;
+    contentHeight = drawPlan(measurementPdf, session, false, contentScale);
   }
-  const pageHeight = Math.min(maximumPageHeight, Math.max(792, Math.ceil(contentHeight + 54)));
-  const pdf = new jsPDF({ unit: "pt", format: [pageWidth, pageHeight], orientation: "portrait" });
+
+  const pageHeight = Math.max(MINIMUM_PAGE_HEIGHT, Math.ceil(contentHeight + FOOTER_SPACE));
+  if (pageHeight > MAXIMUM_PAGE_HEIGHT) throw new Error("This story is too long to fit safely on one continuous PDF page.");
+  const pdf = new jsPDF({ unit: "pt", format: [PAGE_WIDTH, pageHeight], orientation: "portrait" });
   pdf.setProperties({
     title,
     subject: "JesSee visual walkthrough",
@@ -23,94 +49,225 @@ export function createPlanPdf(session: RecordingSession): Blob {
     creator: "JesSee",
     keywords: "capture, visual walkthrough, explanation, evidence"
   });
-  drawPlan(pdf, session, true, maxImageHeight);
+  drawPlan(pdf, session, true, contentScale);
   addFooter(pdf);
   return pdf.output("blob");
 }
 
-function drawPlan(pdf: jsPDF, session: RecordingSession, shouldRender: boolean, maxImageHeight: number): number {
+function drawPlan(pdf: jsPDF, session: RecordingSession, shouldRender: boolean, scale: number): number {
   const analysis = session.captureAnalysis!;
   const storySteps = buildCaptureStory(analysis, session.transcript, session.timeline, session.screenshots);
-  const margin = 44;
-  const width = pdf.internal.pageSize.getWidth();
-  const maxTextWidth = width - margin * 2;
-  let y = margin;
+  const editorDocument = analysis.editorDocument;
+  const overviewNode = childOfType(editorDocument, "storyOverview");
+  const editorSteps = childrenOfType(editorDocument, "storyStep");
+  const maxTextWidth = PAGE_WIDTH - MARGIN * 2;
+  let y = MARGIN;
 
-  const addHeading = (text: string, size = 16) => {
-    pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(size);
-    const lines = pdf.splitTextToSize(text, maxTextWidth);
-    if (shouldRender) {
-      pdf.setTextColor(24, 24, 27);
-      pdf.text(lines, margin, y);
-    }
-    y += lines.length * (size + 5) + 8;
-  };
-
-  const addParagraph = (text: string, color: [number, number, number] = [63, 63, 70]) => {
-    if (!text) return;
-    pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(10);
-    const lines = pdf.splitTextToSize(text, maxTextWidth);
+  const addRichText = (
+    runs: RichTextRun[],
+    size: number,
+    color: [number, number, number],
+    baseBold: boolean,
+    trailingSpace: number
+  ) => {
+    const fontSize = Math.max(0.1, size * scale);
+    const lineHeight = (size + (baseBold ? 5 : 3)) * scale;
+    const lines = wrapRichText(pdf, runs, maxTextWidth, fontSize, baseBold);
     if (shouldRender) {
       pdf.setTextColor(...color);
-      pdf.text(lines, margin, y);
+      lines.forEach((line) => {
+        let x = MARGIN;
+        line.forEach((run) => {
+          setFont(pdf, baseBold || run.bold, run.italic);
+          pdf.setFontSize(fontSize);
+          pdf.text(run.text, x, y);
+          x += run.width;
+        });
+        y += lineHeight;
+      });
+    } else {
+      y += lines.length * lineHeight;
     }
-    y += lines.length * 13 + 10;
+    y += trailingSpace * scale;
   };
+
+  const addHeading = (runs: RichTextRun[], size = 16) => addRichText(runs, size, [24, 24, 27], true, 8);
+  const addParagraph = (runs: RichTextRun[], color: [number, number, number] = [63, 63, 70]) => addRichText(runs, 10, color, false, 10);
 
   const addEvidenceImage = (step: CaptureStoryStep, screenshot: RecordingSession["screenshots"][number], index: number) => {
     const props = pdf.getImageProperties(screenshot.dataUrl);
+    const maximumImageHeight = 360 * scale;
     const naturalHeight = (props.height * maxTextWidth) / props.width;
-    const imageHeight = Math.min(maxImageHeight, naturalHeight);
+    const imageHeight = Math.min(maximumImageHeight, naturalHeight);
     const imageWidth = Math.min(maxTextWidth, (props.width * imageHeight) / props.height);
-    const caption = screenshot.title || step.title;
-    const captionLines = pdf.splitTextToSize(caption, imageWidth - 24);
-    const captionHeight = Math.max(1, captionLines.length) * 11;
-    const cardHeight = imageHeight + captionHeight + 58;
+    const captionRuns = plainRuns(screenshot.title || step.title);
+    const captionFontSize = Math.max(0.1, 9 * scale);
+    const captionLines = wrapRichText(pdf, captionRuns, Math.max(20, maxTextWidth - 24 * scale), captionFontSize, false);
+    const captionHeight = Math.max(1, captionLines.length) * 11 * scale;
+    const cardHeight = imageHeight + captionHeight + 58 * scale;
+
     if (shouldRender) {
       pdf.setFillColor(250, 250, 250);
       pdf.setDrawColor(228, 228, 231);
-      pdf.roundedRect(margin, y, imageWidth, cardHeight - 8, 8, 8, "FD");
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(10);
+      pdf.roundedRect(MARGIN, y, maxTextWidth, cardHeight - 8 * scale, 8 * scale, 8 * scale, "FD");
+      setFont(pdf, true, false);
+      pdf.setFontSize(Math.max(0.1, 10 * scale));
       pdf.setTextColor(24, 24, 27);
-      pdf.text(`Step ${index + 1} - selected visual at ${formatTimestamp(screenshot.capturedAtMs)}`, margin + 12, y + 18);
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(9);
+      pdf.text(`Step ${index + 1} - selected visual at ${formatTimestamp(screenshot.capturedAtMs)}`, MARGIN + 12 * scale, y + 18 * scale);
       pdf.setTextColor(82, 82, 91);
-      pdf.text(captionLines, margin + 12, y + 32);
-      const imageY = y + 38 + captionHeight;
+      let captionY = y + 32 * scale;
+      captionLines.forEach((line) => {
+        let captionX = MARGIN + 12 * scale;
+        line.forEach((run) => {
+          setFont(pdf, run.bold, run.italic);
+          pdf.setFontSize(captionFontSize);
+          pdf.text(run.text, captionX, captionY);
+          captionX += run.width;
+        });
+        captionY += 11 * scale;
+      });
+      const imageY = y + 38 * scale + captionHeight;
       const format = screenshot.dataUrl.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
-      pdf.addImage(screenshot.dataUrl, format, margin + (maxTextWidth - imageWidth) / 2, imageY, imageWidth, imageHeight, undefined, "SLOW");
+      pdf.addImage(screenshot.dataUrl, format, MARGIN + (maxTextWidth - imageWidth) / 2, imageY, imageWidth, imageHeight, undefined, "SLOW");
     }
-    y += cardHeight + 10;
+    y += cardHeight + 10 * scale;
   };
 
-  addHeading(analysis.userGoal || session.tabTitle || "JesSee capture", 20);
-  addParagraph(analysis.story);
+  addHeading(runsFromNode(childOfType(overviewNode, "storyTitle"), analysis.userGoal), 20);
+  addParagraph(runsFromNode(childOfType(overviewNode, "storySummary"), analysis.story));
 
   const keyPoints = analysis.keyPoints?.length ? analysis.keyPoints : analysis.breakingPoints ?? [];
+  const editorKeyPoints = childrenOfType(childOfType(overviewNode, "bulletList"), "listItem");
   if (keyPoints.length) {
-    addHeading("Key points");
-    keyPoints.forEach((point) => addParagraph(`- ${point}`));
+    addHeading(plainRuns("Key points"));
+    keyPoints.forEach((point, index) => {
+      const richPoint = runsFromNode(editorKeyPoints[index], point);
+      addParagraph([{ text: "- ", bold: false, italic: false }, ...richPoint]);
+    });
   }
 
-  addHeading("Walkthrough");
+  addHeading(plainRuns("Walkthrough"));
   storySteps.forEach((step, index) => {
+    const editorStep = editorSteps[index];
+    const headingNode = childOfType(editorStep, "heading");
+    const paragraphNodes = childrenOfType(editorStep, "paragraph");
     const screenshot = step.screenshotId ? session.screenshots.find((shot) => shot.id === step.screenshotId) : undefined;
-    addHeading(`${index + 1}. ${step.title}`, 14);
-    addParagraph(step.narrative);
-    if (step.pageUrl) addParagraph(`Reference: ${step.pageTitle || step.pageUrl}${step.pageTitle ? ` - ${step.pageUrl}` : ""}`, [3, 105, 161]);
+    addHeading([{ text: `${index + 1}. `, bold: false, italic: false }, ...runsFromNode(headingNode, step.title)], 14);
+    addParagraph(runsFromNodes(paragraphNodes, step.narrative));
+    if (step.pageUrl) addParagraph(plainRuns(`Reference: ${step.pageTitle || step.pageUrl}${step.pageTitle ? ` - ${step.pageUrl}` : ""}`), [3, 105, 161]);
     if (screenshot) {
       try {
         addEvidenceImage(step, screenshot, index);
       } catch {
-        addParagraph(`[Screenshot ${screenshot.id} could not be embedded]`);
+        addParagraph(plainRuns(`[Screenshot ${screenshot.id} could not be embedded]`));
       }
     }
   });
   return y;
+}
+
+function wrapRichText(pdf: jsPDF, runs: RichTextRun[], maxWidth: number, fontSize: number, baseBold: boolean): PositionedRun[][] {
+  const lines: PositionedRun[][] = [[]];
+  let lineWidth = 0;
+
+  const nextLine = () => {
+    if (lines.at(-1)?.length || lines.length === 0) lines.push([]);
+    lineWidth = 0;
+  };
+
+  const addPiece = (piece: string, run: RichTextRun) => {
+    if (!piece) return;
+    setFont(pdf, baseBold || run.bold, run.italic);
+    pdf.setFontSize(fontSize);
+    const pieceWidth = pdf.getTextWidth(piece);
+    if (lineWidth > 0 && lineWidth + pieceWidth > maxWidth) nextLine();
+    if (pieceWidth <= maxWidth) {
+      if (!piece.trim() && lineWidth === 0) return;
+      appendPositionedRun(lines.at(-1)!, { ...run, text: piece, width: pieceWidth });
+      lineWidth += pieceWidth;
+      return;
+    }
+
+    let fragment = "";
+    for (const character of piece) {
+      const candidate = fragment + character;
+      const candidateWidth = pdf.getTextWidth(candidate);
+      if (fragment && lineWidth + candidateWidth > maxWidth) {
+        const fragmentWidth = pdf.getTextWidth(fragment);
+        appendPositionedRun(lines.at(-1)!, { ...run, text: fragment, width: fragmentWidth });
+        nextLine();
+        fragment = character;
+      } else {
+        fragment = candidate;
+      }
+    }
+    if (fragment) {
+      const fragmentWidth = pdf.getTextWidth(fragment);
+      appendPositionedRun(lines.at(-1)!, { ...run, text: fragment, width: fragmentWidth });
+      lineWidth += fragmentWidth;
+    }
+  };
+
+  for (const run of runs.length ? runs : plainRuns("")) {
+    for (const piece of run.text.replace(/\r/g, "").split(/(\n|[ \t]+)/)) {
+      if (piece === "\n") nextLine();
+      else addPiece(/^[ \t]+$/.test(piece) ? " " : piece, run);
+    }
+  }
+  if (lines.length > 1 && lines.at(-1)?.length === 0) lines.pop();
+  return lines.length ? lines : [[]];
+}
+
+function appendPositionedRun(line: PositionedRun[], run: PositionedRun): void {
+  const previous = line.at(-1);
+  if (previous && previous.bold === run.bold && previous.italic === run.italic) {
+    previous.text += run.text;
+    previous.width += run.width;
+  } else {
+    line.push(run);
+  }
+}
+
+function runsFromNodes(nodes: SerializedEditorNode[], fallback: string): RichTextRun[] {
+  if (!nodes.length) return plainRuns(fallback);
+  const runs: RichTextRun[] = [];
+  nodes.forEach((node, index) => {
+    if (index) runs.push({ text: "\n", bold: false, italic: false });
+    runs.push(...runsFromNode(node, ""));
+  });
+  return runs.length ? runs : plainRuns(fallback);
+}
+
+function runsFromNode(node: SerializedEditorNode | undefined, fallback: string): RichTextRun[] {
+  if (!node) return plainRuns(fallback);
+  const runs: RichTextRun[] = [];
+  const visit = (current: SerializedEditorNode) => {
+    if (typeof current.text === "string") {
+      const markNames = new Set(current.marks?.map((mark) => mark.type) ?? []);
+      runs.push({ text: current.text, bold: markNames.has("bold"), italic: markNames.has("italic") });
+      return;
+    }
+    current.content?.forEach(visit);
+  };
+  visit(node);
+  return runs.length ? runs : plainRuns(fallback);
+}
+
+function plainRuns(text: string): RichTextRun[] {
+  return [{ text, bold: false, italic: false }];
+}
+
+function childOfType(node: SerializedEditorNode | undefined, type: string): SerializedEditorNode | undefined {
+  return node?.content?.find((child) => child.type === type);
+}
+
+function childrenOfType(node: SerializedEditorNode | undefined, type: string): SerializedEditorNode[] {
+  return node?.content?.filter((child) => child.type === type) ?? [];
+}
+
+function setFont(pdf: jsPDF, bold: boolean, italic: boolean): void {
+  const style = bold && italic ? "bolditalic" : bold ? "bold" : italic ? "italic" : "normal";
+  pdf.setFont("helvetica", style);
 }
 
 function formatTimestamp(milliseconds: number): string {
@@ -127,12 +284,12 @@ function addFooter(pdf: jsPDF): void {
   const width = pdf.internal.pageSize.getWidth();
   const height = pdf.internal.pageSize.getHeight();
   pdf.setDrawColor(228, 228, 231);
-  pdf.line(44, height - 30, width - 44, height - 30);
+  pdf.line(MARGIN, height - 30, width - MARGIN, height - 30);
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(8);
   pdf.setTextColor(113, 113, 122);
-  pdf.text("JesSee visual walkthrough", 44, height - 17);
-  pdf.text("One continuous story", width - 44, height - 17, { align: "right" });
+  pdf.text("JesSee visual walkthrough", MARGIN, height - 17);
+  pdf.text("One continuous story", width - MARGIN, height - 17, { align: "right" });
 }
 
 export function planPdfFilename(title: string, now = new Date()): string {

@@ -54,4 +54,9 @@ const checksums = archives.map(({ name }) => {
 writeFileSync(resolve(outputDirectory, "SHA256SUMS.txt"), `${checksums.join("\n")}\n`);
 rmSync(stagingDirectory, { recursive: true, force: true });
 
+execFileSync(process.execPath, [resolve("scripts/validate-release-packages.mjs")], {
+  env: { ...process.env, JESSEE_RELEASE_VERSION: version },
+  stdio: "inherit"
+});
+
 console.log(`Packaged JesSee v${version} in ${outputDirectory}`);

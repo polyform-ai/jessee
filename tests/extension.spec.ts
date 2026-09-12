@@ -21,7 +21,9 @@ async function replaceEditorText(page: Page, locator: Locator, value: string): P
 
 test("loads extension settings page", async () => {
   execFileSync("npm", ["run", "build"], { cwd: resolve(__dirname, ".."), stdio: "inherit" });
-  const extensionPath = resolve(__dirname, "../dist");
+  const extensionPath = process.env.JESSEE_EXTENSION_PATH
+    ? resolve(process.env.JESSEE_EXTENSION_PATH)
+    : resolve(__dirname, "../dist");
   const userDataDir = mkdtempSync(resolve(tmpdir(), "jessee-extension-"));
   const context = await chromium.launchPersistentContext(userDataDir, {
     headless: false,
