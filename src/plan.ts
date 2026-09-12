@@ -268,10 +268,12 @@ async function useCurrentCandidate(): Promise<void> {
 }
 
 async function selectImage(imageId: string): Promise<void> {
-  if (imageDialogStepIndex === undefined || !session.captureAnalysis) return;
+  if (imageDialogStepIndex === undefined || !session.captureAnalysis || !storyEditor) return;
   const stepIndex = imageDialogStepIndex;
-  const storySteps = normalizedStorySteps(session.captureAnalysis).map((step, index) => index === stepIndex ? { ...step, screenshotId: imageId || undefined } : step);
-  await saveStorySteps(storySteps);
+  const screenshot = hydrated.screenshots.find((shot) => shot.id === imageId);
+  storyEditor.updateImage(stepIndex, screenshot);
+  planDirty = true;
+  await persistPlan();
   imageDialogStepIndex = undefined;
   statusMessage = imageId ? "Image selected and saved" : "Text-only step saved";
   render();
@@ -320,23 +322,6 @@ async function addStoryStep(): Promise<void> {
   await persistPlan();
   render();
   storyEditor?.scrollToStep(storySteps.length);
-}
-
-async function saveStorySteps(storySteps: CaptureStoryStep[]): Promise<void> {
-  if (!session.captureAnalysis) return;
-  session = { ...session, status: "planned", analysisError: undefined, captureAnalysis: withStorySteps(session.captureAnalysis, storySteps) };
-  await saveSession(session);
-  await saveCaptureHistory(session);
-  hydrated = await hydrateSession(session);
-  planDirty = false;
-}
-
-function withStorySteps(analysis: CaptureAnalysis, storySteps: CaptureStoryStep[]): CaptureAnalysis {
-  return {
-    ...analysis,
-    storySteps,
-    helpfulImageMoments: storySteps.filter((step) => step.screenshotId).map((step) => ({ screenshotId: step.screenshotId, atSeconds: step.endSeconds, reason: step.narrative || step.title }))
-  };
 }
 
 function normalizedStorySteps(analysis: CaptureAnalysis): CaptureStoryStep[] {

@@ -205,7 +205,7 @@ function wrapRichText(pdf: jsPDF, runs: RichTextRun[], maxWidth: number, fontSiz
     setFont(pdf, baseBold || run.bold, run.italic);
     pdf.setFontSize(fontSize);
     const pieceWidth = pdf.getTextWidth(piece);
-    if (lineWidth > 0 && lineWidth + pieceWidth > maxWidth) nextLine();
+    if (lines.at(-1)!.runs.length > 0 && lineWidth + pieceWidth > maxWidth) nextLine();
     if (lineWidth + pieceWidth <= maxWidth) {
       if (!piece.trim() && lineWidth === 0) return;
       appendPositionedRun(lines.at(-1)!.runs, { ...run, text: piece, width: pieceWidth });

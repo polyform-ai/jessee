@@ -164,8 +164,11 @@ describe("createPlanPdf", () => {
     expect(text).toContain("Retry save");
     const nestedBulletX = Number(text.match(/([\d.]+) [\d.]+ Td\n\(- Staging\) Tj/)?.[1]);
     const nestedContinuationX = Number(text.match(/([\d.]+) [\d.]+ Td\n\(Production\) Tj/)?.[1]);
+    const productionY = Number(text.match(/[\d.]+ ([\d.]+) Td\n\(Production\) Tj/)?.[1]);
+    const firstLongTokenY = Number(text.match(/[\d.]+ ([\d.]+) Td\n\(W+\) Tj/)?.[1]);
     expect(nestedBulletX).toBeGreaterThan(44);
     expect(nestedContinuationX).toBe(nestedBulletX);
+    expect(productionY - firstLongTokenY).toBeCloseTo(13, 5);
     expect(text).not.toContain(`(${nestedLongToken}) Tj`);
     expect(text.match(/\(W+\) Tj/g)?.length).toBeGreaterThanOrEqual(2);
   });
