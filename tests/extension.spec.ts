@@ -154,6 +154,26 @@ test("loads extension settings page", async () => {
     await page.getByRole("button", { name: "Bullet list" }).click();
     await expect(firstStepBody.locator("ul")).toBeVisible();
     await expect(firstStepBody.locator("ul")).toHaveCSS("list-style-type", "disc");
+    const nestedListStyle = await page.evaluate(() => {
+      const editor = document.createElement("div");
+      editor.className = "story-editor-content";
+      const step = document.createElement("section");
+      step.dataset.storyStep = "";
+      const outerList = document.createElement("ul");
+      const item = document.createElement("li");
+      const nestedList = document.createElement("ul");
+      item.append(nestedList);
+      outerList.append(item);
+      step.append(outerList);
+      editor.append(step);
+      document.body.append(editor);
+      const style = getComputedStyle(nestedList);
+      const result = { listStyleType: style.listStyleType, paddingLeft: Number.parseFloat(style.paddingLeft) };
+      editor.remove();
+      return result;
+    });
+    expect(nestedListStyle.listStyleType).toBe("circle");
+    expect(nestedListStyle.paddingLeft).toBeGreaterThan(0);
     await page.getByRole("button", { name: "Undo" }).click();
     await expect(firstStepBody.locator("ul")).toHaveCount(0);
     if (process.env.JESSEE_VISUAL_QA) {

@@ -380,15 +380,28 @@
     @apply mb-0 mt-3 max-w-3xl text-[15px] leading-7 text-zinc-700;
   }
 
-  .story-editor-content [data-story-step] > ul {
-    @apply mb-0 mt-4 max-w-3xl list-disc space-y-2 pl-6 text-[15px] leading-7 text-zinc-700;
+  .story-editor-content [data-story-step] ul {
+    @apply max-w-3xl list-disc pl-6 text-[15px] leading-7 text-zinc-700;
   }
 
-  .story-editor-content [data-story-step] > ul > li {
+  .story-editor-content [data-story-step] > ul {
+    @apply mb-0 mt-4 space-y-2;
+  }
+
+  .story-editor-content [data-story-step] ul ul {
+    @apply mb-0 mt-2 space-y-1 pl-6;
+    list-style-type: circle;
+  }
+
+  .story-editor-content [data-story-step] ul ul ul {
+    list-style-type: square;
+  }
+
+  .story-editor-content [data-story-step] ul > li {
     @apply pl-1 marker:text-violet-500;
   }
 
-  .story-editor-content [data-story-step] > ul > li > p {
+  .story-editor-content [data-story-step] ul > li > p {
     @apply m-0;
   }
 

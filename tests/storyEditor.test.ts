@@ -43,6 +43,27 @@ describe("visual story editor document", () => {
     expect(updated.story).toBe("");
   });
 
+  it("preserves hard breaks and intentionally cleared step headings", () => {
+    const document = buildEditorDocument(analysis(), steps(), screenshots());
+    document.content![0].content![1].content = [
+      { type: "text", text: "First summary line" },
+      { type: "hardBreak" },
+      { type: "text", text: "Second summary line" }
+    ];
+    document.content![1].content![0].content = [];
+    document.content![1].content![1].content = [
+      { type: "text", text: "First detail" },
+      { type: "hardBreak" },
+      { type: "text", text: "Second detail" }
+    ];
+
+    const updated = parseEditorDocument(document, analysis());
+
+    expect(updated.story).toBe("First summary line\nSecond summary line");
+    expect(updated.storySteps?.[0].title).toBe("");
+    expect(updated.storySteps?.[0].narrative).toBe("First detail\nSecond detail");
+  });
+
   it("maps bullet lists in step bodies back to readable story text", () => {
     const document = buildEditorDocument(analysis(), steps(), screenshots());
     document.content![1].content![1] = {

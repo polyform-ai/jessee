@@ -305,7 +305,7 @@ export function parseEditorDocument(document: JSONContent, current: CaptureAnaly
     return {
       startSeconds: Number(node.attrs?.startSeconds ?? 0),
       endSeconds: Number(node.attrs?.endSeconds ?? 0),
-      title: jsonText(heading).trim() || "Untitled step",
+      title: heading ? jsonText(heading).trim() : "Untitled step",
       narrative: bodyBlocks.map(storyBodyText).filter(Boolean).join("\n\n"),
       transcript: String(node.attrs?.transcript ?? ""),
       screenshotId: String(image?.attrs?.screenshotId || node.attrs?.screenshotId || "") || undefined,
@@ -465,6 +465,7 @@ function countStorySteps(document: JSONContent): number {
 
 function jsonText(node?: JSONContent): string {
   if (!node) return "";
+  if (node.type === "hardBreak") return "\n";
   if (typeof node.text === "string") return node.text;
   return node.content?.map(jsonText).join("") ?? "";
 }
