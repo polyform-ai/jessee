@@ -198,85 +198,10 @@
     @apply bg-white text-zinc-950 shadow-sm;
   }
 
-  .image-choice-grid {
-    @apply grid grid-cols-3 gap-3;
-  }
-
-  .image-choice {
-    @apply relative flex min-w-0 cursor-pointer flex-col items-stretch gap-1.5 overflow-hidden border border-zinc-200 bg-white p-2 text-left transition;
-    border-radius: 10px;
-  }
-
-  .image-choice:hover {
-    @apply border-zinc-400 shadow-sm;
-  }
-
-  .image-choice.selected {
-    @apply border-[#5B5EF8] bg-violet-50 ring-2 ring-[#5B5EF8]/15;
-  }
-
-  .image-choice-preview {
-    @apply relative block aspect-video overflow-hidden bg-zinc-900;
-    border-radius: 7px;
-  }
-
-  .image-choice-preview img {
-    @apply size-full object-cover;
-  }
-
-  .image-choice-index,
-  .recommended-pill,
-  .choice-check {
-    @apply absolute flex items-center justify-center shadow-sm;
-  }
-
-  .image-choice-index {
-    @apply bottom-1.5 left-1.5 bg-zinc-950/85 px-1.5 py-0.5 text-[9px] font-bold text-white;
-    border-radius: 5px;
-  }
-
   .recommended-pill {
+    @apply absolute flex items-center justify-center shadow-sm;
     @apply left-1.5 top-1.5 bg-[#5B5EF8] px-2 py-1 text-[9px] font-bold text-white;
     border-radius: 999px;
-  }
-
-  .choice-check {
-    @apply right-1.5 top-1.5 size-6 bg-white text-xs font-bold text-[#5B5EF8];
-    border-radius: 999px;
-  }
-
-  .image-choice > strong {
-    @apply truncate px-0.5 text-xs font-semibold text-zinc-900;
-  }
-
-  .image-choice > small {
-    @apply truncate px-0.5 text-[10px] leading-4 text-zinc-500;
-  }
-
-  .image-choice-none {
-    @apply justify-start;
-  }
-
-  .image-choice-empty {
-    @apply flex aspect-video items-center justify-center border border-dashed border-zinc-300 bg-zinc-50 text-xs font-semibold text-zinc-400;
-    border-radius: 7px;
-  }
-
-  .image-pagination {
-    @apply flex items-center justify-between gap-3 border-t border-zinc-100 pt-3;
-  }
-
-  .image-pagination span {
-    @apply text-xs font-medium text-zinc-500;
-  }
-
-  .selected-pill {
-    @apply shrink-0 bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700;
-    border-radius: 999px;
-  }
-
-  .walkthrough-document {
-    @apply mx-auto flex max-w-5xl flex-col gap-8 pb-20;
   }
 
   .plan-header-actions {
@@ -285,207 +210,6 @@
 
   .mode-switch {
     @apply mr-1;
-  }
-
-  .walkthrough-overview {
-    @apply gap-5 p-7;
-    border-radius: 16px;
-  }
-
-  .document-title {
-    @apply max-w-4xl text-3xl font-semibold leading-tight tracking-[-0.025em] text-zinc-950;
-  }
-
-  .document-summary {
-    @apply max-w-3xl text-base leading-7 text-zinc-600;
-  }
-
-  .takeaway-block {
-    @apply border-t border-zinc-100 pt-5;
-  }
-
-  .takeaway-block h3 {
-    @apply m-0 text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500;
-  }
-
-  .takeaway-block ul {
-    @apply mt-3 grid list-none gap-3 p-0 md:grid-cols-2;
-  }
-
-  .takeaway-block li {
-    @apply relative border border-zinc-200 bg-zinc-50 py-3 pl-10 pr-4 text-sm leading-6 text-zinc-800;
-    border-radius: 10px;
-  }
-
-  .takeaway-block li::before {
-    content: "✓";
-    @apply absolute left-3 top-3 flex size-5 items-center justify-center bg-violet-100 text-[10px] font-bold text-violet-700;
-    border-radius: 999px;
-  }
-
-  .overview-edit-grid {
-    @apply grid gap-4 md:grid-cols-2;
-  }
-
-  .overview-key-points {
-    @apply md:col-span-2;
-  }
-
-  .walkthrough-steps {
-    @apply flex flex-col gap-6;
-  }
-
-  .walkthrough-section-header {
-    @apply flex items-start justify-between gap-4;
-  }
-
-  .walkthrough-section-header > div {
-    @apply min-w-0;
-  }
-
-  .walkthrough-section-header h2 {
-    @apply text-xl font-semibold tracking-[-0.02em];
-  }
-
-  .walkthrough-section-header p:not(.section-eyebrow) {
-    @apply mt-1 max-w-3xl text-sm leading-6 text-zinc-500;
-  }
-
-  .story-document {
-    @apply flex flex-col;
-  }
-
-  .walkthrough-step {
-    @apply grid gap-5;
-    grid-template-columns: 46px minmax(0, 1fr);
-  }
-
-  .step-rail {
-    @apply flex min-h-full flex-col items-center;
-  }
-
-  .step-rail span {
-    @apply flex size-10 shrink-0 items-center justify-center border border-violet-200 bg-violet-50 text-xs font-bold text-violet-700;
-    border-radius: 12px;
-  }
-
-  .step-rail i {
-    @apply my-2 w-px flex-1 bg-zinc-200;
-  }
-
-  .walkthrough-step:last-child .step-rail i {
-    @apply bg-transparent;
-  }
-
-  .step-content {
-    @apply mb-8 flex min-w-0 flex-col gap-4 border border-zinc-200/80 bg-white p-6 shadow-sm;
-    border-radius: 14px;
-  }
-
-  .step-title {
-    @apply text-xl font-semibold leading-tight tracking-[-0.02em];
-  }
-
-  .step-narrative {
-    @apply max-w-3xl text-[15px] leading-7 text-zinc-700;
-  }
-
-  .step-edit-fields {
-    @apply grid gap-4;
-  }
-
-  .story-image-trigger {
-    @apply flex w-full cursor-pointer flex-col overflow-hidden border border-zinc-200 bg-zinc-950 p-0 text-left shadow-sm transition;
-    border-radius: 12px;
-  }
-
-  .story-image-trigger:hover:not(:disabled) {
-    @apply border-violet-400 shadow-md;
-    transform: translateY(-1px);
-  }
-
-  .story-image-trigger:focus-visible {
-    @apply outline-none ring-2 ring-violet-500 ring-offset-2;
-  }
-
-  .story-image-frame {
-    @apply relative flex min-h-64 items-center justify-center overflow-hidden bg-zinc-950;
-  }
-
-  .story-image-frame img {
-    @apply block max-h-[70vh] w-full object-contain;
-  }
-
-  .image-action {
-    @apply absolute bottom-3 right-3 bg-white/95 px-3 py-2 text-xs font-semibold text-zinc-950 shadow-lg backdrop-blur;
-    border-radius: 8px;
-  }
-
-  .story-image-caption {
-    @apply grid items-center gap-3 border-t border-white/10 bg-zinc-950 px-4 py-3 text-xs;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-  }
-
-  .story-image-caption strong {
-    @apply text-white;
-  }
-
-  .story-image-caption span {
-    @apply truncate text-zinc-400;
-  }
-
-  .story-image-caption em {
-    @apply not-italic text-emerald-300;
-  }
-
-  .story-image-trigger.empty {
-    @apply border-dashed border-zinc-300 bg-zinc-50;
-  }
-
-  .story-image-empty {
-    @apply flex min-h-44 items-center justify-center p-8 text-center text-sm font-medium text-zinc-500;
-  }
-
-  .compact-context {
-    @apply grid items-center gap-x-3 gap-y-0.5;
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .compact-context span {
-    @apply row-span-2;
-  }
-
-  .compact-context small {
-    @apply truncate;
-  }
-
-  .source-narration {
-    @apply border-t border-zinc-100 pt-3;
-  }
-
-  .source-narration summary {
-    @apply flex cursor-pointer list-none items-center justify-between text-xs font-semibold text-zinc-600;
-  }
-
-  .source-narration summary::-webkit-details-marker {
-    display: none;
-  }
-
-  .source-narration summary::after {
-    content: "+";
-    @apply ml-3 text-base font-normal text-zinc-400;
-  }
-
-  .source-narration[open] summary::after {
-    content: "−";
-  }
-
-  .source-narration summary span {
-    @apply ml-auto mr-2 font-mono text-[10px] font-medium text-zinc-400;
-  }
-
-  .source-narration blockquote {
-    @apply mb-0 ml-0 mr-0 mt-3 border-l-2 border-zinc-200 pl-4 text-sm leading-6 text-zinc-600;
   }
 
   .image-dialog {
@@ -527,8 +251,316 @@
     @apply text-xs font-medium text-zinc-500;
   }
 
-  .dialog-image-grid {
-    @apply min-h-0 flex-1 grid-cols-3 overflow-y-auto pr-1;
+  .story-workspace {
+    @apply pb-24;
+  }
+
+  .story-workspace-header {
+    @apply max-w-6xl;
+  }
+
+  .story-editor-shell {
+    @apply mx-auto max-w-5xl;
+  }
+
+  .story-editor-intro {
+    @apply mb-4 flex items-end justify-between gap-8 px-1;
+  }
+
+  .story-editor-intro h2 {
+    @apply text-xl font-semibold tracking-[-0.02em];
+  }
+
+  .story-editor-intro > p {
+    @apply max-w-xl text-right text-sm leading-6 text-zinc-500;
+  }
+
+  .story-editor-toolbar {
+    @apply sticky top-[116px] z-10 flex min-h-12 items-center gap-2 border border-zinc-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur;
+    border-radius: 12px 12px 0 0;
+  }
+
+  .editor-format-group {
+    @apply flex items-center gap-1;
+  }
+
+  .editor-tool {
+    @apply flex size-8 cursor-pointer items-center justify-center border border-transparent bg-transparent text-sm text-zinc-600 transition;
+    border-radius: 7px;
+  }
+
+  .editor-tool:hover:not(:disabled),
+  .editor-tool[aria-pressed="true"] {
+    @apply border-zinc-200 bg-zinc-100 text-zinc-950;
+  }
+
+  .editor-tool:focus-visible {
+    @apply outline-none ring-2 ring-violet-500 ring-offset-1;
+  }
+
+  .editor-tool:disabled {
+    @apply cursor-default opacity-30;
+  }
+
+  .editor-tool-list {
+    @apply w-auto px-2 text-xs font-semibold;
+  }
+
+  .editor-toolbar-divider {
+    @apply mx-1 h-6 w-px bg-zinc-200;
+  }
+
+  .editor-toolbar-tip {
+    @apply ml-auto text-xs text-zinc-400;
+  }
+
+  .story-paper {
+    @apply overflow-hidden border border-zinc-200 bg-white shadow-xl shadow-zinc-950/5;
+    border-radius: 16px;
+  }
+
+  .editing .story-paper {
+    @apply rounded-t-none border-t-0;
+  }
+
+  .story-editor-content {
+    @apply min-h-[720px] outline-none;
+  }
+
+  .story-editor-content [data-story-overview] {
+    @apply border-b border-zinc-200 px-10 py-12;
+    background: linear-gradient(145deg, #ffffff 0%, #fafafa 100%);
+  }
+
+  .story-editor-content [data-story-title] {
+    @apply m-0 max-w-3xl text-4xl font-semibold leading-[1.08] tracking-[-0.035em] text-zinc-950;
+  }
+
+  .story-editor-content [data-story-summary] {
+    @apply mb-0 mt-5 max-w-3xl text-base leading-7 text-zinc-600;
+  }
+
+  .story-editor-content [data-story-overview] > ul {
+    @apply mt-7 grid list-none gap-3 p-0 md:grid-cols-2;
+  }
+
+  .story-editor-content [data-story-overview] > ul > li {
+    @apply relative border border-zinc-200 bg-white py-3 pl-10 pr-4 text-sm leading-6 text-zinc-700 shadow-sm;
+    border-radius: 10px;
+  }
+
+  .story-editor-content [data-story-overview] > ul > li::before {
+    content: "✓";
+    @apply absolute left-3 top-3 flex size-5 items-center justify-center bg-violet-100 text-[10px] font-bold text-violet-700;
+    border-radius: 999px;
+  }
+
+  .story-editor-content [data-story-overview] li p {
+    @apply m-0;
+  }
+
+  .story-editor-content [data-story-step] {
+    @apply relative px-10 pb-12 pt-16;
+  }
+
+  .story-editor-content [data-story-step] + [data-story-step] {
+    @apply border-t border-zinc-200;
+  }
+
+  .story-editor-content [data-story-step]::before {
+    content: attr(data-step-label) "  ·  " attr(data-step-meta);
+    @apply absolute left-10 top-8 text-[10px] font-semibold uppercase tracking-[0.12em] text-violet-600;
+  }
+
+  .story-editor-content [data-story-step] > h2 {
+    @apply m-0 max-w-3xl text-2xl font-semibold leading-tight tracking-[-0.025em] text-zinc-950;
+  }
+
+  .story-editor-content [data-story-step] > p {
+    @apply mb-0 mt-3 max-w-3xl text-[15px] leading-7 text-zinc-700;
+  }
+
+  .story-editor-content.is-editable [data-story-title],
+  .story-editor-content.is-editable [data-story-summary],
+  .story-editor-content.is-editable [data-story-step] > h2,
+  .story-editor-content.is-editable [data-story-step] > p,
+  .story-editor-content.is-editable [data-story-overview] li p {
+    @apply transition;
+  }
+
+  .story-editor-content.is-editable [data-story-title]:hover,
+  .story-editor-content.is-editable [data-story-summary]:hover,
+  .story-editor-content.is-editable [data-story-step] > h2:hover,
+  .story-editor-content.is-editable [data-story-step] > p:hover,
+  .story-editor-content.is-editable [data-story-overview] li p:hover {
+    @apply bg-violet-50/70;
+    box-shadow: 0 0 0 5px rgba(91, 94, 248, 0.07);
+    border-radius: 4px;
+  }
+
+  .story-editor-content .ProseMirror-selectednode {
+    @apply outline-none ring-2 ring-violet-500 ring-offset-3;
+  }
+
+  .editor-story-image {
+    @apply mt-7 flex w-full cursor-pointer flex-col overflow-hidden border border-zinc-200 bg-zinc-950 p-0 text-left shadow-sm transition;
+    border-radius: 13px;
+  }
+
+  .editor-story-image:hover {
+    @apply border-violet-400 shadow-lg;
+    transform: translateY(-1px);
+  }
+
+  .editor-story-image:focus-visible {
+    @apply outline-none ring-2 ring-violet-500 ring-offset-3;
+  }
+
+  .editor-story-image-frame {
+    @apply relative flex min-h-64 items-center justify-center overflow-hidden bg-zinc-950;
+  }
+
+  .editor-story-image-frame img {
+    @apply block max-h-[72vh] w-full object-contain;
+  }
+
+  .editor-story-image-frame.empty {
+    @apply min-h-44 border-b border-dashed border-zinc-700 bg-zinc-900;
+  }
+
+  .editor-story-image-empty {
+    @apply px-8 text-center text-sm font-medium text-zinc-400;
+  }
+
+  .editor-story-image-action {
+    @apply absolute bottom-3 right-3 bg-white/95 px-3 py-2 text-xs font-semibold text-zinc-950 shadow-lg backdrop-blur;
+    border-radius: 8px;
+  }
+
+  .editor-story-image-details {
+    @apply flex items-center justify-between gap-3 border-t border-white/10 bg-zinc-950 px-4 py-3;
+  }
+
+  .editor-story-image-details strong {
+    @apply min-w-0 truncate text-xs font-semibold text-white;
+  }
+
+  .editor-story-image-details small {
+    @apply shrink-0 text-[11px] text-emerald-300;
+  }
+
+  .story-editor-footer {
+    @apply flex items-center justify-between gap-4 px-1 pt-4;
+  }
+
+  .story-editor-footer span {
+    @apply text-xs text-zinc-400;
+  }
+
+  .image-carousel-card {
+    @apply w-full;
+  }
+
+  .image-carousel-stage {
+    @apply grid min-h-0 flex-1 items-center gap-3;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+  }
+
+  .image-carousel-figure {
+    @apply m-0 flex min-h-0 flex-col overflow-hidden border border-zinc-200 bg-zinc-950;
+    border-radius: 12px;
+  }
+
+  .image-carousel-figure > img {
+    @apply block max-h-[50vh] min-h-64 w-full object-contain;
+  }
+
+  .image-carousel-figure figcaption {
+    @apply flex items-center justify-between gap-4 border-t border-white/10 px-4 py-3;
+  }
+
+  .image-carousel-figure figcaption > div {
+    @apply min-w-0;
+  }
+
+  .image-carousel-figure figcaption strong,
+  .image-carousel-figure figcaption small {
+    @apply block;
+  }
+
+  .image-carousel-figure figcaption strong {
+    @apply truncate text-xs font-semibold text-white;
+  }
+
+  .image-carousel-figure figcaption small {
+    @apply mt-1 text-[11px] text-zinc-400;
+  }
+
+  .image-carousel-figure .recommended-pill {
+    @apply static shrink-0;
+  }
+
+  .image-carousel-arrow {
+    @apply flex size-11 cursor-pointer items-center justify-center border border-zinc-200 bg-white text-lg font-semibold text-zinc-700 shadow-sm transition;
+    border-radius: 999px;
+  }
+
+  .image-carousel-arrow:hover:not(:disabled) {
+    @apply border-violet-300 bg-violet-50 text-violet-700;
+  }
+
+  .image-carousel-arrow:focus-visible {
+    @apply outline-none ring-2 ring-violet-500 ring-offset-2;
+  }
+
+  .image-carousel-arrow:disabled {
+    @apply cursor-default opacity-25;
+  }
+
+  .image-carousel-actions {
+    @apply flex justify-end gap-2;
+  }
+
+  .image-filmstrip {
+    @apply flex gap-2 overflow-x-auto border-t border-zinc-100 pt-3;
+  }
+
+  .image-filmstrip-item {
+    @apply relative h-16 w-24 shrink-0 cursor-pointer overflow-hidden border-2 border-transparent bg-zinc-950 p-0 opacity-60 transition;
+    border-radius: 8px;
+  }
+
+  .image-filmstrip-item:hover,
+  .image-filmstrip-item.active {
+    @apply border-violet-500 opacity-100;
+  }
+
+  .image-filmstrip-item.selected::after {
+    content: "✓";
+    @apply absolute right-1 top-1 flex size-5 items-center justify-center bg-emerald-500 text-[10px] font-bold text-white;
+    border-radius: 999px;
+  }
+
+  .image-filmstrip-item img {
+    @apply size-full object-cover;
+  }
+
+  .image-filmstrip-item > span {
+    @apply absolute bottom-1 left-1 bg-zinc-950/80 px-1.5 py-0.5 text-[9px] font-semibold text-white;
+    border-radius: 4px;
+  }
+
+  .image-carousel-empty {
+    @apply flex min-h-64 flex-col items-center justify-center border border-dashed border-zinc-300 bg-zinc-50 p-8 text-center;
+    border-radius: 12px;
+  }
+
+  .image-carousel-empty strong {
+    @apply text-sm font-semibold text-zinc-800;
+  }
+
+  .image-carousel-empty p {
+    @apply mt-1 text-sm text-zinc-500;
   }
 
   .stack {
@@ -1055,10 +1087,16 @@
       @apply static max-h-none overflow-visible;
     }
 
-    .story-outline,
-    .image-choice-grid,
-    .dialog-image-grid {
+    .story-outline {
       @apply grid-cols-2;
+    }
+
+    .story-editor-intro {
+      @apply items-start;
+    }
+
+    .story-editor-intro > p {
+      @apply text-left;
     }
   }
 
@@ -1070,8 +1108,7 @@
 
     .plan-header,
     .image-picker-header,
-    .selected-image-heading,
-    .walkthrough-section-header {
+    .selected-image-heading {
       @apply static flex-col items-stretch;
     }
 
@@ -1085,37 +1122,98 @@
       @apply flex-1;
     }
 
-    .story-outline,
-    .image-choice-grid,
-    .dialog-image-grid {
+    .story-workspace-header .title-row h1 {
+      @apply text-base leading-snug;
+    }
+
+    .story-workspace-header .title-row .hint {
+      @apply text-[11px] leading-4;
+    }
+
+    .story-workspace-header .plan-header-actions {
+      @apply grid w-full items-center gap-2;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+    }
+
+    .story-workspace-header .mode-switch {
+      @apply col-span-3 m-0;
+    }
+
+    .story-workspace-header .header-actions .button {
+      @apply flex-none;
+    }
+
+    .story-workspace-header .save-status {
+      @apply text-[11px];
+    }
+
+    .story-outline {
       @apply grid-cols-1;
     }
 
-    .walkthrough-overview,
-    .step-content {
-      @apply p-4;
+    .story-editor-intro {
+      @apply flex-col gap-2;
     }
 
-    .walkthrough-step {
-      @apply gap-2;
-      grid-template-columns: 34px minmax(0, 1fr);
+    .story-editor-toolbar {
+      @apply top-3 overflow-x-auto;
     }
 
-    .step-rail span {
-      @apply size-8;
-      border-radius: 9px;
+    .editor-toolbar-tip {
+      @apply hidden;
     }
 
-    .story-image-frame {
+    .story-editor-content [data-story-overview] {
+      @apply px-5 py-8;
+    }
+
+    .story-editor-content [data-story-title] {
+      @apply text-3xl;
+    }
+
+    .story-editor-content [data-story-overview] > ul {
+      @apply grid-cols-1;
+    }
+
+    .story-editor-content [data-story-step] {
+      @apply px-5 pb-8 pt-14;
+    }
+
+    .story-editor-content [data-story-step]::before {
+      @apply left-5 top-7;
+    }
+
+    .editor-story-image-frame {
       @apply min-h-40;
     }
 
-    .story-image-caption {
-      grid-template-columns: auto minmax(0, 1fr);
+    .editor-story-image-details {
+      @apply items-start;
     }
 
-    .story-image-caption em {
-      @apply col-span-2;
+    .image-carousel-card {
+      @apply overflow-y-auto;
+    }
+
+    .image-carousel-stage {
+      @apply gap-2;
+      grid-template-columns: 36px minmax(0, 1fr) 36px;
+    }
+
+    .image-carousel-arrow {
+      @apply size-9;
+    }
+
+    .image-carousel-figure > img {
+      @apply min-h-44;
+    }
+
+    .image-carousel-figure figcaption {
+      @apply items-start;
+    }
+
+    .image-carousel-actions .button {
+      @apply flex-1;
     }
 
     .image-dialog-card {

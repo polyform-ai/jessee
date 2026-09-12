@@ -21,6 +21,21 @@ describe("createPlanPdf", () => {
     expect(text).not.toContain("What the user said");
     expect(text).not.toContain("The save is failing here");
   });
+
+  it("renders the complete story on one continuous PDF page", async () => {
+    const session = planSession(true);
+    const firstStep = session.captureAnalysis!.storySteps![0];
+    session.captureAnalysis!.storySteps = Array.from({ length: 4 }, (_, index) => ({
+      ...firstStep,
+      startSeconds: index * 12,
+      endSeconds: (index + 1) * 12,
+      title: `Story step ${index + 1}`
+    }));
+    const text = await createPlanPdf(session).text();
+    const mediaBox = text.match(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/);
+    expect(text).toContain("/Count 1");
+    expect(Number(mediaBox?.[2])).toBeGreaterThan(792);
+  });
 });
 
 function planSession(withImage = false): RecordingSession {

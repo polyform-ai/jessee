@@ -28,6 +28,9 @@
     "check": "tsc --noEmit && npm run build && npm test && npm run test:e2e"
   },
   "dependencies": {
+    "@tiptap/core": "^3.31.3",
+    "@tiptap/pm": "^3.31.3",
+    "@tiptap/starter-kit": "^3.31.3",
     "@vitejs/plugin-react": "^4.7.0",
     "jspdf": "^4.2.1",
     "vite": "^7.0.3"

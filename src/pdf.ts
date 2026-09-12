@@ -5,7 +5,17 @@ import type { CaptureStoryStep, RecordingSession } from "./types";
 export function createPlanPdf(session: RecordingSession): Blob {
   if (!session.captureAnalysis) throw new Error("A reviewed plan is required before creating the PDF.");
   const title = session.captureAnalysis.userGoal || session.tabTitle || "JesSee capture";
-  const pdf = new jsPDF({ unit: "pt", format: "letter" });
+  const pageWidth = 612;
+  const maximumPageHeight = 14_400;
+  const measurementPdf = new jsPDF({ unit: "pt", format: [pageWidth, maximumPageHeight], orientation: "portrait" });
+  let maxImageHeight = 360;
+  let contentHeight = drawPlan(measurementPdf, session, false, maxImageHeight);
+  if (contentHeight + 54 > maximumPageHeight) {
+    maxImageHeight = Math.max(120, Math.floor(maxImageHeight * ((maximumPageHeight - 54) / contentHeight)));
+    contentHeight = drawPlan(measurementPdf, session, false, maxImageHeight);
+  }
+  const pageHeight = Math.min(maximumPageHeight, Math.max(792, Math.ceil(contentHeight + 54)));
+  const pdf = new jsPDF({ unit: "pt", format: [pageWidth, pageHeight], orientation: "portrait" });
   pdf.setProperties({
     title,
     subject: "JesSee visual walkthrough",
@@ -13,34 +23,27 @@ export function createPlanPdf(session: RecordingSession): Blob {
     creator: "JesSee",
     keywords: "capture, visual walkthrough, explanation, evidence"
   });
-  drawPlan(pdf, session);
+  drawPlan(pdf, session, true, maxImageHeight);
   addFooter(pdf);
   return pdf.output("blob");
 }
 
-function drawPlan(pdf: jsPDF, session: RecordingSession): void {
+function drawPlan(pdf: jsPDF, session: RecordingSession, shouldRender: boolean, maxImageHeight: number): number {
   const analysis = session.captureAnalysis!;
   const storySteps = buildCaptureStory(analysis, session.transcript, session.timeline, session.screenshots);
   const margin = 44;
   const width = pdf.internal.pageSize.getWidth();
-  const height = pdf.internal.pageSize.getHeight();
   const maxTextWidth = width - margin * 2;
-  const bottom = height - 42;
   let y = margin;
-
-  const ensureSpace = (requiredHeight: number) => {
-    if (y + requiredHeight <= bottom) return;
-    pdf.addPage();
-    y = margin;
-  };
 
   const addHeading = (text: string, size = 16) => {
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(size);
     const lines = pdf.splitTextToSize(text, maxTextWidth);
-    ensureSpace(lines.length * (size + 5) + 12);
-    pdf.setTextColor(24, 24, 27);
-    pdf.text(lines, margin, y);
+    if (shouldRender) {
+      pdf.setTextColor(24, 24, 27);
+      pdf.text(lines, margin, y);
+    }
     y += lines.length * (size + 5) + 8;
   };
 
@@ -49,15 +52,15 @@ function drawPlan(pdf: jsPDF, session: RecordingSession): void {
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(10);
     const lines = pdf.splitTextToSize(text, maxTextWidth);
-    ensureSpace(lines.length * 13 + 10);
-    pdf.setTextColor(...color);
-    pdf.text(lines, margin, y);
+    if (shouldRender) {
+      pdf.setTextColor(...color);
+      pdf.text(lines, margin, y);
+    }
     y += lines.length * 13 + 10;
   };
 
   const addEvidenceImage = (step: CaptureStoryStep, screenshot: RecordingSession["screenshots"][number], index: number) => {
     const props = pdf.getImageProperties(screenshot.dataUrl);
-    const maxImageHeight = 360;
     const naturalHeight = (props.height * maxTextWidth) / props.width;
     const imageHeight = Math.min(maxImageHeight, naturalHeight);
     const imageWidth = Math.min(maxTextWidth, (props.width * imageHeight) / props.height);
@@ -65,21 +68,22 @@ function drawPlan(pdf: jsPDF, session: RecordingSession): void {
     const captionLines = pdf.splitTextToSize(caption, imageWidth - 24);
     const captionHeight = Math.max(1, captionLines.length) * 11;
     const cardHeight = imageHeight + captionHeight + 58;
-    ensureSpace(cardHeight);
-    pdf.setFillColor(250, 250, 250);
-    pdf.setDrawColor(228, 228, 231);
-    pdf.roundedRect(margin, y, imageWidth, cardHeight - 8, 8, 8, "FD");
-    pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(10);
-    pdf.setTextColor(24, 24, 27);
-    pdf.text(`Step ${index + 1} - selected visual at ${formatTimestamp(screenshot.capturedAtMs)}`, margin + 12, y + 18);
-    pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(9);
-    pdf.setTextColor(82, 82, 91);
-    pdf.text(captionLines, margin + 12, y + 32);
-    const imageY = y + 38 + captionHeight;
-    const format = screenshot.dataUrl.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
-    pdf.addImage(screenshot.dataUrl, format, margin + (maxTextWidth - imageWidth) / 2, imageY, imageWidth, imageHeight, undefined, "SLOW");
+    if (shouldRender) {
+      pdf.setFillColor(250, 250, 250);
+      pdf.setDrawColor(228, 228, 231);
+      pdf.roundedRect(margin, y, imageWidth, cardHeight - 8, 8, 8, "FD");
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(10);
+      pdf.setTextColor(24, 24, 27);
+      pdf.text(`Step ${index + 1} - selected visual at ${formatTimestamp(screenshot.capturedAtMs)}`, margin + 12, y + 18);
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(9);
+      pdf.setTextColor(82, 82, 91);
+      pdf.text(captionLines, margin + 12, y + 32);
+      const imageY = y + 38 + captionHeight;
+      const format = screenshot.dataUrl.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
+      pdf.addImage(screenshot.dataUrl, format, margin + (maxTextWidth - imageWidth) / 2, imageY, imageWidth, imageHeight, undefined, "SLOW");
+    }
     y += cardHeight + 10;
   };
 
@@ -95,7 +99,6 @@ function drawPlan(pdf: jsPDF, session: RecordingSession): void {
   addHeading("Walkthrough");
   storySteps.forEach((step, index) => {
     const screenshot = step.screenshotId ? session.screenshots.find((shot) => shot.id === step.screenshotId) : undefined;
-    ensureSpace(130);
     addHeading(`${index + 1}. ${step.title}`, 14);
     addParagraph(step.narrative);
     if (step.pageUrl) addParagraph(`Reference: ${step.pageTitle || step.pageUrl}${step.pageTitle ? ` - ${step.pageUrl}` : ""}`, [3, 105, 161]);
@@ -107,6 +110,7 @@ function drawPlan(pdf: jsPDF, session: RecordingSession): void {
       }
     }
   });
+  return y;
 }
 
 function formatTimestamp(milliseconds: number): string {
@@ -120,19 +124,15 @@ function formatSeconds(value: number): string {
 }
 
 function addFooter(pdf: jsPDF): void {
-  const pageCount = pdf.getNumberOfPages();
   const width = pdf.internal.pageSize.getWidth();
   const height = pdf.internal.pageSize.getHeight();
-  for (let page = 1; page <= pageCount; page += 1) {
-    pdf.setPage(page);
-    pdf.setDrawColor(228, 228, 231);
-    pdf.line(44, height - 30, width - 44, height - 30);
-    pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(8);
-    pdf.setTextColor(113, 113, 122);
-    pdf.text("JesSee visual walkthrough", 44, height - 17);
-    pdf.text(`Page ${page} of ${pageCount}`, width - 44, height - 17, { align: "right" });
-  }
+  pdf.setDrawColor(228, 228, 231);
+  pdf.line(44, height - 30, width - 44, height - 30);
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(8);
+  pdf.setTextColor(113, 113, 122);
+  pdf.text("JesSee visual walkthrough", 44, height - 17);
+  pdf.text("One continuous story", width - 44, height - 17, { align: "right" });
 }
 
 export function planPdfFilename(title: string, now = new Date()): string {

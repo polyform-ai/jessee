@@ -1,4 +1,4 @@
-import { test, expect, chromium } from "@playwright/test";
+import { test, expect, chromium, type Locator, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -6,6 +6,18 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+async function replaceEditorText(page: Page, locator: Locator, value: string): Promise<void> {
+  await locator.click();
+  await locator.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  });
+  await page.keyboard.insertText(value);
+}
 
 test("loads extension settings page", async () => {
   execFileSync("npm", ["run", "build"], { cwd: resolve(__dirname, ".."), stdio: "inherit" });
@@ -117,44 +129,44 @@ test("loads extension settings page", async () => {
     }, { overviewScreenshot, problemScreenshot });
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto(`chrome-extension://${extensionId}/plan.html`);
-    await expect(page.getByRole("heading", { name: "The complete explanation, step by step" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Read" })).toHaveAttribute("aria-pressed", "true");
-    await expect(page.locator(".walkthrough-step")).toHaveCount(2);
+    await expect(page.getByRole("heading", { name: "Make the document sound like you" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Edit" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("toolbar", { name: "Story formatting" })).toBeVisible();
+    await expect(page.locator("[data-story-step]" )).toHaveCount(2);
     await expect(page.getByRole("img", { name: /Selected visual for step 1/ })).toBeVisible();
     await expect(page.getByRole("img", { name: /Selected visual for step 2/ })).toBeVisible();
     await expect(page.getByText("What the user said", { exact: false })).toHaveCount(0);
     if (process.env.JESSEE_VISUAL_QA) {
       await page.screenshot({ path: resolve(__dirname, "../website/assets/playbook-review.png") });
     }
-    await page.getByRole("button", { name: "View alternative images for step 1" }).click();
+    await page.getByRole("button", { name: "Change image for step 1" }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Choose the clearest moment" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Step through the captured moments" })).toBeVisible();
     if (process.env.JESSEE_VISUAL_QA) {
       await page.screenshot({ path: resolve(__dirname, "../test-results/image-picker-modal.png") });
     }
-    await page.getByRole("radio", { name: /Choose image 2/ }).click();
+    await page.getByRole("button", { name: "Next captured image" }).click();
+    await expect(page.getByText("2 of 2", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Use this image" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page.getByRole("img", { name: /Selected visual for step 1: JesSee - The communication gap/ })).toBeVisible();
     await expect.poll(() => page.evaluate(async () => {
       const stored = await chrome.storage.local.get("recordingSession");
       return stored.recordingSession?.captureAnalysis?.storySteps?.[0]?.screenshotId;
     })).toBe("shot-2");
-    await page.getByRole("button", { name: "Edit" }).click();
-    await expect(page.getByRole("button", { name: "Edit" })).toHaveAttribute("aria-pressed", "true");
     if (process.env.JESSEE_VISUAL_QA) {
       await page.screenshot({ path: resolve(__dirname, "../test-results/playbook-edit.png") });
     }
-    await expect(page.getByText("Opened", { exact: true })).toBeVisible();
-    await expect(page.getByText("Original narration", { exact: false }).first()).toBeVisible();
-    await page.getByRole("button", { name: "Add step" }).click();
-    await expect(page.getByText("Added step", { exact: true })).toBeVisible();
-    await page.locator("#planNarrative-2").fill("Add the final confirmation to the story.");
+    await page.getByRole("button", { name: "Add another step" }).click();
+    await expect(page.locator("[data-story-step]")).toHaveCount(3);
+    const newStepNarrative = page.locator("[data-story-step]").nth(2).locator("p").first();
+    await replaceEditorText(page, newStepNarrative, "Add the final confirmation to the story.");
     await expect.poll(() => page.evaluate(async () => {
       const stored = await chrome.storage.local.get("recordingSession");
       return stored.recordingSession?.captureAnalysis?.storySteps?.find((step: { kind?: string }) => step.kind === "manual")?.narrative;
     })).toBe("Add the final confirmation to the story.");
     await expect(page.getByText("Saved automatically", { exact: true })).toBeVisible();
-    await page.getByLabel("Outcome").fill("Show the updated visual workflow");
+    await replaceEditorText(page, page.locator("[data-story-title]"), "Show the updated visual workflow");
     await expect.poll(() => page.evaluate(async () => {
       const stored = await chrome.storage.local.get("recordingSession");
       return stored.recordingSession?.captureAnalysis?.userGoal;
@@ -181,13 +193,12 @@ test("loads extension settings page", async () => {
       const download = await downloadPromise;
       await download.saveAs(resolve(pdfDirectory, "jessee-explains-jessee.pdf"));
     }
-    await page.getByRole("button", { name: "Edit" }).click();
-    await page.getByLabel("Summary").fill("A revised story must be regenerated.");
+    await replaceEditorText(page, page.locator("[data-story-summary]"), "A revised story must be regenerated.");
     await expect(page.getByRole("button", { name: "Generate PDF" })).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByRole("button", { name: "Read" }).click();
-    await expect(page.getByRole("button", { name: "Read" })).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByRole("button", { name: "View alternative images for step 1" })).toBeVisible();
+    await page.getByRole("button", { name: "Preview" }).click();
+    await expect(page.getByRole("button", { name: "Preview" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: "Change image for step 1" })).toBeVisible();
     if (process.env.JESSEE_VISUAL_QA) {
       await page.screenshot({ path: resolve(__dirname, "../test-results/playbook-mobile.png") });
     }
