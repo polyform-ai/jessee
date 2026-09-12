@@ -16,6 +16,7 @@ async function replaceEditorText(page: Page, locator: Locator, value: string): P
     selection?.removeAllRanges();
     selection?.addRange(range);
   });
+  await page.keyboard.press("Backspace");
   await page.keyboard.insertText(value);
 }
 

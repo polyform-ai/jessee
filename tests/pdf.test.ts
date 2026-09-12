@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { jsPDF } from "jspdf";
+import { describe, expect, it, vi } from "vitest";
 import { createPlanPdf, planPdfFilename } from "../src/pdf";
 import type { RecordingSession } from "../src/types";
 
@@ -91,6 +92,10 @@ describe("createPlanPdf", () => {
   });
 
   it("scales an unusually long story without clipping its final step", async () => {
+    const imageProperties = vi.spyOn(
+      jsPDF.API as unknown as { getImageProperties: (imageData: string) => unknown },
+      "getImageProperties"
+    );
     const session = planSession(true);
     const firstStep = session.captureAnalysis!.storySteps![0];
     session.captureAnalysis!.storySteps = Array.from({ length: 80 }, (_, index) => ({
@@ -105,6 +110,8 @@ describe("createPlanPdf", () => {
     expect(text).toContain("/Count 1");
     expect(Number(mediaBox?.[2])).toBeLessThanOrEqual(14_400);
     expect(text).toContain("Final visible step");
+    expect(imageProperties).toHaveBeenCalledTimes(1);
+    imageProperties.mockRestore();
   });
 });
 

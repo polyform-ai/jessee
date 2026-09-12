@@ -18,25 +18,32 @@ interface PositionedRun extends RichTextRun {
   width: number;
 }
 
+interface ImageDimensions {
+  width: number;
+  height: number;
+}
+
 export function createPlanPdf(session: RecordingSession): Blob {
   if (!session.captureAnalysis) throw new Error("A reviewed plan is required before creating the PDF.");
   const title = session.captureAnalysis.userGoal || session.tabTitle || "JesSee capture";
   const measurementPdf = new jsPDF({ unit: "pt", format: [PAGE_WIDTH, MAXIMUM_PAGE_HEIGHT], orientation: "portrait" });
+  const storySteps = buildCaptureStory(session.captureAnalysis, session.transcript, session.timeline, session.screenshots);
+  const imageDimensions = measureSelectedImages(measurementPdf, storySteps, session.screenshots);
   const availableHeight = MAXIMUM_PAGE_HEIGHT - FOOTER_SPACE;
   let contentScale = 1;
-  let contentHeight = drawPlan(measurementPdf, session, false, contentScale);
+  let contentHeight = drawPlan(measurementPdf, session, storySteps, imageDimensions, false, contentScale);
 
   if (contentHeight > availableHeight) {
     let lowerScale = 0.001;
     let upperScale = 1;
     for (let attempt = 0; attempt < 24; attempt += 1) {
       const candidateScale = (lowerScale + upperScale) / 2;
-      const candidateHeight = drawPlan(measurementPdf, session, false, candidateScale);
+      const candidateHeight = drawPlan(measurementPdf, session, storySteps, imageDimensions, false, candidateScale);
       if (candidateHeight <= availableHeight) lowerScale = candidateScale;
       else upperScale = candidateScale;
     }
     contentScale = lowerScale;
-    contentHeight = drawPlan(measurementPdf, session, false, contentScale);
+    contentHeight = drawPlan(measurementPdf, session, storySteps, imageDimensions, false, contentScale);
   }
 
   const pageHeight = Math.max(MINIMUM_PAGE_HEIGHT, Math.ceil(contentHeight + FOOTER_SPACE));
@@ -49,14 +56,20 @@ export function createPlanPdf(session: RecordingSession): Blob {
     creator: "JesSee",
     keywords: "capture, visual walkthrough, explanation, evidence"
   });
-  drawPlan(pdf, session, true, contentScale);
+  drawPlan(pdf, session, storySteps, imageDimensions, true, contentScale);
   addFooter(pdf);
   return pdf.output("blob");
 }
 
-function drawPlan(pdf: jsPDF, session: RecordingSession, shouldRender: boolean, scale: number): number {
+function drawPlan(
+  pdf: jsPDF,
+  session: RecordingSession,
+  storySteps: CaptureStoryStep[],
+  imageDimensions: ReadonlyMap<string, ImageDimensions>,
+  shouldRender: boolean,
+  scale: number
+): number {
   const analysis = session.captureAnalysis!;
-  const storySteps = buildCaptureStory(analysis, session.transcript, session.timeline, session.screenshots);
   const editorDocument = analysis.editorDocument;
   const overviewNode = childOfType(editorDocument, "storyOverview");
   const editorSteps = childrenOfType(editorDocument, "storyStep");
@@ -95,7 +108,8 @@ function drawPlan(pdf: jsPDF, session: RecordingSession, shouldRender: boolean, 
   const addParagraph = (runs: RichTextRun[], color: [number, number, number] = [63, 63, 70]) => addRichText(runs, 10, color, false, 10);
 
   const addEvidenceImage = (step: CaptureStoryStep, screenshot: RecordingSession["screenshots"][number], index: number) => {
-    const props = pdf.getImageProperties(screenshot.dataUrl);
+    const props = imageDimensions.get(screenshot.id);
+    if (!props) throw new Error(`Could not read image dimensions for ${screenshot.id}.`);
     const maximumImageHeight = 360 * scale;
     const naturalHeight = (props.height * maxTextWidth) / props.width;
     const imageHeight = Math.min(maximumImageHeight, naturalHeight);
@@ -253,7 +267,27 @@ function runsFromNode(node: SerializedEditorNode | undefined, fallback: string):
     current.content?.forEach(visit);
   };
   visit(node);
-  return runs.length ? runs : plainRuns(fallback);
+  return runs.length ? runs : plainRuns("");
+}
+
+function measureSelectedImages(
+  pdf: jsPDF,
+  storySteps: CaptureStoryStep[],
+  screenshots: RecordingSession["screenshots"]
+): Map<string, ImageDimensions> {
+  const dimensions = new Map<string, ImageDimensions>();
+  for (const step of storySteps) {
+    if (!step.screenshotId || dimensions.has(step.screenshotId)) continue;
+    const screenshot = screenshots.find((candidate) => candidate.id === step.screenshotId);
+    if (!screenshot) continue;
+    try {
+      const properties = pdf.getImageProperties(screenshot.dataUrl);
+      dimensions.set(screenshot.id, { width: properties.width, height: properties.height });
+    } catch {
+      // The renderer will replace unreadable selected images with a text placeholder.
+    }
+  }
+  return dimensions;
 }
 
 function plainRuns(text: string): RichTextRun[] {

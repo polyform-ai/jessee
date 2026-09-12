@@ -292,8 +292,10 @@ export function buildEditorDocument(
 
 export function parseEditorDocument(document: JSONContent, current: CaptureAnalysis): CaptureAnalysis {
   const overview = document.content?.find((node) => node.type === "storyOverview");
-  const title = jsonText(overview?.content?.find((node) => node.type === "storyTitle")) || current.userGoal;
-  const summary = jsonText(overview?.content?.find((node) => node.type === "storySummary")) || current.story;
+  const titleNode = overview?.content?.find((node) => node.type === "storyTitle");
+  const summaryNode = overview?.content?.find((node) => node.type === "storySummary");
+  const title = titleNode ? jsonText(titleNode) : current.userGoal;
+  const summary = summaryNode ? jsonText(summaryNode) : current.story;
   const keyPoints = overview?.content?.find((node) => node.type === "bulletList")?.content
     ?.map((item) => jsonText(item).trim())
     .filter(Boolean) ?? [];

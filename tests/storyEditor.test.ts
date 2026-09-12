@@ -31,6 +31,17 @@ describe("visual story editor document", () => {
     expect(updated.editorDocument?.content?.[0].content?.[0].content?.[0].marks).toEqual([{ type: "bold" }]);
     expect(updated.editorDocument?.content?.[1].content?.at(-1)?.attrs).toEqual({ stepIndex: 0, screenshotId: "shot-2" });
   });
+
+  it("keeps intentionally cleared overview fields empty", () => {
+    const document = buildEditorDocument(analysis(), steps(), screenshots());
+    document.content![0].content![0].content = [];
+    document.content![0].content![1].content = [];
+
+    const updated = parseEditorDocument(document, analysis());
+
+    expect(updated.userGoal).toBe("");
+    expect(updated.story).toBe("");
+  });
 });
 
 function analysis(): CaptureAnalysis {
