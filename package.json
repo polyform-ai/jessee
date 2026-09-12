@@ -1,6 +1,6 @@
 {
   "name": "jessee-extension",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "description": "Chrome and Safari extension that turns screen walkthroughs into structured AI-ready documents.",
   "license": "MIT",
   "repository": {
@@ -15,8 +15,8 @@
   "scripts": {
     "build": "vite build",
     "safari:resources": "npm run build && node scripts/prepare-safari-resources.mjs",
-    "build:safari": "npm run safari:resources && xcodebuild -project safari/JesSee.xcodeproj -scheme JesSee -configuration Debug -derivedDataPath safari/build build",
-    "build:safari:unsigned": "npm run safari:resources && xcodebuild -project safari/JesSee.xcodeproj -scheme JesSee -configuration Debug -derivedDataPath safari/build CODE_SIGNING_ALLOWED=NO build",
+    "build:safari": "npm run safari:resources && xcodebuild -project safari/JesSee.xcodeproj -scheme JesSee -configuration Debug -derivedDataPath safari/build build && node scripts/validate-safari-bundle.mjs",
+    "build:safari:unsigned": "npm run safari:resources && xcodebuild -project safari/JesSee.xcodeproj -scheme JesSee -configuration Debug -derivedDataPath safari/build CODE_SIGNING_ALLOWED=NO build && node scripts/validate-safari-bundle.mjs",
     "release:package": "npm run safari:resources && node scripts/package-release.mjs",
     "site:build": "node scripts/prepare-website.mjs",
     "site:preview": "npm run site:build && wrangler pages dev ./site-dist",

@@ -57,8 +57,11 @@ async function render(message = ""): Promise<void> {
             <button class="button primary" id="save">Save</button>
             <button class="button secondary" id="delete">Remove key</button>
           </div>
-          <button class="button secondary" id="testAiSetup">Test AI setup</button>
-          <p class="hint">Checks access to GPT-5.6 Sol and GPT-4o Transcribe Diarize before you record. JesSee never silently switches to an older model.</p>
+          <div class="ai-test-control">
+            <button class="button secondary" id="testAiSetup">Test AI setup</button>
+            <div class="inline-feedback" id="aiTestResult" role="status" aria-live="polite" hidden></div>
+          </div>
+          <p class="hint">Checks access to GPT-5.6 Sol and GPT-4o Transcribe Diarize before you record. The result appears here, next to the test.</p>
           <div class="field">
             <label><input id="privateMode" type="checkbox" ${settings.privateMode ? "checked" : ""} /> Private Mode</label>
             <p class="hint">Keep screenshot pixels on this computer. JesSee sends narration, timestamps, timeline metadata, and screenshot IDs to create the plan, then attaches your selected local images to the PDF.</p>
@@ -135,15 +138,26 @@ async function render(message = ""): Promise<void> {
   });
   document.querySelector("#testAiSetup")?.addEventListener("click", async () => {
     const input = document.querySelector<HTMLInputElement>("#apiKey");
+    const button = document.querySelector<HTMLButtonElement>("#testAiSetup");
     const draftKey = input?.value.trim();
     const candidateKey = draftKey && !draftKey.includes("•") ? draftKey : undefined;
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Testing AI…";
+    }
+    updateAiTestStatus("checking", "Checking both required models…");
     try {
       const response = await sendRuntimeMessage({ type: "TEST_AI_SETUP", apiKey: candidateKey });
       if (!response.ok) throw new Error(response.error ?? "AI setup test failed.");
       if (candidateKey) await saveSettings({ openAiKey: candidateKey });
-      await render("AI setup is ready: GPT-5.6 Sol and GPT-4o Transcribe Diarize are available.");
+      updateAiTestStatus("ready", "AI setup is ready. Planning and transcription are both available.");
     } catch (error) {
-      await render(error instanceof Error ? error.message : String(error));
+      updateAiTestStatus("error", error instanceof Error ? error.message : String(error));
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = "Test AI setup";
+      }
     }
   });
   document.querySelector("#chooseFolder")?.addEventListener("click", async () => {
@@ -210,6 +224,14 @@ function microphoneErrorMessage(error: unknown): string {
   if (/dismiss|abort|cancel/i.test(message)) return "Microphone permission was dismissed. Click Enable Microphone again and allow access in your browser.";
   if (/denied|notallowed|not allowed|permission/i.test(message)) return "Microphone access is blocked. Enable it for JesSee in your browser's microphone settings, then try again.";
   return `Could not enable microphone. ${message}`;
+}
+
+function updateAiTestStatus(state: "checking" | "ready" | "error", message: string): void {
+  const result = document.querySelector<HTMLElement>("#aiTestResult");
+  if (!result) return;
+  result.hidden = false;
+  result.className = `inline-feedback ${state}`;
+  result.textContent = message;
 }
 
 function escapeHtml(value: string): string {

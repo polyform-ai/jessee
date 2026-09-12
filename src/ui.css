@@ -275,12 +275,289 @@
     border-radius: 999px;
   }
 
+  .walkthrough-document {
+    @apply mx-auto flex max-w-5xl flex-col gap-8 pb-20;
+  }
+
+  .plan-header-actions {
+    @apply flex-wrap justify-end;
+  }
+
+  .mode-switch {
+    @apply mr-1;
+  }
+
+  .walkthrough-overview {
+    @apply gap-5 p-7;
+    border-radius: 16px;
+  }
+
+  .document-title {
+    @apply max-w-4xl text-3xl font-semibold leading-tight tracking-[-0.025em] text-zinc-950;
+  }
+
+  .document-summary {
+    @apply max-w-3xl text-base leading-7 text-zinc-600;
+  }
+
+  .takeaway-block {
+    @apply border-t border-zinc-100 pt-5;
+  }
+
+  .takeaway-block h3 {
+    @apply m-0 text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500;
+  }
+
+  .takeaway-block ul {
+    @apply mt-3 grid list-none gap-3 p-0 md:grid-cols-2;
+  }
+
+  .takeaway-block li {
+    @apply relative border border-zinc-200 bg-zinc-50 py-3 pl-10 pr-4 text-sm leading-6 text-zinc-800;
+    border-radius: 10px;
+  }
+
+  .takeaway-block li::before {
+    content: "✓";
+    @apply absolute left-3 top-3 flex size-5 items-center justify-center bg-violet-100 text-[10px] font-bold text-violet-700;
+    border-radius: 999px;
+  }
+
+  .overview-edit-grid {
+    @apply grid gap-4 md:grid-cols-2;
+  }
+
+  .overview-key-points {
+    @apply md:col-span-2;
+  }
+
+  .walkthrough-steps {
+    @apply flex flex-col gap-6;
+  }
+
+  .walkthrough-section-header {
+    @apply flex items-start justify-between gap-4;
+  }
+
+  .walkthrough-section-header > div {
+    @apply min-w-0;
+  }
+
+  .walkthrough-section-header h2 {
+    @apply text-xl font-semibold tracking-[-0.02em];
+  }
+
+  .walkthrough-section-header p:not(.section-eyebrow) {
+    @apply mt-1 max-w-3xl text-sm leading-6 text-zinc-500;
+  }
+
+  .story-document {
+    @apply flex flex-col;
+  }
+
+  .walkthrough-step {
+    @apply grid gap-5;
+    grid-template-columns: 46px minmax(0, 1fr);
+  }
+
+  .step-rail {
+    @apply flex min-h-full flex-col items-center;
+  }
+
+  .step-rail span {
+    @apply flex size-10 shrink-0 items-center justify-center border border-violet-200 bg-violet-50 text-xs font-bold text-violet-700;
+    border-radius: 12px;
+  }
+
+  .step-rail i {
+    @apply my-2 w-px flex-1 bg-zinc-200;
+  }
+
+  .walkthrough-step:last-child .step-rail i {
+    @apply bg-transparent;
+  }
+
+  .step-content {
+    @apply mb-8 flex min-w-0 flex-col gap-4 border border-zinc-200/80 bg-white p-6 shadow-sm;
+    border-radius: 14px;
+  }
+
+  .step-title {
+    @apply text-xl font-semibold leading-tight tracking-[-0.02em];
+  }
+
+  .step-narrative {
+    @apply max-w-3xl text-[15px] leading-7 text-zinc-700;
+  }
+
+  .step-edit-fields {
+    @apply grid gap-4;
+  }
+
+  .story-image-trigger {
+    @apply flex w-full cursor-pointer flex-col overflow-hidden border border-zinc-200 bg-zinc-950 p-0 text-left shadow-sm transition;
+    border-radius: 12px;
+  }
+
+  .story-image-trigger:hover:not(:disabled) {
+    @apply border-violet-400 shadow-md;
+    transform: translateY(-1px);
+  }
+
+  .story-image-trigger:focus-visible {
+    @apply outline-none ring-2 ring-violet-500 ring-offset-2;
+  }
+
+  .story-image-frame {
+    @apply relative flex min-h-64 items-center justify-center overflow-hidden bg-zinc-950;
+  }
+
+  .story-image-frame img {
+    @apply block max-h-[70vh] w-full object-contain;
+  }
+
+  .image-action {
+    @apply absolute bottom-3 right-3 bg-white/95 px-3 py-2 text-xs font-semibold text-zinc-950 shadow-lg backdrop-blur;
+    border-radius: 8px;
+  }
+
+  .story-image-caption {
+    @apply grid items-center gap-3 border-t border-white/10 bg-zinc-950 px-4 py-3 text-xs;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .story-image-caption strong {
+    @apply text-white;
+  }
+
+  .story-image-caption span {
+    @apply truncate text-zinc-400;
+  }
+
+  .story-image-caption em {
+    @apply not-italic text-emerald-300;
+  }
+
+  .story-image-trigger.empty {
+    @apply border-dashed border-zinc-300 bg-zinc-50;
+  }
+
+  .story-image-empty {
+    @apply flex min-h-44 items-center justify-center p-8 text-center text-sm font-medium text-zinc-500;
+  }
+
+  .compact-context {
+    @apply grid items-center gap-x-3 gap-y-0.5;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .compact-context span {
+    @apply row-span-2;
+  }
+
+  .compact-context small {
+    @apply truncate;
+  }
+
+  .source-narration {
+    @apply border-t border-zinc-100 pt-3;
+  }
+
+  .source-narration summary {
+    @apply flex cursor-pointer list-none items-center justify-between text-xs font-semibold text-zinc-600;
+  }
+
+  .source-narration summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .source-narration summary::after {
+    content: "+";
+    @apply ml-3 text-base font-normal text-zinc-400;
+  }
+
+  .source-narration[open] summary::after {
+    content: "−";
+  }
+
+  .source-narration summary span {
+    @apply ml-auto mr-2 font-mono text-[10px] font-medium text-zinc-400;
+  }
+
+  .source-narration blockquote {
+    @apply mb-0 ml-0 mr-0 mt-3 border-l-2 border-zinc-200 pl-4 text-sm leading-6 text-zinc-600;
+  }
+
+  .image-dialog {
+    @apply m-auto max-h-[88vh] w-[min(1080px,calc(100vw-32px))] overflow-hidden border-0 bg-transparent p-0;
+    border-radius: 16px;
+  }
+
+  .image-dialog::backdrop {
+    background: rgba(9, 9, 11, 0.68);
+    backdrop-filter: blur(4px);
+  }
+
+  .image-dialog-card {
+    @apply flex max-h-[88vh] flex-col gap-4 overflow-hidden border border-zinc-200 bg-white p-5 shadow-2xl;
+    border-radius: 16px;
+  }
+
+  .image-dialog-header {
+    @apply flex items-start justify-between gap-4;
+  }
+
+  .image-dialog-header > div {
+    @apply min-w-0;
+  }
+
+  .image-dialog-header h2 {
+    @apply text-xl font-semibold;
+  }
+
+  .image-dialog-header p:not(.section-eyebrow) {
+    @apply mt-1 max-w-3xl text-sm leading-6 text-zinc-500;
+  }
+
+  .image-dialog-toolbar {
+    @apply flex items-center justify-between gap-3 border-y border-zinc-100 py-3;
+  }
+
+  .image-dialog-toolbar > span {
+    @apply text-xs font-medium text-zinc-500;
+  }
+
+  .dialog-image-grid {
+    @apply min-h-0 flex-1 grid-cols-3 overflow-y-auto pr-1;
+  }
+
   .stack {
     @apply flex flex-col gap-3;
   }
 
   .row {
     @apply flex gap-2;
+  }
+
+  .ai-test-control {
+    @apply grid items-stretch gap-2 sm:grid-cols-[auto_minmax(0,1fr)];
+  }
+
+  .inline-feedback {
+    @apply flex min-h-9 items-center border px-3 py-2 text-xs font-medium leading-5;
+    border-radius: 8px;
+  }
+
+  .inline-feedback.checking {
+    @apply border-violet-200 bg-violet-50 text-violet-700;
+  }
+
+  .inline-feedback.ready {
+    @apply border-emerald-200 bg-emerald-50 text-emerald-700;
+  }
+
+  .inline-feedback.error {
+    @apply border-rose-200 bg-rose-50 text-rose-700;
   }
 
   .flow-actions {
@@ -779,7 +1056,8 @@
     }
 
     .story-outline,
-    .image-choice-grid {
+    .image-choice-grid,
+    .dialog-image-grid {
       @apply grid-cols-2;
     }
   }
@@ -792,7 +1070,8 @@
 
     .plan-header,
     .image-picker-header,
-    .selected-image-heading {
+    .selected-image-heading,
+    .walkthrough-section-header {
       @apply static flex-col items-stretch;
     }
 
@@ -807,8 +1086,40 @@
     }
 
     .story-outline,
-    .image-choice-grid {
+    .image-choice-grid,
+    .dialog-image-grid {
       @apply grid-cols-1;
+    }
+
+    .walkthrough-overview,
+    .step-content {
+      @apply p-4;
+    }
+
+    .walkthrough-step {
+      @apply gap-2;
+      grid-template-columns: 34px minmax(0, 1fr);
+    }
+
+    .step-rail span {
+      @apply size-8;
+      border-radius: 9px;
+    }
+
+    .story-image-frame {
+      @apply min-h-40;
+    }
+
+    .story-image-caption {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .story-image-caption em {
+      @apply col-span-2;
+    }
+
+    .image-dialog-card {
+      @apply p-3;
     }
 
     .story-stepper,
