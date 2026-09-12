@@ -59,6 +59,7 @@ describe("createPlanPdf", () => {
               content: [
                 { type: "text", text: "The save action" },
                 { type: "hardBreak" },
+                { type: "hardBreak" },
                 { type: "text", text: "does not complete." },
                 { type: "text", text: " Important.", marks: [{ type: "bold" }] }
               ]
@@ -68,11 +69,25 @@ describe("createPlanPdf", () => {
         }
       ]
     };
+    const firstStep = session.captureAnalysis!.storySteps![0];
+    session.captureAnalysis!.storySteps = Array.from({ length: 14 }, (_, index) => ({
+      ...firstStep,
+      startSeconds: index,
+      endSeconds: index + 1,
+      title: `Formatting step ${index + 1}`
+    }));
+    const singleBreakSession = structuredClone(session);
+    const singleBreakParagraph = singleBreakSession.captureAnalysis!.editorDocument!.content![1].content![1];
+    singleBreakParagraph.content!.splice(2, 1);
+    const singleBreakText = await createPlanPdf(singleBreakSession).text();
     const text = await createPlanPdf(session).text();
+    const singleBreakHeight = Number(singleBreakText.match(/\/MediaBox \[0 0 [\d.]+ ([\d.]+)\]/)?.[1]);
+    const doubleBreakHeight = Number(text.match(/\/MediaBox \[0 0 [\d.]+ ([\d.]+)\]/)?.[1]);
     expect(text).toContain("/F2 ");
     expect(text).toContain("/F3 ");
     expect(text).toContain("/F4 ");
     expect(text).not.toContain("The save actiondoes not complete.");
+    expect(doubleBreakHeight).toBeGreaterThan(singleBreakHeight);
   });
 
   it("scales an unusually long story without clipping its final step", async () => {

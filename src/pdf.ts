@@ -171,7 +171,7 @@ function wrapRichText(pdf: jsPDF, runs: RichTextRun[], maxWidth: number, fontSiz
   let lineWidth = 0;
 
   const nextLine = () => {
-    if (lines.at(-1)?.length || lines.length === 0) lines.push([]);
+    lines.push([]);
     lineWidth = 0;
   };
 
@@ -214,7 +214,6 @@ function wrapRichText(pdf: jsPDF, runs: RichTextRun[], maxWidth: number, fontSiz
       else addPiece(/^[ \t]+$/.test(piece) ? " " : piece, run);
     }
   }
-  if (lines.length > 1 && lines.at(-1)?.length === 0) lines.pop();
   return lines.length ? lines : [[]];
 }
 
