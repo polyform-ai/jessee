@@ -242,6 +242,10 @@ function runsFromNode(node: SerializedEditorNode | undefined, fallback: string):
   if (!node) return plainRuns(fallback);
   const runs: RichTextRun[] = [];
   const visit = (current: SerializedEditorNode) => {
+    if (current.type === "hardBreak") {
+      runs.push({ text: "\n", bold: false, italic: false });
+      return;
+    }
     if (typeof current.text === "string") {
       const markNames = new Set(current.marks?.map((mark) => mark.type) ?? []);
       runs.push({ text: current.text, bold: markNames.has("bold"), italic: markNames.has("italic") });

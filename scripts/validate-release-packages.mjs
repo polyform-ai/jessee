@@ -46,6 +46,7 @@ for (const browserPackage of packages) {
 
   const manifest = JSON.parse(readZipEntry(browserPackage.path, "manifest.json"));
   if (manifest.manifest_version !== 3) throw new Error(`${browserPackage.browser} package must use Manifest V3.`);
+  validateDeclaredVersion(manifest, version, browserPackage.browser);
   browserPackage.validateManifest(manifest);
 
   const referencedResources = collectManifestResources(manifest);
@@ -113,6 +114,19 @@ function requireValue(value, message) {
 
 function requirePermission(manifest, permission) {
   if (!(manifest.permissions ?? []).includes(permission)) throw new Error(`Chrome package must include the ${permission} permission.`);
+}
+
+function validateDeclaredVersion(manifest, releaseVersion, browser) {
+  const match = releaseVersion.match(/^(\d+)\.(\d+)\.(\d+)(?:-alpha\.(\d+))?$/);
+  if (!match) throw new Error(`Unsupported release version format: ${releaseVersion}`);
+  const [, major, minor, patch, alpha] = match;
+  const expectedVersion = [major, minor, patch, alpha].filter((part) => part !== undefined).join(".");
+  const expectedVersionName = alpha ? `${major}.${minor}.${patch} alpha ${alpha}` : `${major}.${minor}.${patch}`;
+  if (manifest.version !== expectedVersion || manifest.version_name !== expectedVersionName) {
+    throw new Error(
+      `${browser} package declares ${manifest.version} (${manifest.version_name ?? "no version_name"}) but release ${releaseVersion} requires ${expectedVersion} (${expectedVersionName}).`
+    );
+  }
 }
 
 function validateChecksums(packagePaths) {

@@ -54,15 +54,25 @@ describe("createPlanPdf", () => {
           type: "storyStep",
           content: [
             { type: "heading", content: [{ type: "text", text: "Save fails", marks: [{ type: "italic" }] }] },
-            { type: "paragraph", content: [{ type: "text", text: "The save action", marks: [{ type: "bold" }] }, { type: "text", text: " does not complete." }] },
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "The save action" },
+                { type: "hardBreak" },
+                { type: "text", text: "does not complete." },
+                { type: "text", text: " Important.", marks: [{ type: "bold" }] }
+              ]
+            },
             { type: "storyImage" }
           ]
         }
       ]
     };
     const text = await createPlanPdf(session).text();
+    expect(text).toContain("/F2 ");
     expect(text).toContain("/F3 ");
     expect(text).toContain("/F4 ");
+    expect(text).not.toContain("The save actiondoes not complete.");
   });
 
   it("scales an unusually long story without clipping its final step", async () => {
