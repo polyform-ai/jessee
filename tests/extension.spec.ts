@@ -174,6 +174,26 @@ test("loads extension settings page", async () => {
     });
     expect(nestedListStyle.listStyleType).toBe("circle");
     expect(nestedListStyle.paddingLeft).toBeGreaterThan(0);
+    const nestedOverviewListStyle = await page.evaluate(() => {
+      const editor = document.createElement("div");
+      editor.className = "story-editor-content";
+      const overview = document.createElement("section");
+      overview.dataset.storyOverview = "";
+      const outerList = document.createElement("ul");
+      const item = document.createElement("li");
+      const nestedList = document.createElement("ul");
+      item.append(nestedList);
+      outerList.append(item);
+      overview.append(outerList);
+      editor.append(overview);
+      document.body.append(editor);
+      const style = getComputedStyle(nestedList);
+      const result = { listStyleType: style.listStyleType, paddingLeft: Number.parseFloat(style.paddingLeft) };
+      editor.remove();
+      return result;
+    });
+    expect(nestedOverviewListStyle.listStyleType).toBe("circle");
+    expect(nestedOverviewListStyle.paddingLeft).toBeGreaterThan(0);
     await page.getByRole("button", { name: "Undo" }).click();
     await expect(firstStepBody.locator("ul")).toHaveCount(0);
     if (process.env.JESSEE_VISUAL_QA) {

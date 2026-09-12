@@ -179,7 +179,7 @@ export class StoryEditor {
         StoryStep,
         createStoryImage(options.onImageClick)
       ],
-      content: buildEditorDocument(options.analysis, options.storySteps, options.screenshots),
+      content: buildEditorDocument(options.analysis, options.storySteps, options.screenshots, options.editable),
       editable: options.editable,
       editorProps: {
         attributes: {
@@ -260,18 +260,20 @@ export class StoryEditor {
 export function buildEditorDocument(
   analysis: CaptureAnalysis,
   storySteps: CaptureStoryStep[],
-  screenshots: ScreenshotEvidence[]
+  screenshots: ScreenshotEvidence[],
+  keepEmptyKeyPointList = false
 ): JSONContent {
   if (analysis.editorDocument?.type === "doc") {
     const saved = structuredClone(analysis.editorDocument) as JSONContent;
     const savedSteps = saved.content?.filter((node) => node.type === "storyStep") ?? [];
     if (savedSteps.length === storySteps.length) {
       savedSteps.forEach((node, index) => hydrateStoryStep(node, storySteps[index], index, screenshots));
+      if (keepEmptyKeyPointList) ensureKeyPointList(saved);
       return saved;
     }
   }
   const keyPoints = analysis.keyPoints?.length ? analysis.keyPoints : analysis.breakingPoints ?? [];
-  return {
+  const document: JSONContent = {
     type: "doc",
     content: [
       {
@@ -288,6 +290,18 @@ export function buildEditorDocument(
       ...storySteps.map((step, index) => storyStepContent(step, index, screenshots))
     ]
   };
+  if (keepEmptyKeyPointList) ensureKeyPointList(document);
+  return document;
+}
+
+function ensureKeyPointList(document: JSONContent): void {
+  const overview = document.content?.find((node) => node.type === "storyOverview");
+  if (!overview || overview.content?.some((node) => node.type === "bulletList")) return;
+  overview.content ??= [];
+  overview.content.push({
+    type: "bulletList",
+    content: [{ type: "listItem", content: [{ type: "paragraph" }] }]
+  });
 }
 
 export function parseEditorDocument(document: JSONContent, current: CaptureAnalysis): CaptureAnalysis {

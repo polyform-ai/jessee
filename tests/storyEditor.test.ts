@@ -130,6 +130,27 @@ describe("visual story editor document", () => {
 
     expect(updated.keyPoints).toEqual(["Deploy to:", "Staging", "Keep the useful images"]);
   });
+
+  it("keeps an editable key-point list when the generated draft has no points", () => {
+    const emptyAnalysis = { ...analysis(), keyPoints: [], breakingPoints: [] };
+    const document = buildEditorDocument(emptyAnalysis, steps(), screenshots(), true);
+    const overview = document.content?.find((node) => node.type === "storyOverview");
+    const list = overview?.content?.find((node) => node.type === "bulletList");
+
+    expect(list?.content).toEqual([{ type: "listItem", content: [{ type: "paragraph" }] }]);
+    expect(parseEditorDocument(document, emptyAnalysis).keyPoints).toEqual([]);
+  });
+
+  it("restores the editable key-point affordance without mutating a saved cleared list", () => {
+    const savedDocument = buildEditorDocument(analysis(), steps(), screenshots());
+    savedDocument.content![0].content = savedDocument.content![0].content?.filter((node) => node.type !== "bulletList");
+    const savedAnalysis = { ...analysis(), keyPoints: [], editorDocument: savedDocument };
+
+    const editableDocument = buildEditorDocument(savedAnalysis, steps(), screenshots(), true);
+
+    expect(savedDocument.content![0].content?.some((node) => node.type === "bulletList")).toBe(false);
+    expect(editableDocument.content![0].content?.find((node) => node.type === "bulletList")?.content).toHaveLength(1);
+  });
 });
 
 function analysis(): CaptureAnalysis {
