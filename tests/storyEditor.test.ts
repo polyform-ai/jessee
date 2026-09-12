@@ -48,14 +48,25 @@ describe("visual story editor document", () => {
     document.content![1].content![1] = {
       type: "bulletList",
       content: [
-        { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "First detail" }] }] },
+        {
+          type: "listItem",
+          content: [
+            { type: "paragraph", content: [{ type: "text", text: "First detail" }] },
+            {
+              type: "bulletList",
+              content: [
+                { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Nested detail" }] }] }
+              ]
+            }
+          ]
+        },
         { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Second detail" }] }] }
       ]
     };
 
     const updated = parseEditorDocument(document, analysis());
 
-    expect(updated.storySteps?.[0].narrative).toBe("- First detail\n- Second detail");
+    expect(updated.storySteps?.[0].narrative).toBe("- First detail\n  - Nested detail\n- Second detail");
   });
 });
 

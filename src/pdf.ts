@@ -151,15 +151,11 @@ function drawPlan(
   addParagraph(runsFromNode(childOfType(overviewNode, "storySummary"), analysis.story));
 
   const keyPoints = analysis.keyPoints?.length ? analysis.keyPoints : analysis.breakingPoints ?? [];
-  const editorKeyPoints = childrenOfType(childOfType(overviewNode, "bulletList"), "listItem");
-  const renderedKeyPoints = overviewNode
-    ? editorKeyPoints.map((point) => runsFromNode(point, "")).filter(hasVisibleText)
-    : keyPoints.map(plainRuns);
-  if (renderedKeyPoints.length) {
+  const editorKeyPointRuns = overviewNode ? runsFromBulletList(childOfType(overviewNode, "bulletList")) : [];
+  if (hasVisibleText(editorKeyPointRuns) || keyPoints.length) {
     addHeading(plainRuns("Key points"));
-    renderedKeyPoints.forEach((point) => {
-      addParagraph([{ text: "- ", bold: false, italic: false }, ...point]);
-    });
+    if (overviewNode) addParagraph(editorKeyPointRuns);
+    else keyPoints.forEach((point) => addParagraph([{ text: "- ", bold: false, italic: false }, ...plainRuns(point)]));
   }
 
   addHeading(plainRuns("Walkthrough"));
@@ -252,13 +248,32 @@ function runsFromBodyNodes(nodes: SerializedEditorNode[], fallback: string): Ric
       runs.push(...runsFromNode(node, ""));
       return;
     }
-    const items = childrenOfType(node, "listItem").map((item) => runsFromNode(item, "")).filter(hasVisibleText);
-    items.forEach((item, itemIndex) => {
-      if (itemIndex) runs.push({ text: "\n", bold: false, italic: false });
-      runs.push({ text: "- ", bold: false, italic: false }, ...item);
-    });
+    runs.push(...runsFromBulletList(node));
   });
   return runs.length ? runs : plainRuns(fallback);
+}
+
+function runsFromBulletList(node: SerializedEditorNode | undefined, depth = 0): RichTextRun[] {
+  const runs: RichTextRun[] = [];
+  childrenOfType(node, "listItem").forEach((item) => {
+    const directRuns: RichTextRun[] = [];
+    childrenOfType(item, "paragraph").forEach((paragraph, paragraphIndex) => {
+      if (paragraphIndex) directRuns.push({ text: "\n", bold: false, italic: false });
+      directRuns.push(...runsFromNode(paragraph, ""));
+    });
+    const nestedLists = childrenOfType(item, "bulletList");
+    if (hasVisibleText(directRuns)) {
+      if (runs.length) runs.push({ text: "\n", bold: false, italic: false });
+      runs.push({ text: `${"  ".repeat(depth)}- `, bold: false, italic: false }, ...directRuns);
+    }
+    nestedLists.forEach((nestedList) => {
+      const nestedRuns = runsFromBulletList(nestedList, hasVisibleText(directRuns) ? depth + 1 : depth);
+      if (!hasVisibleText(nestedRuns)) return;
+      if (runs.length) runs.push({ text: "\n", bold: false, italic: false });
+      runs.push(...nestedRuns);
+    });
+  });
+  return runs;
 }
 
 function hasVisibleText(runs: RichTextRun[]): boolean {

@@ -333,10 +333,27 @@ export function parseEditorDocument(document: JSONContent, current: CaptureAnaly
 
 function storyBodyText(node: JSONContent): string {
   if (node.type !== "bulletList") return jsonText(node).trim();
+  return storyListText(node);
+}
+
+function storyListText(node: JSONContent, depth = 0): string {
   return (node.content ?? [])
-    .map((item) => jsonText(item).trim())
+    .filter((item) => item.type === "listItem")
+    .flatMap((item) => {
+      const directText = (item.content ?? [])
+        .filter((child) => child.type === "paragraph")
+        .map((paragraph) => jsonText(paragraph).trim())
+        .filter(Boolean)
+        .join(" ");
+      const lines = directText ? [`${"  ".repeat(depth)}- ${directText}`] : [];
+      const nestedDepth = directText ? depth + 1 : depth;
+      for (const nestedList of (item.content ?? []).filter((child) => child.type === "bulletList")) {
+        const nestedText = storyListText(nestedList, nestedDepth);
+        if (nestedText) lines.push(nestedText);
+      }
+      return lines;
+    })
     .filter(Boolean)
-    .map((item) => `- ${item}`)
     .join("\n");
 }
 

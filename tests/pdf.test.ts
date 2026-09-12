@@ -119,6 +119,18 @@ describe("createPlanPdf", () => {
               type: "bulletList",
               content: [
                 { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Open settings" }] }] },
+                {
+                  type: "listItem",
+                  content: [
+                    { type: "paragraph", content: [{ type: "text", text: "Deploy to:" }] },
+                    {
+                      type: "bulletList",
+                      content: [
+                        { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Staging" }] }] }
+                      ]
+                    }
+                  ]
+                },
                 { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Retry save" }] }] }
               ]
             },
@@ -132,6 +144,9 @@ describe("createPlanPdf", () => {
 
     expect(text).toContain("Second point remains");
     expect(text).toContain("Open settings");
+    expect(text).toContain("Deploy to:");
+    expect(text).toContain("Staging");
+    expect(text).not.toContain("Deploy to:Staging");
     expect(text).toContain("Retry save");
   });
 
