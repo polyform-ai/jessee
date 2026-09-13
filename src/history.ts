@@ -266,9 +266,9 @@ function closePreview(): void {
   render();
 }
 
-async function openCapture(): Promise<void> {
+async function openCapture(windowId?: number): Promise<void> {
   try {
-    const response = await sendRuntimeMessage({ type: "OPEN_RECORDER" });
+    const response = await sendRuntimeMessage({ type: "OPEN_RECORDER", windowId });
     if (!response.ok) throw new Error(response.error ?? "JesSee could not reopen the recorder.");
   } catch (error) {
     message = error instanceof Error ? error.message : String(error);
@@ -278,8 +278,9 @@ async function openCapture(): Promise<void> {
 
 async function startNewCapture(): Promise<void> {
   if (await guardActiveCapture()) return;
+  const previousSession = await getSession();
   await resetSession();
-  await openCapture();
+  await openCapture(previousSession.activeWindowId);
 }
 
 function observeThumbnails(): void {

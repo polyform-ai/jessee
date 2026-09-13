@@ -73,9 +73,10 @@ test("loads extension settings page", async () => {
     const controlsPage = await context.newPage();
     await controlsPage.goto(`chrome-extension://${extensionId}/controls.html`);
     await controlsPage.evaluate(async () => {
+      const currentWindow = await chrome.windows.getCurrent();
       await chrome.storage.local.set({
         settings: { email: "demo@example.test", openAiKey: "demo-key", microphoneEnabledAt: Date.now(), retentionDays: 30 },
-        recordingSession: { status: "recording", startedAt: Date.now(), timeline: [], screenshots: [] }
+        recordingSession: { status: "recording", startedAt: Date.now(), activeWindowId: currentWindow.id, timeline: [], screenshots: [] }
       });
     });
     await controlsPage.reload();

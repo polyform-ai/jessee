@@ -121,7 +121,7 @@ export interface CaptureStoryStep {
 
 export type RuntimeMessage =
   | { type: "GET_SESSION" }
-  | { type: "OPEN_RECORDER" }
+  | { type: "OPEN_RECORDER"; windowId?: number }
   | { type: "STOP_CAPTURE" }
   | { type: "PREPARE_CAPTURE_PLAN" }
   | { type: "GENERATE_PDF" }

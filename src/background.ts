@@ -40,9 +40,9 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   await appendEvent("url-change", tabId, `Navigated to ${tab.url ?? changeInfo.url ?? ""}`);
 });
 
-async function openRecorder(tab?: chrome.tabs.Tab): Promise<void> {
+async function openRecorder(tab?: chrome.tabs.Tab, preferredWindowId?: number): Promise<void> {
   const session = await getSession();
-  const recorderWindowId = recorderOwnsWindow(session) ? session.activeWindowId : undefined;
+  const recorderWindowId = preferredWindowId ?? (recorderOwnsWindow(session) ? session.activeWindowId : undefined);
   const target = tab ?? (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
   if (!recorderWindowId && target?.id && target.url && /^https?:\/\//.test(target.url)) {
     await chrome.storage.local.set({ recorderTargetTabId: target.id });
@@ -82,7 +82,7 @@ async function handleMessage(message: RuntimeMessage, sender: chrome.runtime.Mes
     case "GET_SESSION":
       return { ok: true, session: await getSession() };
     case "OPEN_RECORDER":
-      await openRecorder();
+      await openRecorder(undefined, message.windowId);
       return { ok: true, session: await getSession() };
     case "STOP_CAPTURE":
       return { ok: true, session: await getSession() };
