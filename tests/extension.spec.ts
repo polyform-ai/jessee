@@ -82,6 +82,11 @@ test("loads extension settings page", async () => {
     await expect(controlsPage.getByRole("heading", { name: "Recording your walkthrough" })).toBeVisible();
     await expect(controlsPage.getByText("Hold + drag to outline")).toBeVisible();
     await expect(controlsPage.getByRole("button", { name: "Open Library" })).toBeVisible();
+    const activeHistoryPage = await context.newPage();
+    await activeHistoryPage.goto(`chrome-extension://${extensionId}/history.html`);
+    await expect(activeHistoryPage.getByRole("button", { name: "Capture in progress" })).toBeDisabled();
+    await expect(activeHistoryPage.getByText("A capture is still recording or being prepared.", { exact: false })).toBeVisible();
+    await activeHistoryPage.close();
     await controlsPage.getByRole("button", { name: "Finish Recording" }).click();
     await expect.poll(() => page.evaluate(async () => {
       const stored = await chrome.storage.local.get("recordingSession");
@@ -267,6 +272,7 @@ test("loads extension settings page", async () => {
     await historyPage.goto(`chrome-extension://${extensionId}/history.html`);
     await expect(historyPage.getByRole("heading", { name: "Your explanations stay useful." })).toBeVisible();
     await expect(historyPage.locator("[data-history-card]")).toHaveCount(process.env.JESSEE_VISUAL_QA ? 3 : 1);
+    await expect(historyPage.locator("[data-history-thumbnail]:not([hidden])")).toHaveCount(process.env.JESSEE_VISUAL_QA ? 3 : 1);
     await expect(historyPage.getByRole("heading", { name: "Show the updated visual workflow" })).toBeVisible();
     await expect(historyPage.getByRole("button", { name: "Edit story" }).first()).toBeVisible();
     await expect(historyPage.getByRole("button", { name: "Download PDF" }).first()).toBeVisible();

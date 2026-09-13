@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RecordingSession } from "../src/types";
 
 const mocks = vi.hoisted(() => ({
+  clearRecordingFolder: vi.fn(),
   startRecordingFolder: vi.fn(),
   writeRecordingBlob: vi.fn(),
   writeRecordingText: vi.fn(),
@@ -12,6 +13,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../src/artifacts", () => ({ hydrateSession: vi.fn(async (session) => session) }));
 vi.mock("../src/localFiles", () => ({
+  clearRecordingFolder: mocks.clearRecordingFolder,
   startRecordingFolder: mocks.startRecordingFolder,
   writeRecordingBlob: mocks.writeRecordingBlob,
   writeRecordingText: mocks.writeRecordingText
@@ -55,6 +57,8 @@ describe("downloadPlanPdf", () => {
 
     await downloadPlanPdf(session);
 
+    expect(mocks.clearRecordingFolder).toHaveBeenCalledOnce();
+    expect(mocks.clearRecordingFolder.mock.invocationCallOrder[0]).toBeLessThan(mocks.startRecordingFolder.mock.invocationCallOrder[0]);
     expect(mocks.startRecordingFolder).toHaveBeenCalledWith(session.exportFolderName);
     expect(mocks.startRecordingFolder.mock.invocationCallOrder[0]).toBeLessThan(mocks.writeRecordingBlob.mock.invocationCallOrder[0]);
     expect(mocks.writeRecordingBlob).toHaveBeenCalledWith("capture.pdf", expect.any(Blob));
@@ -81,5 +85,24 @@ describe("downloadPlanPdf", () => {
     expect(mocks.anchorClick).toHaveBeenCalledOnce();
     expect(warning).toHaveBeenCalledOnce();
     warning.mockRestore();
+  });
+
+  it("clears a previous export folder when a historical capture has no folder", async () => {
+    const session: RecordingSession = {
+      status: "planned",
+      timeline: [],
+      screenshots: [],
+      captureAnalysis: {
+        userGoal: "Explain the workflow",
+        story: "A visual walkthrough",
+        helpfulImageMoments: []
+      }
+    };
+
+    await downloadPlanPdf(session);
+
+    expect(mocks.clearRecordingFolder).toHaveBeenCalledOnce();
+    expect(mocks.startRecordingFolder).not.toHaveBeenCalled();
+    expect(mocks.anchorClick).toHaveBeenCalledOnce();
   });
 });

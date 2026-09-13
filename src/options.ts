@@ -216,9 +216,9 @@ function renderUpdatePanel(state: UpdateState): string {
   const automatic = state.channel.automaticUpdates;
   return `<section class="panel update-panel ${available ? "update-available" : ""}">
     <div class="panel-header"><div><h2>${available ? "An update is ready" : "JesSee is up to date"}</h2><p>Installed ${version} · ${escapeHtml(channelName(state.channel.channel))}</p></div><span class="update-dot" aria-hidden="true"></span></div>
-    <p class="hint">${available ? escapeHtml(state.release.notes) : automatic ? "New versions install through this trusted channel automatically." : "This developer preview checks for releases, but moving to the trusted store or signed app is required for automatic installation."}</p>
+    <p class="hint">${available ? `${escapeHtml(state.release.notes)} ${automatic ? "Store or signed-app installs update automatically; a developer-preview copy must switch to that channel once." : ""}` : automatic ? "A trusted update channel is available. Copies installed from that channel update automatically; developer-preview copies must switch once." : "This developer preview checks for releases, but moving to the trusted store or signed app is required for automatic installation."}</p>
     <div class="row">
-      ${available ? `<a class="button primary" href="${escapeHtml(state.channel.installUrl)}" target="_blank" rel="noreferrer">${automatic ? "Open update channel" : "Get the update"}</a>` : ""}
+      ${available ? `<a class="button primary" href="${escapeHtml(state.channel.installUrl)}" target="_blank" rel="noreferrer">${automatic ? "Move to update channel" : "Get the update"}</a>` : ""}
       <button class="button secondary" id="checkForUpdates">Check again</button>
     </div>
   </section>`;

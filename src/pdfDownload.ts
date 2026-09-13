@@ -1,5 +1,5 @@
 import { hydrateSession } from "./artifacts";
-import { startRecordingFolder, writeRecordingBlob, writeRecordingText } from "./localFiles";
+import { clearRecordingFolder, startRecordingFolder, writeRecordingBlob, writeRecordingText } from "./localFiles";
 import { createPlanPdf, planPdfFilename } from "./pdf";
 import { getSettings } from "./storage";
 import type { RecordingSession } from "./types";
@@ -11,6 +11,7 @@ export async function downloadPlanPdf(current: RecordingSession): Promise<void> 
   const hydrated = await hydrateSession(current);
   const blob = createPlanPdf(hydrated);
   const filename = planPdfFilename(current.captureAnalysis.userGoal || current.tabTitle || "visual-story");
+  clearRecordingFolder();
   if (current.exportFolderName) {
     try {
       await startRecordingFolder(current.exportFolderName);

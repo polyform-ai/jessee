@@ -3,7 +3,7 @@ import { getArtifact, hydrateSession } from "./artifacts";
 import { saveCaptureHistory } from "./captureHistory";
 import { downloadPlanPdf } from "./pdfDownload";
 import { sendRuntimeMessage } from "./runtimeMessaging";
-import { getSettings, resetSession, saveSession } from "./storage";
+import { getSession, getSettings, resetSession, saveSession } from "./storage";
 import type { CaptureHistoryItem, RecordingSession, ScreenshotEvidence } from "./types";
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -15,20 +15,29 @@ let thumbnails = new Map<string, string>();
 let preview: { item: CaptureHistoryItem; session: RecordingSession } | undefined;
 let message = "";
 let busyCaptureId: string | undefined;
+let activeCapture = false;
+let thumbnailObserver: IntersectionObserver | undefined;
 
 void initialize();
 
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local" || !changes.recordingSession) return;
+  activeCapture = isActiveCapture(changes.recordingSession.newValue as RecordingSession | undefined);
+  if (activeCapture) message = activeCaptureMessage();
+  else if (message === activeCaptureMessage()) message = "";
+  render();
+});
+
 async function initialize(): Promise<void> {
-  const settings = await getSettings();
+  const [settings, session] = await Promise.all([getSettings(), getSession()]);
   history = [...(settings.captureHistory ?? [])].sort((left, right) => right.createdAt - left.createdAt);
-  thumbnails = new Map(await Promise.all(history.map(async (item) => {
-    const screenshot = selectedScreenshot(item.session);
-    return [item.id, screenshot ? (await getArtifact(screenshot.dataUrl) ?? "") : ""] as const;
-  })));
+  activeCapture = isActiveCapture(session);
+  if (activeCapture) message = activeCaptureMessage();
   render();
 }
 
 function render(): void {
+  thumbnailObserver?.disconnect();
   root.innerHTML = `
     <main class="history-page">
       <header class="library-header">
@@ -42,7 +51,7 @@ function render(): void {
         </div>
         <div class="header-actions">
           <button class="button secondary compact" id="backToCapture">Back to capture</button>
-          <button class="button primary compact" id="newCapture">New capture</button>
+          <button class="button primary compact" id="newCapture" ${activeCapture ? "disabled" : ""}>${activeCapture ? "Capture in progress" : "New capture"}</button>
         </div>
       </header>
 
@@ -61,20 +70,23 @@ function render(): void {
     </main>`;
 
   bindEvents();
+  observeThumbnails();
   const dialog = document.querySelector<HTMLDialogElement>("#recordingPreview");
   if (dialog && !dialog.open) dialog.showModal();
 }
 
 function renderHistoryCard(item: CaptureHistoryItem): string {
   const thumbnail = thumbnails.get(item.id);
+  const thumbnailLoaded = thumbnails.has(item.id);
+  const screenshot = selectedScreenshot(item.session);
   const session = item.session;
   const storySteps = session.captureAnalysis?.storySteps?.length ?? 0;
   const pageContext = session.tabTitle || session.tabUrl || item.folderName || "Local capture";
   const hasRecording = Boolean(session.videoDataUrl || session.audioDataUrl || session.transcript?.text);
   const busy = busyCaptureId === item.id;
   return `<article class="history-card" data-history-card data-search="${escapeHtml(`${item.title} ${pageContext}`.toLowerCase())}">
-    <div class="history-card-visual">
-      ${thumbnail ? `<img src="${thumbnail}" alt="Captured screen from ${escapeHtml(item.title)}" loading="lazy" />` : `<div class="history-card-placeholder"><img src="/icon.svg" alt="" /><span>Text-led walkthrough</span></div>`}
+    <div class="history-card-visual" ${screenshot && !thumbnails.has(item.id) ? `data-thumbnail-capture="${escapeHtml(item.id)}"` : ""}>
+      ${thumbnail ? `<img src="${thumbnail}" alt="Captured screen from ${escapeHtml(item.title)}" loading="lazy" />` : `${screenshot ? `<img data-history-thumbnail data-thumbnail-image="${escapeHtml(item.id)}" alt="Captured screen from ${escapeHtml(item.title)}" hidden />` : ""}<div class="history-card-placeholder" data-thumbnail-placeholder="${escapeHtml(item.id)}"><img src="/icon.svg" alt="" /><span>${screenshot ? (thumbnailLoaded ? "Preview unavailable" : "Loading captured screen…") : "Text-led walkthrough"}</span></div>`}
       <span class="history-state ${item.hasPlan ? "planned" : "captured"}">${item.hasPlan ? "Story ready" : "Recording saved"}</span>
     </div>
     <div class="history-card-body">
@@ -89,7 +101,7 @@ function renderHistoryCard(item: CaptureHistoryItem): string {
         <span><strong>${item.hasPdf ? "PDF" : "Local"}</strong> ${item.hasPdf ? "generated" : "saved"}</span>
       </div>
       <div class="history-card-actions">
-        <button class="button primary" data-edit-capture="${escapeHtml(item.id)}" ${busy ? "disabled" : ""}>${item.hasPlan ? "Edit story" : "Create story"}</button>
+        <button class="button primary" data-edit-capture="${escapeHtml(item.id)}" ${busy || activeCapture ? "disabled" : ""}>${item.hasPlan ? "Edit story" : "Create story"}</button>
         ${item.hasPlan ? `<button class="button secondary" data-download-capture="${escapeHtml(item.id)}" ${busy ? "disabled" : ""}>${busy ? "Preparing PDF…" : "Download PDF"}</button>` : ""}
         ${hasRecording ? `<button class="history-text-action" data-preview-capture="${escapeHtml(item.id)}" ${busy ? "disabled" : ""}>View recording</button>` : ""}
       </div>
@@ -102,7 +114,7 @@ function renderEmptyLibrary(): string {
     <img src="/icon.svg" alt="" />
     <h3>Your walkthroughs will collect here.</h3>
     <p>Record an explanation once. JesSee will keep the recording, selected screens, editable story, and PDF together on this computer.</p>
-    <button class="button primary" id="emptyNewCapture">Create your first walkthrough</button>
+    <button class="button primary" id="emptyNewCapture" ${activeCapture ? "disabled" : ""}>${activeCapture ? "Finish the active capture first" : "Create your first walkthrough"}</button>
   </div>`;
 }
 
@@ -122,7 +134,7 @@ function renderPreview(item: CaptureHistoryItem, session: RecordingSession): str
       <div class="recording-player">${recording}</div>
       ${transcript ? `<section class="recording-transcript"><p class="section-eyebrow">Transcript</p><p>${escapeHtml(transcript)}</p></section>` : ""}
       <div class="recording-dialog-actions">
-        <button class="button secondary" data-edit-capture="${escapeHtml(item.id)}">Edit this story</button>
+        <button class="button secondary" data-edit-capture="${escapeHtml(item.id)}" ${activeCapture ? "disabled" : ""}>Edit this story</button>
         ${item.hasPlan ? `<button class="button primary" data-download-capture="${escapeHtml(item.id)}">Download PDF</button>` : ""}
       </div>
     </div>
@@ -162,6 +174,7 @@ function bindEvents(): void {
 async function editCapture(captureId: string): Promise<void> {
   const item = history.find((candidate) => candidate.id === captureId);
   if (!item) return;
+  if (await guardActiveCapture()) return;
   busyCaptureId = captureId;
   message = item.hasPlan ? "Opening the editable story…" : "Creating an editable story from this recording…";
   render();
@@ -228,8 +241,68 @@ function openCapture(): void {
 }
 
 async function startNewCapture(): Promise<void> {
+  if (await guardActiveCapture()) return;
   await resetSession();
   window.location.assign(chrome.runtime.getURL("popup.html"));
+}
+
+function observeThumbnails(): void {
+  const targets = [...document.querySelectorAll<HTMLElement>("[data-thumbnail-capture]")];
+  if (!targets.length) return;
+  if (!("IntersectionObserver" in window)) {
+    for (const target of targets) void loadThumbnail(target);
+    return;
+  }
+  thumbnailObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      thumbnailObserver?.unobserve(entry.target);
+      void loadThumbnail(entry.target as HTMLElement);
+    }
+  }, { rootMargin: "320px" });
+  for (const target of targets) thumbnailObserver.observe(target);
+}
+
+async function loadThumbnail(target: HTMLElement): Promise<void> {
+  const captureId = target.dataset.thumbnailCapture;
+  const item = history.find((candidate) => candidate.id === captureId);
+  const screenshot = item && selectedScreenshot(item.session);
+  if (!item || !screenshot) return;
+  let thumbnail = "";
+  try {
+    thumbnail = await getArtifact(screenshot.dataUrl) ?? "";
+  } catch {
+    // A missing preview must not prevent the retained story from being opened.
+  }
+  thumbnails.set(item.id, thumbnail);
+  const image = [...document.querySelectorAll<HTMLImageElement>("[data-thumbnail-image]")]
+    .find((candidate) => candidate.dataset.thumbnailImage === item.id);
+  const placeholder = [...document.querySelectorAll<HTMLElement>("[data-thumbnail-placeholder]")]
+    .find((candidate) => candidate.dataset.thumbnailPlaceholder === item.id);
+  if (!image || !thumbnail) {
+    const label = placeholder?.querySelector("span");
+    if (label) label.textContent = "Preview unavailable";
+    return;
+  }
+  image.src = thumbnail;
+  image.hidden = false;
+  if (placeholder) placeholder.hidden = true;
+}
+
+async function guardActiveCapture(): Promise<boolean> {
+  activeCapture = isActiveCapture(await getSession());
+  if (!activeCapture) return false;
+  message = activeCaptureMessage();
+  render();
+  return true;
+}
+
+function isActiveCapture(session: RecordingSession | undefined): boolean {
+  return Boolean(session && ["recording", "paused", "planning", "generating"].includes(session.status));
+}
+
+function activeCaptureMessage(): string {
+  return "A capture is still recording or being prepared. Return to capture and finish it before starting or editing another walkthrough.";
 }
 
 function selectedScreenshot(session: RecordingSession): ScreenshotEvidence | undefined {

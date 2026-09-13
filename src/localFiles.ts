@@ -76,6 +76,7 @@ export async function ensureExportFolderPermission(requestPermission = true): Pr
 }
 
 export async function startRecordingFolder(name: string): Promise<string | undefined> {
+  recordingDirectory = undefined;
   rootDirectory = rootDirectory ?? await loadRootDirectory(false);
   rootDirectoryName = rootDirectory?.name;
   if (!rootDirectory) return undefined;
@@ -83,6 +84,10 @@ export async function startRecordingFolder(name: string): Promise<string | undef
   recordingDirectory = await rootDirectory.getDirectoryHandle(folderName, { create: true });
   await recordingDirectory.getDirectoryHandle("screenshots", { create: true });
   return folderName;
+}
+
+export function clearRecordingFolder(): void {
+  recordingDirectory = undefined;
 }
 
 export async function deleteOldCaptureFolders(retentionDays: number, requestPermission = false): Promise<number> {
