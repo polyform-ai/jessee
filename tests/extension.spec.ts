@@ -86,6 +86,12 @@ test("loads extension settings page", async () => {
     await activeHistoryPage.goto(`chrome-extension://${extensionId}/history.html`);
     await expect(activeHistoryPage.getByRole("button", { name: "Capture in progress" })).toBeDisabled();
     await expect(activeHistoryPage.getByText("A capture is still recording or being prepared.", { exact: false })).toBeVisible();
+    await activeHistoryPage.getByRole("button", { name: "Back to capture" }).click();
+    await expect(activeHistoryPage).toHaveURL(`chrome-extension://${extensionId}/history.html`);
+    await expect.poll(() => activeHistoryPage.evaluate(async () => {
+      const stored = await chrome.storage.local.get("recordingSession");
+      return stored.recordingSession?.status;
+    })).toBe("recording");
     await activeHistoryPage.close();
     await controlsPage.getByRole("button", { name: "Finish Recording" }).click();
     await expect.poll(() => page.evaluate(async () => {

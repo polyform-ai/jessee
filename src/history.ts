@@ -154,7 +154,7 @@ function renderPreview(item: CaptureHistoryItem, session: RecordingSession): str
 }
 
 function bindEvents(): void {
-  document.querySelector("#backToCapture")?.addEventListener("click", openCapture);
+  document.querySelector("#backToCapture")?.addEventListener("click", () => void openCapture());
   document.querySelector("#newCapture")?.addEventListener("click", startNewCapture);
   document.querySelector("#emptyNewCapture")?.addEventListener("click", startNewCapture);
   document.querySelector<HTMLInputElement>("#historySearch")?.addEventListener("input", (event) => {
@@ -252,8 +252,14 @@ function closePreview(): void {
   render();
 }
 
-function openCapture(): void {
-  window.location.assign(chrome.runtime.getURL("popup.html"));
+async function openCapture(): Promise<void> {
+  try {
+    const response = await sendRuntimeMessage({ type: "OPEN_RECORDER" });
+    if (!response.ok) throw new Error(response.error ?? "JesSee could not reopen the recorder.");
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error);
+    render();
+  }
 }
 
 async function startNewCapture(): Promise<void> {

@@ -18,13 +18,19 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, sender, sendRespo
   handleMessage(message, sender)
     .then(sendResponse)
     .catch(async (error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(message);
-      const session = await preserveCaptureFailure(message);
-      sendResponse({ ok: false, error: message, session });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(errorMessage);
+      const session = messageCanChangeCaptureState(message.type)
+        ? await preserveCaptureFailure(errorMessage)
+        : await getSession();
+      sendResponse({ ok: false, error: errorMessage, session });
     });
   return true;
 });
+
+function messageCanChangeCaptureState(type: RuntimeMessage["type"]): boolean {
+  return type === "PREPARE_CAPTURE_PLAN" || type === "GENERATE_PDF";
+}
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   const session = await getSession();
