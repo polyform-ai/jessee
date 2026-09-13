@@ -121,7 +121,13 @@ describe("visual story editor document", () => {
           { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Retry save" }] }] }
         ]
       },
-      { type: "blockquote", content: [{ type: "paragraph", content: [{ type: "text", text: "Keep this visible for the reviewer." }] }] }
+      {
+        type: "blockquote",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "Keep this visible for the reviewer." }] },
+          { type: "paragraph", content: [{ type: "text", text: "Preserve this second thought." }] }
+        ]
+      }
     );
     const source = document.content![1].content!.find((node) => node.type === "storySource")!;
     source.attrs!.visible = false;
@@ -129,7 +135,7 @@ describe("visual story editor document", () => {
     const updated = parseEditorDocument(document, analysis());
 
     expect(updated.storySteps?.[0]).toMatchObject({
-      narrative: "1. Open settings\n2. Retry save\n\n> Keep this visible for the reviewer.",
+      narrative: "1. Open settings\n2. Retry save\n\n> Keep this visible for the reviewer.\n> Preserve this second thought.",
       pageUrl: "https://example.test/start",
       showPageUrl: false
     });

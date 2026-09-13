@@ -450,7 +450,13 @@ export function parseEditorDocument(document: JSONContent, current: CaptureAnaly
 function storyBodyText(node: JSONContent): string {
   if (node.type === "bulletList") return storyListText(node, false);
   if (node.type === "orderedList") return storyListText(node, true);
-  if (node.type === "blockquote") return `> ${trimHorizontalWhitespace(jsonText(node))}`;
+  if (node.type === "blockquote") {
+    return (node.content ?? [])
+      .map(storyBodyText)
+      .filter(Boolean)
+      .flatMap((block) => block.split("\n").map((line) => `> ${line}`))
+      .join("\n");
+  }
   return trimHorizontalWhitespace(jsonText(node));
 }
 

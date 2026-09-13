@@ -90,22 +90,16 @@ export function buildCaptureStory(
   }
 
   const ordered = story.sort((a, b) => a.startSeconds - b.startSeconds || storyKindOrder(a.kind) - storyKindOrder(b.kind));
-  const firstKnownPage = ordered
-    .map((step) => {
-      const screenshot = screenshots.find((shot) => shot.id === step.screenshotId);
-      return { url: step.pageUrl || screenshot?.url, title: step.pageTitle || screenshot?.title };
-    })
-    .find((page) => Boolean(page.url))
-    ?? [...screenshots]
-      .sort((a, b) => a.capturedAtMs - b.capturedAtMs)
-      .map((shot) => ({ url: shot.url, title: shot.title }))
-      .find((page) => Boolean(page.url))
-    ?? {};
-  let lastPage: { url?: string; title?: string } = firstKnownPage;
+  const pageScreenshots = [...screenshots]
+    .filter((shot) => Boolean(shot.url))
+    .sort((a, b) => a.capturedAtMs - b.capturedAtMs);
+  let lastPage: { url?: string; title?: string } = {};
   return ordered.map((step) => {
     const screenshot = screenshots.find((shot) => shot.id === step.screenshotId);
-    const pageUrl = step.pageUrl || screenshot?.url || lastPage.url;
-    const pageTitle = step.pageTitle || screenshot?.title || (pageUrl === lastPage.url ? lastPage.title : undefined);
+    const targetMs = step.endSeconds * 1000;
+    const activeScreenshot = pageScreenshots.filter((shot) => shot.capturedAtMs <= targetMs).at(-1) ?? pageScreenshots[0];
+    const pageUrl = step.pageUrl || screenshot?.url || activeScreenshot?.url || lastPage.url;
+    const pageTitle = step.pageTitle || screenshot?.title || activeScreenshot?.title || (pageUrl === lastPage.url ? lastPage.title : undefined);
     if (pageUrl) lastPage = { url: pageUrl, title: pageTitle };
     return { ...step, pageUrl, pageTitle, showPageUrl: step.showPageUrl !== false };
   });

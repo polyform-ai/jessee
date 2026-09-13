@@ -66,7 +66,7 @@ describe("buildCaptureStory", () => {
     }));
   });
 
-  it("fills an early text-only step from the first known captured page", () => {
+  it("fills an early text-only step from the earliest page instead of a later sourced step", () => {
     const story = buildCaptureStory(
       {
         userGoal: "Explain the page",
@@ -74,18 +74,33 @@ describe("buildCaptureStory", () => {
         breakingPoints: [],
         helpfulImageMoments: [],
         story: "Introduce the page.",
-        storySteps: [{
-          startSeconds: 0,
-          endSeconds: 0,
-          title: "Introduction",
-          narrative: "Set up the walkthrough.",
-          transcript: "",
-          kind: "manual"
-        }]
+        storySteps: [
+          {
+            startSeconds: 0,
+            endSeconds: 0,
+            title: "Introduction",
+            narrative: "Set up the walkthrough.",
+            transcript: "",
+            kind: "manual"
+          },
+          {
+            startSeconds: 3,
+            endSeconds: 3,
+            title: "Later page",
+            narrative: "Continue on the next page.",
+            transcript: "",
+            pageUrl: "https://example.test/later",
+            pageTitle: "Later",
+            kind: "manual"
+          }
+        ]
       },
       undefined,
       [],
-      [{ id: "first-shot", capturedAtMs: 1_000, url: "https://example.test/start", title: "Start" }]
+      [
+        { id: "first-shot", capturedAtMs: 1_000, url: "https://example.test/start", title: "Start" },
+        { id: "later-shot", capturedAtMs: 3_000, url: "https://example.test/later", title: "Later" }
+      ]
     );
 
     expect(story[0]).toMatchObject({
@@ -93,5 +108,6 @@ describe("buildCaptureStory", () => {
       pageTitle: "Start",
       showPageUrl: true
     });
+    expect(story[1]).toMatchObject({ pageUrl: "https://example.test/later", pageTitle: "Later" });
   });
 });
