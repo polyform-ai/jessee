@@ -25,17 +25,26 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   let changed = false;
   if (changes.settings) {
     const settings = changes.settings.newValue as Settings | undefined;
-    history = sortedHistory(settings?.captureHistory ?? []);
+    const previousHistory = new Map(history.map((item) => [item.id, item]));
+    const nextHistory = sortedHistory(settings?.captureHistory ?? []);
+    history = nextHistory;
     const retainedIds = new Set(history.map((item) => item.id));
-    thumbnails = new Map([...thumbnails].filter(([captureId]) => retainedIds.has(captureId)));
+    thumbnails = new Map([...thumbnails].filter(([captureId]) => {
+      const previous = previousHistory.get(captureId);
+      const next = nextHistory.find((item) => item.id === captureId);
+      return Boolean(previous && next && thumbnailSource(previous.session) === thumbnailSource(next.session));
+    }));
     if (preview && !retainedIds.has(preview.item.id)) preview = undefined;
     changed = true;
   }
   if (changes.recordingSession) {
-    activeCapture = isActiveCapture(changes.recordingSession.newValue as RecordingSession | undefined);
-    if (activeCapture) message = activeCaptureMessage();
-    else if (message === activeCaptureMessage()) message = "";
-    changed = true;
+    const nextActiveCapture = isActiveCapture(changes.recordingSession.newValue as RecordingSession | undefined);
+    if (nextActiveCapture !== activeCapture) {
+      activeCapture = nextActiveCapture;
+      if (activeCapture) message = activeCaptureMessage();
+      else if (message === activeCaptureMessage()) message = "";
+      changed = true;
+    }
   }
   if (changed) render();
 });
@@ -335,6 +344,11 @@ function selectedScreenshot(session: RecordingSession): ScreenshotEvidence | und
   const selectedId = session.captureAnalysis?.storySteps?.find((step) => step.screenshotId)?.screenshotId
     ?? session.captureAnalysis?.helpfulImageMoments?.find((moment) => moment.screenshotId)?.screenshotId;
   return session.screenshots.find((screenshot) => screenshot.id === selectedId) ?? session.screenshots[0];
+}
+
+function thumbnailSource(session: RecordingSession): string {
+  const screenshot = selectedScreenshot(session);
+  return screenshot ? `${screenshot.id}:${screenshot.dataUrl}` : "";
 }
 
 function formatSeconds(totalSeconds: number): string {

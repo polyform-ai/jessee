@@ -92,6 +92,17 @@ test("loads extension settings page", async () => {
       const stored = await chrome.storage.local.get("recordingSession");
       return stored.recordingSession?.status;
     })).toBe("recording");
+    await activeHistoryPage.locator("main").evaluate((element) => { element.dataset.renderMarker = "preserve-player"; });
+    await activeHistoryPage.evaluate(async () => {
+      const stored = await chrome.storage.local.get("recordingSession");
+      await chrome.storage.local.set({
+        recordingSession: {
+          ...stored.recordingSession,
+          timeline: [...stored.recordingSession.timeline, { id: "live-write", type: "click", atMs: 500, url: "", title: "" }]
+        }
+      });
+    });
+    await expect(activeHistoryPage.locator("main")).toHaveAttribute("data-render-marker", "preserve-player");
     await activeHistoryPage.close();
     await controlsPage.getByRole("button", { name: "Finish Recording" }).click();
     await expect.poll(() => page.evaluate(async () => {
