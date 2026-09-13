@@ -99,7 +99,14 @@ export function buildCaptureStory(
     const targetMs = step.endSeconds * 1000;
     const activeScreenshot = pageScreenshots.filter((shot) => shot.capturedAtMs <= targetMs).at(-1) ?? pageScreenshots[0];
     const pageUrl = step.pageUrl || screenshot?.url || activeScreenshot?.url || lastPage.url;
-    const pageTitle = step.pageTitle || screenshot?.title || activeScreenshot?.title || (pageUrl === lastPage.url ? lastPage.title : undefined);
+    const matchingScreenshot = screenshot && screenshot.url === pageUrl && screenshot.title
+      ? screenshot
+      : activeScreenshot && activeScreenshot.url === pageUrl && activeScreenshot.title
+        ? activeScreenshot
+        : pageScreenshots.find((shot) => shot.url === pageUrl && Boolean(shot.title));
+    const pageTitle = step.pageTitle
+      || matchingScreenshot?.title
+      || (pageUrl === lastPage.url ? lastPage.title : undefined);
     if (pageUrl) lastPage = { url: pageUrl, title: pageTitle };
     return { ...step, pageUrl, pageTitle, showPageUrl: step.showPageUrl !== false };
   });

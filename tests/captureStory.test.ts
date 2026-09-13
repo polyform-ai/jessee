@@ -92,6 +92,15 @@ describe("buildCaptureStory", () => {
             pageUrl: "https://example.test/later",
             pageTitle: "Later",
             kind: "manual"
+          },
+          {
+            startSeconds: 4,
+            endSeconds: 4,
+            title: "External reference",
+            narrative: "Mention a page without matching visual evidence.",
+            transcript: "",
+            pageUrl: "https://unmatched.example.test/",
+            kind: "manual"
           }
         ]
       },
@@ -109,5 +118,7 @@ describe("buildCaptureStory", () => {
       showPageUrl: true
     });
     expect(story[1]).toMatchObject({ pageUrl: "https://example.test/later", pageTitle: "Later" });
+    expect(story[2]).toMatchObject({ pageUrl: "https://unmatched.example.test/" });
+    expect(story[2].pageTitle).toBeUndefined();
   });
 });
