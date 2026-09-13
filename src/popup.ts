@@ -383,9 +383,11 @@ async function prepareCapturePlan(): Promise<void> {
     } catch (error) {
       localStatus = error instanceof Error ? error.message : String(error);
       const failed = await getSession();
-      if (failed.status === "stopped" && failed.autoPlanningPending) {
-        const retryable = { ...failed, autoPlanningPending: false, analysisError: localStatus };
-        await saveSession(retryable);
+      if (failed.status === "stopped") {
+        const retryable = failed.autoPlanningPending
+          ? { ...failed, autoPlanningPending: false, analysisError: localStatus }
+          : failed;
+        if (retryable !== failed) await saveSession(retryable);
         await saveCaptureHistory(retryable);
       }
       await refresh();
