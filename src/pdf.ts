@@ -148,7 +148,9 @@ function drawPlan(
     const naturalHeight = (props.height * maxTextWidth) / props.width;
     const imageHeight = Math.min(maximumImageHeight, naturalHeight);
     const imageWidth = Math.min(maxTextWidth, (props.width * imageHeight) / props.height);
-    const captionRuns = plainRuns(screenshot.title || step.title);
+    const hiddenSourceCaption = step.showPageUrl === false && urlLikeTitle(screenshot.title, screenshot.url);
+    const fallbackCaption = urlLikeTitle(step.title, step.pageUrl) ? "Selected visual" : step.title;
+    const captionRuns = plainRuns(hiddenSourceCaption ? fallbackCaption : screenshot.title || fallbackCaption);
     const captionFontSize = Math.max(0.1, 9 * scale);
     const captionLines = wrapRichText(pdf, captionRuns, Math.max(20, maxTextWidth - 24 * scale), captionFontSize, false);
     const captionHeight = Math.max(1, captionLines.length) * 11 * scale;
@@ -214,6 +216,11 @@ function drawPlan(
     }
   });
   return y;
+}
+
+function urlLikeTitle(title: string | undefined, pageUrl: string | undefined): boolean {
+  const value = title?.trim();
+  return Boolean(value && (value === pageUrl || /^(?:https?:\/\/|www\.)/i.test(value)));
 }
 
 function wrapRichText(pdf: jsPDF, runs: RichTextRun[], maxWidth: number, fontSize: number, baseBold: boolean): PositionedLine[] {

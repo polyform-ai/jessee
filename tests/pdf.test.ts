@@ -174,8 +174,10 @@ describe("createPlanPdf", () => {
   });
 
   it("renders callouts and honors hidden step source URLs", async () => {
-    const session = planSession();
+    const session = planSession(true);
     const step = session.captureAnalysis!.storySteps![0];
+    session.screenshots[0].title = "https://example.test/private-source";
+    session.screenshots[0].url = "https://example.test/private-source";
     session.captureAnalysis!.storySteps = [{
       ...step,
       pageUrl: "https://example.test/private-source",
