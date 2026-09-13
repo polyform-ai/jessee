@@ -370,6 +370,15 @@ async function run(message: RuntimeMessage, refreshAfter = true): Promise<void> 
 
 async function prepareCapturePlan(waitForOwnership = false): Promise<void> {
   const createPlan = async () => {
+    const latest = await getSession();
+    const automaticHandoffIsPending = latest.status === "stopped" && latest.autoPlanningPending;
+    const manualPlanningIsAvailable = ["stopped", "error"].includes(latest.status) && !latest.autoPlanningPending;
+    if ((waitForOwnership && !automaticHandoffIsPending) || (!waitForOwnership && !manualPlanningIsAvailable)) {
+      session = latest;
+      localStatus = automaticHandoffIsPending ? "The plan is already being prepared." : "This capture has already moved past planning.";
+      await refresh();
+      return;
+    }
     localStatus = "Preparing the plan.";
     render();
     try {

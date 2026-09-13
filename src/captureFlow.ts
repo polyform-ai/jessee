@@ -30,6 +30,14 @@ export function getCaptureFlowView(
   microphoneReady: boolean,
   hasEvidence: boolean
 ): CaptureFlowView {
+  if (session?.status === "stopped" && session.autoPlanningPending) {
+    return {
+      title: "Creating your plan",
+      description: "JesSee is aligning the transcript, page changes, and visual evidence.",
+      buttons: [],
+      showShortcuts: false
+    };
+  }
   switch (session?.status ?? "idle") {
     case "recording":
     case "paused":

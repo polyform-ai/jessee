@@ -51,12 +51,13 @@ async function openRecorder(tab?: chrome.tabs.Tab, preferredWindowId?: number): 
   const retainedWindowExists = retainedWindowId ? await windowExists(retainedWindowId) : false;
   const sidePanel = getSidePanelApi();
   const recorderWindowId = retainedWindowExists ? retainedWindowId : undefined;
-  const target = tab ?? (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
+  const initialTarget = tab ?? (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
+  const targetWindowId = recorderWindowId ?? initialTarget?.windowId;
+  const target = activeRecorder ? initialTarget : await recorderTargetForWindow(initialTarget, targetWindowId);
   if (!activeRecorder && target?.id && target.url && /^https?:\/\//.test(target.url)) {
     await chrome.storage.local.set({ recorderTargetTabId: target.id });
   }
 
-  const targetWindowId = recorderWindowId ?? target?.windowId;
   if (sidePanel && targetWindowId) {
     await sidePanel.open({ windowId: targetWindowId });
     if (recorderWindowId) await chrome.windows.update(recorderWindowId, { focused: true });
@@ -73,6 +74,14 @@ async function openRecorder(tab?: chrome.tabs.Tab, preferredWindowId?: number): 
     return;
   }
   await chrome.tabs.create({ url: recorderUrl, active: true });
+}
+
+async function recorderTargetForWindow(target: chrome.tabs.Tab | undefined, windowId: number | undefined): Promise<chrome.tabs.Tab | undefined> {
+  if (target?.url && /^https?:\/\//.test(target.url) && (!windowId || target.windowId === windowId)) return target;
+  if (!windowId) return target;
+  const candidates = (await chrome.tabs.query({ windowId }))
+    .filter((candidate) => candidate.url && /^https?:\/\//.test(candidate.url));
+  return candidates.sort((left, right) => (right.lastAccessed ?? 0) - (left.lastAccessed ?? 0))[0] ?? target;
 }
 
 function recorderIsActive(session: RecordingSession): boolean {

@@ -327,7 +327,8 @@ function closePreview(): void {
 
 async function openCapture(windowId?: number): Promise<void> {
   try {
-    const response = await sendRuntimeMessage({ type: "OPEN_RECORDER", windowId });
+    const currentWindowId = windowId ?? (await chrome.windows.getCurrent()).id;
+    const response = await sendRuntimeMessage({ type: "OPEN_RECORDER", windowId: currentWindowId });
     if (!response.ok) throw new Error(response.error ?? "JesSee could not reopen the recorder.");
   } catch (error) {
     message = error instanceof Error ? error.message : String(error);
@@ -347,11 +348,12 @@ async function startNewCapture(): Promise<void> {
         message = activeCaptureMessage();
         return;
       }
+      const currentWindowId = (await chrome.windows.getCurrent()).id;
       const idleSession = await resetSession();
-      if (previousSession.activeWindowId) {
-        await saveSession({ ...idleSession, activeWindowId: previousSession.activeWindowId });
+      if (currentWindowId) {
+        await saveSession({ ...idleSession, activeWindowId: currentWindowId });
       }
-      await openCapture(previousSession.activeWindowId);
+      await openCapture(currentWindowId);
     }, async () => {
       message = "Your open story editor was focused. Finish or close it before starting a new capture.";
     });

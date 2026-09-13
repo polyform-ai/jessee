@@ -37,7 +37,12 @@ describe("getCaptureFlowView", () => {
   });
 
   it("blocks Library actions only while a stopped capture is entering automatic planning", () => {
-    expect(blocksLibraryCaptureActions({ ...session("stopped"), autoPlanningPending: true })).toBe(true);
+    const automaticHandoff = { ...session("stopped"), autoPlanningPending: true };
+    expect(blocksLibraryCaptureActions(automaticHandoff)).toBe(true);
+    expect(getCaptureFlowView(automaticHandoff, true, true)).toMatchObject({
+      title: "Creating your plan",
+      buttons: []
+    });
     expect(blocksLibraryCaptureActions({ ...session("stopped"), autoPlanningPending: false, analysisError: "Retry planning" })).toBe(false);
     expect(blocksLibraryCaptureActions(session("planning"))).toBe(true);
     expect(blocksLibraryCaptureActions(session("ready"))).toBe(false);
