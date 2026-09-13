@@ -11,6 +11,7 @@ import { sendRuntimeMessage } from "./runtimeMessaging";
 import { clearApiKey, getCaptureRetentionProtection, getSession, getSettings, pruneCaptureHistory, saveSession, saveSettings } from "./storage";
 import { checkForJesseeUpdate, initialUpdateState, type UpdateState } from "./update";
 import { postWebhook } from "./webhook";
+import { withStoryOwnershipLock } from "./storyEditorTabs";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("Missing #app");
@@ -195,12 +196,16 @@ async function render(message = ""): Promise<void> {
     const retentionDays = Math.min(365, Math.max(1, Math.round(Number.isFinite(value) ? value : 30)));
     await saveSettings({ retentionDays });
     try {
-      const protection = await getCaptureRetentionProtection(retentionDays);
-      await Promise.all([
-        deleteOldCaptureFolders(retentionDays, true, protection.exportFolderName),
-        pruneCaptureHistory(retentionDays, protection.captureId)
-      ]);
-      await render("Retention saved.");
+      await withStoryOwnershipLock(async () => {
+        const protection = await getCaptureRetentionProtection(retentionDays);
+        await Promise.all([
+          deleteOldCaptureFolders(retentionDays, true, protection.exportFolderName),
+          pruneCaptureHistory(retentionDays, protection.captureId)
+        ]);
+        await render("Retention saved.");
+      }, async () => {
+        await render("Retention saved. Cleanup will run after the open story editor closes.");
+      });
     } catch (error) {
       await render(error instanceof Error ? error.message : String(error));
     }

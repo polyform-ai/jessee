@@ -60,11 +60,11 @@ function normalizeSettings(settings: Settings): Settings {
   };
 }
 
-export async function upsertCaptureHistory(item: CaptureHistoryItem): Promise<void> {
+export async function upsertCaptureHistory(item: CaptureHistoryItem, activeSession?: RecordingSession): Promise<void> {
   await withSettingsMutation(async () => {
     const settings = await getSettings();
     const candidates = [item, ...(settings.captureHistory ?? []).filter((existing) => existing.id !== item.id)];
-    await writeSettings({ ...settings, captureHistory: candidates.slice(0, 50) });
+    await writeSettings({ ...settings, captureHistory: candidates.slice(0, 50) }, activeSession);
     await deleteHistoryArtifacts(candidates.slice(50));
   });
 }
@@ -97,8 +97,11 @@ export async function pruneCaptureHistory(retentionDays: number, protectedCaptur
   });
 }
 
-async function writeSettings(settings: Settings): Promise<void> {
-  await chrome.storage.local.set({ [SETTINGS_KEY]: normalizeSettings(settings) });
+async function writeSettings(settings: Settings, activeSession?: RecordingSession): Promise<void> {
+  await chrome.storage.local.set({
+    [SETTINGS_KEY]: normalizeSettings(settings),
+    ...(activeSession ? { [SESSION_KEY]: activeSession } : {})
+  });
 }
 
 async function withSettingsMutation<T>(run: () => Promise<T>): Promise<T> {

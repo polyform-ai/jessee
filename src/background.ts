@@ -1,6 +1,7 @@
 import { analyzeCapture, testOpenAiSetup, transcribeAudio } from "./openai";
 import { deleteArtifacts, hydrateSession } from "./artifacts";
 import { clearAnnotationEvidence } from "./captureEvidence";
+import { saveCaptureSessionHistory } from "./captureHistory";
 import { getSession, getSettings, saveSession } from "./storage";
 import { acceptsContentEvent, shouldRecordPageChange } from "./captureState";
 import type { RecordingSession, RuntimeMessage, TimelineEvent } from "./types";
@@ -126,6 +127,14 @@ async function handleMessage(message: RuntimeMessage, sender: chrome.runtime.Mes
       return { ok: true };
     case "PREPARE_CAPTURE_PLAN":
       return prepareCapturePlanArtifact();
+    case "SAVE_CAPTURE_STORY": {
+      const current = await getSession();
+      if (current.captureId && message.session.captureId !== current.captureId) {
+        throw new Error("This story is no longer the active capture.");
+      }
+      await saveCaptureSessionHistory(message.session);
+      return { ok: true, session: message.session };
+    }
     case "GENERATE_PDF":
       return preparePdfArtifact();
     case "TEST_AI_SETUP": {

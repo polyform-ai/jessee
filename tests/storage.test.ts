@@ -55,6 +55,23 @@ describe("settings mutations", () => {
     expect(stored.captureHistory).toHaveLength(1);
     expect(stored.captureHistory?.[0]).toMatchObject({ id: "open-editor", title: "Newest edit" });
   });
+
+  it("writes the active story session and its history snapshot atomically", async () => {
+    const set = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("chrome", {
+      storage: { local: { get: vi.fn().mockResolvedValue({ settings: { uniqueId: "person", captureHistory: [] } }), set } }
+    });
+    const item = historyItem("active-story", Date.now());
+    const activeSession = { ...item.session, status: "planned" as const };
+
+    await upsertCaptureHistory({ ...item, session: activeSession }, activeSession);
+
+    expect(set).toHaveBeenCalledTimes(1);
+    expect(set).toHaveBeenCalledWith(expect.objectContaining({
+      recordingSession: activeSession,
+      settings: expect.objectContaining({ captureHistory: [expect.objectContaining({ id: "active-story", session: activeSession })] })
+    }));
+  });
 });
 
 function historyItem(id: string, createdAt: number): CaptureHistoryItem {

@@ -10,8 +10,12 @@ export async function withStoryEditorOwnership<T>(
     if (!available || await focusOpenStoryEditor()) return unavailable();
     return run();
   };
-  if (!navigator.locks?.request) return attempt(true);
-  return navigator.locks.request(STORY_EDITOR_LOCK, { mode: "exclusive", ifAvailable: true }, (lock) => attempt(Boolean(lock)));
+  return withStoryOwnershipLock(() => attempt(true), () => attempt(false));
+}
+
+export async function withStoryOwnershipLock<T>(run: () => Promise<T>, unavailable: () => Promise<T>): Promise<T> {
+  if (!navigator.locks?.request) return run();
+  return navigator.locks.request(STORY_EDITOR_LOCK, { mode: "exclusive", ifAvailable: true }, (lock) => lock ? run() : unavailable());
 }
 
 export async function hasOpenStoryEditor(): Promise<boolean> {

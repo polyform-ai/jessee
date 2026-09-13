@@ -7,7 +7,7 @@ import { downloadPlanPdf } from "./pdfDownload";
 import { rankScreenshotsForStep, screenshotTimingLabel, type ScreenshotCandidate } from "./imagePicker";
 import { sendRuntimeMessage } from "./runtimeMessaging";
 import { RevisionedSaveQueue } from "./revisionedSaveQueue";
-import { getSession, saveSession } from "./storage";
+import { getSession } from "./storage";
 import { StoryEditor, type StoryEditorAction } from "./storyEditor";
 import type { CaptureAnalysis, CaptureStoryStep, RecordingSession, RuntimeMessage } from "./types";
 
@@ -315,9 +315,9 @@ async function persistPlan(): Promise<void> {
   await planSaves.flush(async () => {
     if (!session.captureAnalysis || !storyEditor) return;
     const next = { ...session, captureAnalysis: storyEditor.value(session.captureAnalysis), status: "planned" as const, analysisError: undefined };
-    await saveSession(next);
-    await saveCaptureHistory(next);
-    session = next;
+    const response = await send({ type: "SAVE_CAPTURE_STORY", session: next });
+    if (!response.ok) throw new Error(response.error ?? "Story save failed.");
+    session = response.session ?? next;
   });
   statusMessage = "Saved automatically";
   updateSaveStatus();

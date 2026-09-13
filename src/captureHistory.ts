@@ -1,20 +1,29 @@
 import { upsertCaptureHistory } from "./storage";
-import type { RecordingSession } from "./types";
+import type { CaptureHistoryItem, RecordingSession } from "./types";
 
 export async function saveCaptureHistory(current: RecordingSession): Promise<void> {
   if (!current.startedAt) return;
-  await upsertCaptureHistory({
+  await upsertCaptureHistory(captureHistoryItem(current));
+}
+
+export async function saveCaptureSessionHistory(current: RecordingSession): Promise<void> {
+  if (!current.startedAt) return;
+  await upsertCaptureHistory(captureHistoryItem(current), current);
+}
+
+function captureHistoryItem(current: RecordingSession): CaptureHistoryItem {
+  return {
     id: current.captureId ?? `${current.startedAt}`,
     title: current.captureAnalysis?.userGoal || current.tabTitle || "JesSee capture",
     folderName: current.exportFolderName,
-    createdAt: current.startedAt,
+    createdAt: current.startedAt!,
     stoppedAt: current.stoppedAt,
     imageCount: current.screenshots.length,
     durationSeconds: recordingSeconds(current),
     hasPlan: Boolean(current.captureAnalysis),
     hasPdf: current.status === "ready",
     session: current
-  });
+  };
 }
 
 function recordingSeconds(current: RecordingSession): number {

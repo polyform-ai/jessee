@@ -25,7 +25,7 @@ import { getCaptureRetentionProtection, getSession, getSettings, pruneCaptureHis
 import type { CaptureHistoryItem, RecordingSession, RuntimeMessage, ScreenshotEvidence, TimelineEvent } from "./types";
 import { postWebhook } from "./webhook";
 import { sendRuntimeMessage } from "./runtimeMessaging";
-import { hasOpenStoryEditor, openOrFocusStoryEditor, withStoryEditorOwnership } from "./storyEditorTabs";
+import { hasOpenStoryEditor, openOrFocusStoryEditor, withStoryEditorOwnership, withStoryOwnershipLock } from "./storyEditorTabs";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("Missing #app");
@@ -864,11 +864,13 @@ function statusLabel(status?: RecordingSession["status"]): string {
 async function cleanupOldCaptures(retentionDays: number): Promise<void> {
   const normalized = normalizeRetentionDays(retentionDays);
   try {
-    const protection = await getCaptureRetentionProtection(normalized);
-    await Promise.all([
-      deleteOldCaptureFolders(normalized, false, protection.exportFolderName),
-      pruneCaptureHistory(normalized, protection.captureId)
-    ]);
+    await withStoryOwnershipLock(async () => {
+      const protection = await getCaptureRetentionProtection(normalized);
+      await Promise.all([
+        deleteOldCaptureFolders(normalized, false, protection.exportFolderName),
+        pruneCaptureHistory(normalized, protection.captureId)
+      ]);
+    }, async () => undefined);
   } catch (error) {
     console.warn("Could not clean old captures", error);
   }
