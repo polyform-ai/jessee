@@ -4,6 +4,7 @@ import { clearAnnotationEvidence } from "./captureEvidence";
 import { saveCaptureSessionHistory } from "./captureHistory";
 import { getSession, getSettings, saveSession } from "./storage";
 import { acceptsContentEvent, shouldRecordPageChange } from "./captureState";
+import { withStoryOwnershipLockWait } from "./storyEditorTabs";
 import type { RecordingSession, RuntimeMessage, TimelineEvent } from "./types";
 
 chrome.action.onClicked.addListener((tab) => {
@@ -128,12 +129,16 @@ async function handleMessage(message: RuntimeMessage, sender: chrome.runtime.Mes
     case "PREPARE_CAPTURE_PLAN":
       return prepareCapturePlanArtifact();
     case "SAVE_CAPTURE_STORY": {
-      const current = await getSession();
-      if (current.captureId && message.session.captureId !== current.captureId) {
-        throw new Error("This story is no longer the active capture.");
-      }
-      await saveCaptureSessionHistory(message.session);
-      return { ok: true, session: message.session };
+      return withStoryOwnershipLockWait(async () => {
+        const current = await getSession();
+        const currentCaptureId = current.captureId ?? (current.startedAt ? `${current.startedAt}` : undefined);
+        const savedCaptureId = message.session.captureId ?? (message.session.startedAt ? `${message.session.startedAt}` : undefined);
+        if (!currentCaptureId || savedCaptureId !== currentCaptureId) {
+          throw new Error("This story is no longer the active capture.");
+        }
+        await saveCaptureSessionHistory(message.session);
+        return { ok: true, session: message.session };
+      });
     }
     case "GENERATE_PDF":
       return preparePdfArtifact();
