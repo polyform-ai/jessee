@@ -167,4 +167,27 @@ describe("buildCaptureStory", () => {
     expect(story[0]).toMatchObject({ pageUrl: "https://model.example.test/source" });
     expect(story[0].pageTitle).toBeUndefined();
   });
+
+  it("keeps URL-like browser titles out of page-change prose", () => {
+    const pageUrl = "https://private.example.test/account?token=secret";
+    const story = buildCaptureStory(
+      {
+        userGoal: "Explain a private page",
+        keyPoints: [],
+        breakingPoints: [],
+        helpfulImageMoments: [],
+        story: "Move to the next page."
+      },
+      undefined,
+      [{ type: "url-change", atMs: 1_000, url: pageUrl, title: pageUrl }],
+      []
+    );
+
+    expect(story[0]).toMatchObject({
+      title: "Page changed",
+      narrative: "The walkthrough moved to a new page.",
+      pageUrl
+    });
+    expect(story[0].pageTitle).toBeUndefined();
+  });
 });

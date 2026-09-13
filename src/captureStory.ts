@@ -82,15 +82,16 @@ export function buildCaptureStory(
     );
     if (alreadyRepresented) continue;
     const screenshot = screenshotAtOrAfter(screenshots, eventSeconds, event.url);
+    const pageTitle = humanReadablePageTitle(event.title, event.url);
     story.push(normalizeStep({
       startSeconds: eventSeconds,
       endSeconds: eventSeconds,
-      title: event.title ? `Opened ${event.title}` : "Page changed",
-      narrative: event.title ? `The walkthrough moved to ${event.title}.` : "The walkthrough moved to a new page.",
+      title: pageTitle ? `Opened ${pageTitle}` : "Page changed",
+      narrative: pageTitle ? `The walkthrough moved to ${pageTitle}.` : "The walkthrough moved to a new page.",
       transcript: "",
       screenshotId: screenshot?.id,
       pageUrl: event.url,
-      pageTitle: event.title,
+      pageTitle,
       kind: "page-change"
     }));
   }
@@ -116,6 +117,12 @@ export function buildCaptureStory(
     if (pageUrl) lastPage = { url: pageUrl, title: pageTitle };
     return { ...step, pageUrl, pageTitle, showPageUrl: step.showPageUrl !== false };
   });
+}
+
+function humanReadablePageTitle(title: string | undefined, pageUrl: string | undefined): string | undefined {
+  const value = title?.trim();
+  if (!value || value === pageUrl || /^(?:https?:\/\/|www\.)/i.test(value)) return undefined;
+  return value;
 }
 
 function closestUnclaimedStep(
