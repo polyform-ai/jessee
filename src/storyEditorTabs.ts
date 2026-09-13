@@ -18,6 +18,11 @@ export async function withStoryOwnershipLock<T>(run: () => Promise<T>, unavailab
   return navigator.locks.request(STORY_EDITOR_LOCK, { mode: "exclusive", ifAvailable: true }, (lock) => lock ? run() : unavailable());
 }
 
+export async function withStoryOwnershipLockWait<T>(run: () => Promise<T>): Promise<T> {
+  if (!navigator.locks?.request) return run();
+  return navigator.locks.request(STORY_EDITOR_LOCK, { mode: "exclusive" }, run);
+}
+
 export async function hasOpenStoryEditor(): Promise<boolean> {
   return Boolean(await openStoryEditorTab());
 }
