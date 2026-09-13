@@ -353,6 +353,8 @@ test("loads extension settings page", async () => {
       });
       await expect(historyPage.getByRole("heading", { name: "Show the updated visual workflow" })).toBeVisible();
     }
+    await historyPage.getByRole("searchbox", { name: "Search recordings" }).fill("#problem");
+    await expect(historyPage.locator("[data-history-card]:not([hidden])")).toHaveCount(process.env.JESSEE_VISUAL_QA ? 3 : 1);
     await historyPage.getByRole("searchbox", { name: "Search recordings" }).fill("no matching recording");
     await expect(historyPage.locator("[data-history-card]:not([hidden])")).toHaveCount(0);
     await historyPage.getByRole("searchbox", { name: "Search recordings" }).fill("updated visual");

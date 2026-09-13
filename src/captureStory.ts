@@ -80,7 +80,7 @@ export function buildCaptureStory(
       startSeconds: eventSeconds,
       endSeconds: eventSeconds,
       title: event.title ? `Opened ${event.title}` : "Page changed",
-      narrative: event.url ? `The walkthrough moved to ${event.url}.` : "The walkthrough moved to a new page.",
+      narrative: event.title ? `The walkthrough moved to ${event.title}.` : "The walkthrough moved to a new page.",
       transcript: "",
       screenshotId: screenshot?.id,
       pageUrl: event.url,

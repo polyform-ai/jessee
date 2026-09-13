@@ -57,6 +57,7 @@ describe("buildCaptureStory", () => {
     expect(story.every((step) => Boolean(step.pageUrl) && step.showPageUrl === true)).toBe(true);
     expect(story[1]).toEqual(expect.objectContaining({
       title: "Opened Results",
+      narrative: "The walkthrough moved to Results.",
       pageUrl: "https://example.test/results",
       screenshotId: "shot-results"
     }));

@@ -113,7 +113,7 @@ function renderHistoryCard(item: CaptureHistoryItem): string {
   const hasRecording = Boolean(session.videoDataUrl || session.audioDataUrl || session.transcript?.text);
   const busy = Boolean(busyCaptureId);
   const preparingThisCapture = busyCaptureId === item.id;
-  return `<article class="history-card" data-history-card data-search="${escapeHtml(`${item.title} ${pageContext}`.toLowerCase())}">
+  return `<article class="history-card" data-history-card data-search="${escapeHtml(historySearchText(item))}">
     <div class="history-card-visual" ${screenshot && !thumbnails.has(item.id) ? `data-thumbnail-capture="${escapeHtml(item.id)}"` : ""}>
       ${thumbnail ? `<img src="${thumbnail}" alt="Captured screen from ${escapeHtml(item.title)}" loading="lazy" />` : `${screenshot ? `<img data-history-thumbnail data-thumbnail-image="${escapeHtml(item.id)}" alt="Captured screen from ${escapeHtml(item.title)}" hidden />` : ""}<div class="history-card-placeholder" data-thumbnail-placeholder="${escapeHtml(item.id)}"><img src="/icon.svg" alt="" /><span>${screenshot ? (thumbnailLoaded ? "Preview unavailable" : "Loading captured screen…") : "Text-led walkthrough"}</span></div>`}
       <span class="history-state ${item.hasPlan ? "planned" : "captured"}">${item.hasPlan ? "Story ready" : "Recording saved"}</span>
@@ -136,6 +136,17 @@ function renderHistoryCard(item: CaptureHistoryItem): string {
       </div>
     </div>
   </article>`;
+}
+
+function historySearchText(item: CaptureHistoryItem): string {
+  const session = item.session;
+  const storyPages = session.captureAnalysis?.storySteps?.flatMap((step) => [step.pageTitle, step.pageUrl]) ?? [];
+  const screenshotPages = session.screenshots.flatMap((screenshot) => [screenshot.title, screenshot.url]);
+  const timelinePages = session.timeline.flatMap((event) => [event.title, event.url]);
+  return [item.title, item.folderName, session.tabTitle, session.tabUrl, ...storyPages, ...screenshotPages, ...timelinePages]
+    .filter((value): value is string => typeof value === "string" && value.length > 0)
+    .join(" ")
+    .toLowerCase();
 }
 
 function renderEmptyLibrary(): string {
