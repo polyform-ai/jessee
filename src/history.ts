@@ -237,9 +237,13 @@ async function downloadCapture(captureId: string): Promise<void> {
   const item = history.find((candidate) => candidate.id === captureId);
   if (!item?.session.captureAnalysis) return;
   busyCaptureId = captureId;
-  message = "Preparing a fresh PDF from the saved story…";
-  render();
   try {
+    if (await focusOpenStoryEditor()) {
+      message = "Your open story editor was focused. Download there so the PDF includes your latest edits.";
+      return;
+    }
+    message = "Preparing a fresh PDF from the saved story…";
+    render();
     await downloadPlanPdf(item.session);
     const readySession: RecordingSession = { ...item.session, status: "ready" };
     await saveCaptureHistory(readySession);

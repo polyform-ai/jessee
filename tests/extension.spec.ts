@@ -40,7 +40,7 @@ test("loads extension settings page", async () => {
     let [serviceWorker] = context.serviceWorkers();
     serviceWorker ??= await context.waitForEvent("serviceworker");
     const extensionId = new URL(serviceWorker.url()).host;
-    const page = await context.newPage();
+    let page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/options.html`);
     await expect(page.getByRole("heading", { name: "JesSee" })).toBeVisible();
     await expect(page.getByLabel("OpenAI API key")).toBeVisible();
@@ -232,7 +232,9 @@ test("loads extension settings page", async () => {
     if (process.env.JESSEE_VISUAL_QA) {
       await page.screenshot({ path: resolve(__dirname, "../website/assets/playbook-review.png") });
     }
-    await page.getByRole("button", { name: "Change image for step 1" }).click();
+    // Opening the picker intentionally rebuilds the editor, so dispatch the click
+    // without waiting for the source button to remain attached afterward.
+    await page.getByRole("button", { name: "Change image for step 1" }).dispatchEvent("click");
     await expect(page.getByRole("dialog")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Step through the captured moments" })).toBeVisible();
     if (process.env.JESSEE_VISUAL_QA) {
@@ -340,9 +342,15 @@ test("loads extension settings page", async () => {
       await expect(historyPage.getByRole("dialog")).toBeVisible();
       await expect(historyPage.getByText(/Start with the problem: text, screenshots, and video/)).toBeVisible();
       await historyPage.getByRole("button", { name: "Close recording preview" }).click();
+      await historyPage.getByRole("button", { name: "Download PDF" }).click();
+      await expect(historyPage.getByText("Download there so the PDF includes your latest edits.", { exact: false })).toBeVisible();
+      await page.close();
       const historyDownload = historyPage.waitForEvent("download");
       await historyPage.getByRole("button", { name: "Download PDF" }).click();
       await historyDownload;
+      page = await context.newPage();
+      await page.goto(`chrome-extension://${extensionId}/plan.html`);
+      await expect(page.getByRole("heading", { name: "Make the document sound like you" })).toBeVisible();
       await historyPage.getByRole("button", { name: "Edit story" }).click();
       await expect(historyPage).toHaveURL(`chrome-extension://${extensionId}/history.html`);
       await expect(historyPage.getByText("Your open story editor was focused.", { exact: false })).toBeVisible();
