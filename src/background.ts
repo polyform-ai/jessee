@@ -44,12 +44,15 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
 async function openRecorder(tab?: chrome.tabs.Tab, preferredWindowId?: number): Promise<void> {
   const session = await getSession();
-  const retainedWindowId = preferredWindowId ?? session.activeWindowId;
+  const activeRecorder = recorderIsActive(session);
+  const retainedWindowId = activeRecorder
+    ? session.activeWindowId ?? preferredWindowId
+    : preferredWindowId;
   const retainedWindowExists = retainedWindowId ? await windowExists(retainedWindowId) : false;
   const sidePanel = getSidePanelApi();
   const recorderWindowId = retainedWindowExists ? retainedWindowId : undefined;
   const target = tab ?? (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
-  if (!recorderWindowId && !recorderIsActive(session) && target?.id && target.url && /^https?:\/\//.test(target.url)) {
+  if (!activeRecorder && target?.id && target.url && /^https?:\/\//.test(target.url)) {
     await chrome.storage.local.set({ recorderTargetTabId: target.id });
   }
 
@@ -62,8 +65,8 @@ async function openRecorder(tab?: chrome.tabs.Tab, preferredWindowId?: number): 
 
   const recorderUrl = chrome.runtime.getURL("popup.html");
   const tabs = await chrome.tabs.query({});
-  const existing = tabs.find((candidate) => candidate.windowId === recorderWindowId && candidate.url?.startsWith(recorderUrl))
-    ?? tabs.find((candidate) => candidate.url?.startsWith(recorderUrl));
+  const existing = tabs.find((candidate) => candidate.windowId === targetWindowId && candidate.url?.startsWith(recorderUrl))
+    ?? (activeRecorder ? tabs.find((candidate) => candidate.url?.startsWith(recorderUrl)) : undefined);
   if (existing?.id) {
     await chrome.tabs.update(existing.id, { active: true });
     if (existing.windowId) await chrome.windows.update(existing.windowId, { focused: true });
