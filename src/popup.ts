@@ -2,7 +2,7 @@ import "./ui.css";
 import { artifactRef, putArtifact } from "./artifacts";
 import { createCompatibleMediaRecorder, mediaFileExtension, screenCaptureOptions, usesFullPageRecorder } from "./browserSupport";
 import { shouldStartWithFreshCapture } from "./captureHome";
-import { saveCaptureHistory } from "./captureHistory";
+import { needsCaptureHistoryRecovery, saveCaptureHistory } from "./captureHistory";
 import { blocksLibraryCaptureActions, getCaptureFlowView, type CaptureFlowButton } from "./captureFlow";
 import { dataUrlToBlob } from "./dataUrl";
 import {
@@ -78,13 +78,21 @@ async function refresh(): Promise<void> {
   }
   const response = await send({ type: "GET_SESSION" });
   session = response.session ?? await getSession();
-  if (!initialSessionChecked && session && shouldStartWithFreshCapture(session) && !(await hasOpenStoryEditor())) {
-    initialSessionChecked = true;
+  if (session && needsCaptureHistoryRecovery(session, settingsCache.captureHistory ?? [])) {
+    await saveCaptureHistory(session);
+    settingsCache = await getSettings();
+  }
+  const resumeAutomaticPlanning = !initialSessionChecked
+    && session?.status === "stopped"
+    && Boolean(session.autoPlanningPending);
+  if (!initialSessionChecked && !resumeAutomaticPlanning && session && shouldStartWithFreshCapture(session) && !(await hasOpenStoryEditor())) {
     session = await resetSession();
-  } else {
+  }
+  if (!initialSessionChecked) {
     initialSessionChecked = true;
   }
   render();
+  if (resumeAutomaticPlanning) void prepareCapturePlan(true);
 }
 
 function render(): void {
