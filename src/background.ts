@@ -173,11 +173,11 @@ async function prepareCapturePlanArtifact(): Promise<unknown> {
       analysisError: undefined,
       openAiUsage: generated.usage
     };
-    await saveSession(session);
+    await saveCaptureSessionHistory(session);
     return { ok: true, session };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await saveSession({ ...current, autoPlanningPending: false, transcript, analysisError: message });
+    await saveCaptureSessionHistory({ ...current, autoPlanningPending: false, transcript, analysisError: message });
     throw error;
   }
 }
@@ -195,8 +195,13 @@ async function preparePdfArtifact(): Promise<unknown> {
 async function preserveCaptureFailure(error: string): Promise<RecordingSession> {
   const session = await getSession();
   if (session.screenshots.length || session.audioDataUrl || session.videoDataUrl) {
-    const next = { ...session, status: session.status === "planning" || session.status === "generating" ? "stopped" as const : session.status, analysisError: error };
-    await saveSession(next);
+    const next = {
+      ...session,
+      status: session.status === "planning" || session.status === "generating" ? "stopped" as const : session.status,
+      autoPlanningPending: false,
+      analysisError: error
+    };
+    await saveCaptureSessionHistory(next);
     return next;
   }
   const next = { ...session, status: "error" as const, error };
