@@ -392,7 +392,10 @@ async function openHistoryPage(): Promise<void> {
 
 async function startFreshCapture(): Promise<void> {
   await withStoryEditorOwnership(async () => {
-    session = await resetSession();
+    const previousSession = session ?? await getSession();
+    const idleSession = await resetSession();
+    session = previousSession.activeWindowId ? { ...idleSession, activeWindowId: previousSession.activeWindowId } : idleSession;
+    if (session !== idleSession) await saveSession(session);
     localStatus = "";
     await refresh();
   }, async () => {
