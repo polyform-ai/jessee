@@ -201,7 +201,7 @@ function drawPlan(
     addHeading([{ text: `${index + 1}. `, bold: false, italic: false }, ...runsFromNode(headingNode, step.title)], 14);
     if (!bodyNodes.length) addParagraph(plainRuns(step.narrative));
     else bodyNodes.forEach((node) => {
-      if (node.type === "blockquote") addCallout(runsFromNode(node, ""));
+      if (node.type === "blockquote") addCallout(runsFromBodyNodes(node.content ?? [], ""));
       else addParagraph(runsFromBodyNodes([node], ""));
     });
     if (step.pageUrl && step.showPageUrl !== false) addParagraph(plainRuns(`Source: ${step.pageTitle || step.pageUrl}${step.pageTitle ? ` - ${step.pageUrl}` : ""}`), [3, 105, 161]);

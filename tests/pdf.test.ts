@@ -196,7 +196,13 @@ describe("createPlanPdf", () => {
           type: "storyStep",
           content: [
             { type: "heading", content: [{ type: "text", text: "Save fails" }] },
-            { type: "blockquote", content: [{ type: "paragraph", content: [{ type: "text", text: "Check this before sharing." }] }] },
+            {
+              type: "blockquote",
+              content: [
+                { type: "paragraph", content: [{ type: "text", text: "Check this before sharing." }] },
+                { type: "paragraph", content: [{ type: "text", text: "Keep the source private." }] }
+              ]
+            },
             { type: "storySource", attrs: { pageUrl: "https://example.test/private-source", visible: false } },
             { type: "storyImage" }
           ]
@@ -207,6 +213,8 @@ describe("createPlanPdf", () => {
     const text = await createPlanPdf(session).text();
 
     expect(text).toContain("Check this before sharing.");
+    expect(text).toContain("Keep the source private.");
+    expect(text).not.toContain("sharing.Keep");
     expect(text).not.toContain("private-source");
   });
 
