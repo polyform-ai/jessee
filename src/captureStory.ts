@@ -90,7 +90,18 @@ export function buildCaptureStory(
   }
 
   const ordered = story.sort((a, b) => a.startSeconds - b.startSeconds || storyKindOrder(a.kind) - storyKindOrder(b.kind));
-  let lastPage: { url?: string; title?: string } = {};
+  const firstKnownPage = ordered
+    .map((step) => {
+      const screenshot = screenshots.find((shot) => shot.id === step.screenshotId);
+      return { url: step.pageUrl || screenshot?.url, title: step.pageTitle || screenshot?.title };
+    })
+    .find((page) => Boolean(page.url))
+    ?? [...screenshots]
+      .sort((a, b) => a.capturedAtMs - b.capturedAtMs)
+      .map((shot) => ({ url: shot.url, title: shot.title }))
+      .find((page) => Boolean(page.url))
+    ?? {};
+  let lastPage: { url?: string; title?: string } = firstKnownPage;
   return ordered.map((step) => {
     const screenshot = screenshots.find((shot) => shot.id === step.screenshotId);
     const pageUrl = step.pageUrl || screenshot?.url || lastPage.url;

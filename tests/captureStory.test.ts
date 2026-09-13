@@ -65,4 +65,33 @@ describe("buildCaptureStory", () => {
       screenshotId: "shot-error"
     }));
   });
+
+  it("fills an early text-only step from the first known captured page", () => {
+    const story = buildCaptureStory(
+      {
+        userGoal: "Explain the page",
+        keyPoints: [],
+        breakingPoints: [],
+        helpfulImageMoments: [],
+        story: "Introduce the page.",
+        storySteps: [{
+          startSeconds: 0,
+          endSeconds: 0,
+          title: "Introduction",
+          narrative: "Set up the walkthrough.",
+          transcript: "",
+          kind: "manual"
+        }]
+      },
+      undefined,
+      [],
+      [{ id: "first-shot", capturedAtMs: 1_000, url: "https://example.test/start", title: "Start" }]
+    );
+
+    expect(story[0]).toMatchObject({
+      pageUrl: "https://example.test/start",
+      pageTitle: "Start",
+      showPageUrl: true
+    });
+  });
 });
