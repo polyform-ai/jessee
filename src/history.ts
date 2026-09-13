@@ -104,7 +104,8 @@ function renderHistoryCard(item: CaptureHistoryItem): string {
   const storySteps = session.captureAnalysis?.storySteps?.length ?? 0;
   const pageContext = session.tabTitle || session.tabUrl || item.folderName || "Local capture";
   const hasRecording = Boolean(session.videoDataUrl || session.audioDataUrl || session.transcript?.text);
-  const busy = busyCaptureId === item.id;
+  const busy = Boolean(busyCaptureId);
+  const preparingThisCapture = busyCaptureId === item.id;
   return `<article class="history-card" data-history-card data-search="${escapeHtml(`${item.title} ${pageContext}`.toLowerCase())}">
     <div class="history-card-visual" ${screenshot && !thumbnails.has(item.id) ? `data-thumbnail-capture="${escapeHtml(item.id)}"` : ""}>
       ${thumbnail ? `<img src="${thumbnail}" alt="Captured screen from ${escapeHtml(item.title)}" loading="lazy" />` : `${screenshot ? `<img data-history-thumbnail data-thumbnail-image="${escapeHtml(item.id)}" alt="Captured screen from ${escapeHtml(item.title)}" hidden />` : ""}<div class="history-card-placeholder" data-thumbnail-placeholder="${escapeHtml(item.id)}"><img src="/icon.svg" alt="" /><span>${screenshot ? (thumbnailLoaded ? "Preview unavailable" : "Loading captured screen…") : "Text-led walkthrough"}</span></div>`}
@@ -123,7 +124,7 @@ function renderHistoryCard(item: CaptureHistoryItem): string {
       </div>
       <div class="history-card-actions">
         <button class="button primary" data-edit-capture="${escapeHtml(item.id)}" ${busy || activeCapture ? "disabled" : ""}>${item.hasPlan ? "Edit story" : "Create story"}</button>
-        ${item.hasPlan ? `<button class="button secondary" data-download-capture="${escapeHtml(item.id)}" ${busy ? "disabled" : ""}>${busy ? "Preparing PDF…" : "Download PDF"}</button>` : ""}
+        ${item.hasPlan ? `<button class="button secondary" data-download-capture="${escapeHtml(item.id)}" ${busy ? "disabled" : ""}>${preparingThisCapture ? "Preparing PDF…" : "Download PDF"}</button>` : ""}
         ${hasRecording ? `<button class="history-text-action" data-preview-capture="${escapeHtml(item.id)}" ${busy ? "disabled" : ""}>View recording</button>` : ""}
       </div>
     </div>
@@ -140,6 +141,7 @@ function renderEmptyLibrary(): string {
 }
 
 function renderPreview(item: CaptureHistoryItem, session: RecordingSession): string {
+  const busy = Boolean(busyCaptureId);
   const recording = session.videoDataUrl
     ? `<video controls playsinline src="${session.videoDataUrl}"></video>`
     : session.audioDataUrl
@@ -155,8 +157,8 @@ function renderPreview(item: CaptureHistoryItem, session: RecordingSession): str
       <div class="recording-player">${recording}</div>
       ${transcript ? `<section class="recording-transcript"><p class="section-eyebrow">Transcript</p><p>${escapeHtml(transcript)}</p></section>` : ""}
       <div class="recording-dialog-actions">
-        <button class="button secondary" data-edit-capture="${escapeHtml(item.id)}" ${activeCapture ? "disabled" : ""}>Edit this story</button>
-        ${item.hasPlan ? `<button class="button primary" data-download-capture="${escapeHtml(item.id)}">Download PDF</button>` : ""}
+        <button class="button secondary" data-edit-capture="${escapeHtml(item.id)}" ${activeCapture || busy ? "disabled" : ""}>Edit this story</button>
+        ${item.hasPlan ? `<button class="button primary" data-download-capture="${escapeHtml(item.id)}" ${busy ? "disabled" : ""}>${busyCaptureId === item.id ? "Preparing PDF…" : "Download PDF"}</button>` : ""}
       </div>
     </div>
   </dialog>`;
@@ -193,6 +195,7 @@ function bindEvents(): void {
 }
 
 async function editCapture(captureId: string): Promise<void> {
+  if (busyCaptureId) return;
   const item = history.find((candidate) => candidate.id === captureId);
   if (!item) return;
   if (await guardActiveCapture()) return;
@@ -218,6 +221,7 @@ async function editCapture(captureId: string): Promise<void> {
 }
 
 async function downloadCapture(captureId: string): Promise<void> {
+  if (busyCaptureId) return;
   const item = history.find((candidate) => candidate.id === captureId);
   if (!item?.session.captureAnalysis) return;
   busyCaptureId = captureId;
@@ -239,6 +243,7 @@ async function downloadCapture(captureId: string): Promise<void> {
 }
 
 async function previewCapture(captureId: string): Promise<void> {
+  if (busyCaptureId) return;
   const item = history.find((candidate) => candidate.id === captureId);
   if (!item) return;
   busyCaptureId = captureId;

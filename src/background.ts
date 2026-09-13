@@ -41,26 +41,36 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 });
 
 async function openRecorder(tab?: chrome.tabs.Tab): Promise<void> {
+  const session = await getSession();
+  const recorderWindowId = recorderOwnsWindow(session) ? session.activeWindowId : undefined;
   const target = tab ?? (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
-  if (target?.id && target.url && /^https?:\/\//.test(target.url)) {
+  if (!recorderWindowId && target?.id && target.url && /^https?:\/\//.test(target.url)) {
     await chrome.storage.local.set({ recorderTargetTabId: target.id });
   }
 
+  const targetWindowId = recorderWindowId ?? target?.windowId;
   const sidePanel = getSidePanelApi();
-  if (sidePanel && target?.windowId) {
-    await sidePanel.open({ windowId: target.windowId });
+  if (sidePanel && targetWindowId) {
+    await sidePanel.open({ windowId: targetWindowId });
+    if (recorderWindowId) await chrome.windows.update(recorderWindowId, { focused: true });
     return;
   }
 
   const recorderUrl = chrome.runtime.getURL("popup.html");
   const tabs = await chrome.tabs.query({});
-  const existing = tabs.find((candidate) => candidate.url?.startsWith(recorderUrl));
+  const existing = tabs.find((candidate) => candidate.windowId === recorderWindowId && candidate.url?.startsWith(recorderUrl))
+    ?? (recorderWindowId ? undefined : tabs.find((candidate) => candidate.url?.startsWith(recorderUrl)));
   if (existing?.id) {
     await chrome.tabs.update(existing.id, { active: true });
     if (existing.windowId) await chrome.windows.update(existing.windowId, { focused: true });
     return;
   }
+  if (recorderWindowId) throw new Error("The original JesSee recorder is no longer open. Finish or recover that capture before starting another one.");
   await chrome.tabs.create({ url: recorderUrl, active: true });
+}
+
+function recorderOwnsWindow(session: RecordingSession): boolean {
+  return Boolean(session.activeWindowId && ["recording", "paused", "planning", "generating"].includes(session.status));
 }
 
 function getSidePanelApi(): Pick<typeof chrome.sidePanel, "open" | "setPanelBehavior"> | undefined {
