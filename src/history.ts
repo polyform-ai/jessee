@@ -227,6 +227,12 @@ async function editCapture(captureId: string): Promise<void> {
     if (!item) return;
     if (await guardActiveCapture()) return;
     await withStoryEditorOwnership(async () => {
+      const currentSession = await getSession();
+      if (blocksLibraryCaptureActions(currentSession)) {
+        activeCapture = true;
+        message = activeCaptureMessage();
+        return;
+      }
       message = item.hasPlan ? "Opening the editable story…" : "Creating an editable story from this recording…";
       render();
       await saveSession(item.session);
@@ -324,6 +330,11 @@ async function startNewCapture(): Promise<void> {
     if (await guardActiveCapture()) return;
     await withStoryEditorOwnership(async () => {
       const previousSession = await getSession();
+      if (blocksLibraryCaptureActions(previousSession)) {
+        activeCapture = true;
+        message = activeCaptureMessage();
+        return;
+      }
       const idleSession = await resetSession();
       if (previousSession.activeWindowId) {
         await saveSession({ ...idleSession, activeWindowId: previousSession.activeWindowId });

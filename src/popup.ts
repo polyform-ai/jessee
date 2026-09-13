@@ -191,6 +191,13 @@ function render(): void {
         return;
       }
       await withStoryEditorOwnership(async () => {
+        const latestSession = await getSession();
+        if (blocksLibraryCaptureActions(latestSession)) {
+          session = latestSession;
+          localStatus = "Finish the current capture before loading a previous one.";
+          render();
+          return;
+        }
         await saveSession(item.session);
         localStatus = "Capture loaded.";
         await refresh();
@@ -408,7 +415,13 @@ async function openHistoryPage(): Promise<void> {
 
 async function startFreshCapture(): Promise<void> {
   await withStoryEditorOwnership(async () => {
-    const previousSession = session ?? await getSession();
+    const previousSession = await getSession();
+    if (blocksLibraryCaptureActions(previousSession)) {
+      session = previousSession;
+      localStatus = "Finish the current capture before starting another one.";
+      await refresh();
+      return;
+    }
     const idleSession = await resetSession();
     session = previousSession.activeWindowId ? { ...idleSession, activeWindowId: previousSession.activeWindowId } : idleSession;
     if (session !== idleSession) await saveSession(session);
@@ -434,12 +447,8 @@ async function startRecording(): Promise<void> {
   });
   const microphoneStreamPromise = requestMicrophoneStream(settingsCache);
   const screenStreamPromise = requestScreenStream();
+  let recordingClaimId: string | undefined;
   try {
-    await clearCurrentError();
-    await hardCleanupInterruptedRecording();
-    videoChunks.length = 0;
-    audioChunks.length = 0;
-
     captureAudioContext = new AudioContext();
     const destination = captureAudioContext.createMediaStreamDestination();
     micStream = await microphoneStreamPromise;
@@ -453,10 +462,15 @@ async function startRecording(): Promise<void> {
     await previewVideo.play();
 
     const recordingStarted = await withStoryEditorOwnership(async () => {
+      const currentSession = await getSession();
+      if (blocksLibraryCaptureActions(currentSession)) return false;
+      videoChunks.length = 0;
+      audioChunks.length = 0;
       const target = await getBestActiveTab();
       await focusCaptureTarget(target);
       const startedAt = Date.now();
       const captureId = crypto.randomUUID();
+      recordingClaimId = captureId;
       const exportFolderName = await recordingFolderPromise;
       const initialSession: RecordingSession = {
         ...(await resetSession()),
@@ -512,7 +526,10 @@ async function startRecording(): Promise<void> {
       await recordingFolderPromise;
       clearRecordingFolder();
       cleanupRecorder();
-      localStatus = "Your open story editor was focused. Close it before starting a new capture.";
+      const latestSession = await getSession();
+      localStatus = blocksLibraryCaptureActions(latestSession)
+        ? "Another capture is already running or being prepared. Finish it before starting a new one."
+        : "Your open story editor was focused. Close it before starting a new capture.";
       await refresh();
       return;
     }
@@ -526,21 +543,24 @@ async function startRecording(): Promise<void> {
   } catch (error) {
     void microphoneStreamPromise.then((stream) => stream.getTracks().forEach((track) => track.stop())).catch(() => undefined);
     void screenStreamPromise.then((stream) => stream.getTracks().forEach((track) => track.stop())).catch(() => undefined);
-    await disableOverlay();
+    if (recordingClaimId) await disableOverlay();
     cleanupRecorder();
-    await saveSession({
-      ...((await getSession()) ?? { timeline: [], screenshots: [] }),
-      status: "error",
-      error: permissionAwareErrorMessage(error)
+    const errorMessage = permissionAwareErrorMessage(error);
+    await withStoryEditorOwnership(async () => {
+      const latestSession = await getSession();
+      const ownsLatestSession = Boolean(recordingClaimId && latestSession.captureId === recordingClaimId);
+      if (!ownsLatestSession && blocksLibraryCaptureActions(latestSession)) {
+        session = latestSession;
+        localStatus = "Another capture is already running or being prepared.";
+        return;
+      }
+      await saveSession({ ...latestSession, status: "error", error: errorMessage });
+      localStatus = errorMessage;
+    }, async () => {
+      localStatus = "Your open story editor was focused. Close it before starting a new capture.";
     });
     await refresh();
   }
-}
-
-async function clearCurrentError(): Promise<void> {
-  const current = await getSession();
-  if (!current.error) return;
-  await saveSession({ ...current, error: undefined, status: current.status === "error" ? "idle" : current.status });
 }
 
 async function requestScreenStream(): Promise<MediaStream> {
