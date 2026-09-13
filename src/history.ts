@@ -293,10 +293,23 @@ async function openCapture(windowId?: number): Promise<void> {
 }
 
 async function startNewCapture(): Promise<void> {
-  if (await guardActiveCapture()) return;
-  const previousSession = await getSession();
-  await resetSession();
-  await openCapture(previousSession.activeWindowId);
+  if (busyCaptureId) return;
+  busyCaptureId = "new-capture";
+  try {
+    if (await guardActiveCapture()) return;
+    if (await focusOpenStoryEditor()) {
+      message = "Your open story editor was focused. Finish or close it before starting a new capture.";
+      return;
+    }
+    const previousSession = await getSession();
+    await resetSession();
+    await openCapture(previousSession.activeWindowId);
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error);
+  } finally {
+    busyCaptureId = undefined;
+    render();
+  }
 }
 
 function observeThumbnails(): void {

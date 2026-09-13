@@ -305,6 +305,12 @@ test("loads extension settings page", async () => {
     await expect(historyPage.getByRole("heading", { name: "Show the updated visual workflow" })).toBeVisible();
     await expect(historyPage.getByRole("button", { name: "Edit story" }).first()).toBeVisible();
     await expect(historyPage.getByRole("button", { name: "Download PDF" }).first()).toBeVisible();
+    await historyPage.getByRole("button", { name: "New capture" }).click();
+    await expect(historyPage.getByText("Finish or close it before starting a new capture.", { exact: false })).toBeVisible();
+    await expect.poll(() => historyPage.evaluate(async () => {
+      const stored = await chrome.storage.local.get("recordingSession");
+      return stored.recordingSession?.captureAnalysis?.userGoal;
+    })).toBe("Show the updated visual workflow");
     if (!process.env.JESSEE_VISUAL_QA) {
       await historyPage.evaluate(async () => {
         const stored = await chrome.storage.local.get("settings");
