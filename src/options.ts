@@ -8,15 +8,19 @@ import {
   supportsExportFolderSelection
 } from "./localFiles";
 import { sendRuntimeMessage } from "./runtimeMessaging";
-import { clearApiKey, getSession, getSettings, pruneCaptureHistory, saveSession, saveSettings } from "./storage";
+import { clearApiKey, getCaptureRetentionProtection, getSession, getSettings, pruneCaptureHistory, saveSession, saveSettings } from "./storage";
+import { checkForJesseeUpdate, initialUpdateState, type UpdateState } from "./update";
 import { postWebhook } from "./webhook";
+import { withStoryOwnershipLockWait } from "./storyEditorTabs";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("Missing #app");
 const root = app;
 let profileDraft: { email: string; apiKey: string } | undefined;
+let updateState: UpdateState = initialUpdateState();
 
 void render();
+void refreshUpdateState();
 
 async function render(message = ""): Promise<void> {
   await restoreExportFolder();
@@ -107,6 +111,7 @@ async function render(message = ""): Promise<void> {
           ${canChooseFolder ? `<button class="button primary" id="chooseFolder">${hasExportFolder() ? "Change Folder" : "Choose Folder"}</button>` : ""}
           <p class="hint">${canChooseFolder ? "Each capture is saved in a dated subfolder with screen media, audio, screenshots, the visual story plan, and PDF." : "Capture history and screenshots stay in Safari's extension storage. Your completed PDF downloads through Safari."}</p>
         </section>
+        ${renderUpdatePanel(updateState)}
         ${message ? `<p class="success">${escapeHtml(message)}</p>` : ""}
       </div>
     </main>
@@ -191,12 +196,63 @@ async function render(message = ""): Promise<void> {
     const retentionDays = Math.min(365, Math.max(1, Math.round(Number.isFinite(value) ? value : 30)));
     await saveSettings({ retentionDays });
     try {
-      await Promise.all([deleteOldCaptureFolders(retentionDays, true), pruneCaptureHistory(retentionDays)]);
+      await withStoryOwnershipLockWait(async () => {
+        const protection = await getCaptureRetentionProtection(retentionDays);
+        await Promise.all([
+          deleteOldCaptureFolders(retentionDays, true, protection.exportFolderName),
+          pruneCaptureHistory(retentionDays, protection.captureId)
+        ]);
+      });
       await render("Retention saved.");
     } catch (error) {
       await render(error instanceof Error ? error.message : String(error));
     }
   });
+  bindUpdateControl();
+}
+
+function renderUpdatePanel(state: UpdateState): string {
+  const version = escapeHtml(state.installedVersionName);
+  if (state.status === "checking") {
+    return `<section class="panel update-panel"><div class="panel-header"><div><h2>Updates</h2><p>Installed version ${version}</p></div></div><div class="inline-feedback checking">Checking the JesSee release channel…</div></section>`;
+  }
+  if (state.status === "error") {
+    return `<section class="panel update-panel"><div class="panel-header"><div><h2>Updates</h2><p>Installed version ${version}</p></div></div><div class="inline-feedback error">Could not check right now. ${escapeHtml(state.message)}</div><button class="button secondary" id="checkForUpdates">Try again</button></section>`;
+  }
+  const available = state.status === "available";
+  const automatic = state.channel.automaticUpdates;
+  return `<section class="panel update-panel ${available ? "update-available" : ""}">
+    <div class="panel-header"><div><h2>${available ? "An update is ready" : "JesSee is up to date"}</h2><p>Installed ${version} · ${escapeHtml(channelName(state.channel.channel))}</p></div><span class="update-dot" aria-hidden="true"></span></div>
+    <p class="hint">${available ? `${escapeHtml(state.release.notes)} ${automatic ? "Store or signed-app installs update automatically; a developer-preview copy must switch to that channel once." : ""}` : automatic ? "A trusted update channel is available. Copies installed from that channel update automatically; developer-preview copies must switch once." : "This developer preview checks for releases, but moving to the trusted store or signed app is required for automatic installation."}</p>
+    <div class="row">
+      ${available || automatic ? `<a class="button primary" href="${escapeHtml(state.channel.installUrl)}" target="_blank" rel="noreferrer">${automatic ? "Move to update channel" : "Get the update"}</a>` : ""}
+      <button class="button secondary" id="checkForUpdates">Check again</button>
+    </div>
+  </section>`;
+}
+
+async function refreshUpdateState(): Promise<void> {
+  updateState = await checkForJesseeUpdate();
+  const panel = document.querySelector<HTMLElement>(".update-panel");
+  if (!panel) return;
+  panel.outerHTML = renderUpdatePanel(updateState);
+  bindUpdateControl();
+}
+
+function bindUpdateControl(): void {
+  document.querySelector("#checkForUpdates")?.addEventListener("click", async () => {
+    updateState = initialUpdateState();
+    const panel = document.querySelector<HTMLElement>(".update-panel");
+    if (panel) panel.outerHTML = renderUpdatePanel(updateState);
+    await refreshUpdateState();
+  });
+}
+
+function channelName(channel: string): string {
+  if (channel === "chrome-web-store") return "Chrome Web Store updates";
+  if (channel === "sparkle") return "Signed Safari updates";
+  if (channel === "app-store") return "Mac App Store updates";
+  return "Developer preview";
 }
 
 async function getMicrophones(): Promise<MediaDeviceInfo[]> {

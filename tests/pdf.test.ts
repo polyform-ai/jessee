@@ -173,6 +173,61 @@ describe("createPlanPdf", () => {
     expect(text.match(/\(W+\) Tj/g)?.length).toBeGreaterThanOrEqual(2);
   });
 
+  it("renders callouts and honors hidden step source URLs", async () => {
+    const session = planSession(true);
+    const step = session.captureAnalysis!.storySteps![0];
+    session.screenshots[0].title = "https://example.test/private-source";
+    session.screenshots[0].url = "https://example.test/private-source";
+    session.captureAnalysis!.storySteps = [{
+      ...step,
+      pageUrl: "https://example.test/private-source",
+      pageTitle: "Private source",
+      showPageUrl: false
+    }];
+    session.captureAnalysis!.editorDocument = {
+      type: "doc",
+      content: [
+        {
+          type: "storyOverview",
+          content: [
+            { type: "storyTitle", content: [{ type: "text", text: "Explain the save failure" }] },
+            { type: "storySummary", content: [{ type: "text", text: "Saving does not complete" }] }
+          ]
+        },
+        {
+          type: "storyStep",
+          content: [
+            { type: "heading", content: [{ type: "text", text: "Save fails" }] },
+            {
+              type: "blockquote",
+              content: [
+                { type: "paragraph", content: [{ type: "text", text: "Check this before sharing." }] },
+                { type: "paragraph", content: [{ type: "text", text: "Keep the source private." }] }
+              ]
+            },
+            {
+              type: "orderedList",
+              attrs: { start: 5 },
+              content: [
+                { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Continue from the prior procedure" }] }] }
+              ]
+            },
+            { type: "storySource", attrs: { pageUrl: "https://example.test/private-source", visible: false } },
+            { type: "storyImage" }
+          ]
+        }
+      ]
+    };
+
+    const text = await createPlanPdf(session).text();
+
+    expect(text).toContain("Check this before sharing.");
+    expect(text).toContain("Keep the source private.");
+    expect(text).not.toContain("sharing.Keep");
+    expect(text).toContain("5. Continue from the prior procedure");
+    expect(text).not.toContain("private-source");
+  });
+
   it("keeps editor-cleared key points out of the PDF", async () => {
     const session = planSession();
     session.captureAnalysis!.keyPoints = ["Stale structured point"];

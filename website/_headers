@@ -7,3 +7,7 @@
 
 /assets/*
   Cache-Control: public, max-age=0, must-revalidate
+
+/releases/*
+  Access-Control-Allow-Origin: *
+  Cache-Control: public, max-age=300

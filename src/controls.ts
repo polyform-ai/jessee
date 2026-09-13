@@ -48,6 +48,7 @@ async function refresh(): Promise<void> {
           <p>Add your key and enable your microphone before the first recording.</p>
           <button class="button primary" id="setup">Finish Setup</button>
         `}
+        <button class="button secondary" id="history">Open Library</button>
       </section>
     </main>
   `;
@@ -56,6 +57,12 @@ async function refresh(): Promise<void> {
   document.querySelector("#setup")?.addEventListener("click", () => chrome.runtime.openOptionsPage());
   document.querySelector("#start")?.addEventListener("click", () => void openRecorder());
   document.querySelector("#stop")?.addEventListener("click", () => void stopRecording());
+  document.querySelector("#history")?.addEventListener("click", () => void openHistory());
+}
+
+async function openHistory(): Promise<void> {
+  await chrome.tabs.create({ url: chrome.runtime.getURL("history.html") });
+  window.close();
 }
 
 async function openRecorder(): Promise<void> {

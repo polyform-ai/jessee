@@ -2,11 +2,12 @@ import "./ui.css";
 import { artifactRef, putArtifact } from "./artifacts";
 import { createCompatibleMediaRecorder, mediaFileExtension, screenCaptureOptions, usesFullPageRecorder } from "./browserSupport";
 import { shouldStartWithFreshCapture } from "./captureHome";
-import { saveCaptureHistory } from "./captureHistory";
-import { getCaptureFlowView, type CaptureFlowButton } from "./captureFlow";
+import { needsCaptureHistoryRecovery, saveCaptureHistory } from "./captureHistory";
+import { blocksLibraryCaptureActions, getCaptureFlowView, type CaptureFlowButton } from "./captureFlow";
 import { dataUrlToBlob } from "./dataUrl";
 import {
   chooseExportFolder,
+  clearRecordingFolder,
   deleteOldCaptureFolders,
   exportFolderName,
   hasCaptureStorage,
@@ -20,10 +21,11 @@ import {
 } from "./localFiles";
 import { downloadPlanPdf } from "./pdfDownload";
 import { visiblePageRects } from "./captureEvidence";
-import { getSession, getSettings, pruneCaptureHistory, resetSession, saveSession, saveSettings } from "./storage";
+import { getCaptureRetentionProtection, getSession, getSettings, pruneCaptureHistory, resetSession, saveSession, saveSettings } from "./storage";
 import type { CaptureHistoryItem, RecordingSession, RuntimeMessage, ScreenshotEvidence, TimelineEvent } from "./types";
 import { postWebhook } from "./webhook";
 import { sendRuntimeMessage } from "./runtimeMessaging";
+import { hasOpenStoryEditor, openOrFocusStoryEditor, withStoryEditorOwnership, withStoryOwnershipLockWait } from "./storyEditorTabs";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("Missing #app");
@@ -35,6 +37,7 @@ let audioRecorder: MediaRecorder | undefined;
 let displayStream: MediaStream | undefined;
 let micStream: MediaStream | undefined;
 let mixedStream: MediaStream | undefined;
+let captureAudioContext: AudioContext | undefined;
 let previewVideo: HTMLVideoElement | undefined;
 let screenshotInterval: number | undefined;
 let screenshotInFlight = false;
@@ -75,13 +78,21 @@ async function refresh(): Promise<void> {
   }
   const response = await send({ type: "GET_SESSION" });
   session = response.session ?? await getSession();
-  if (!initialSessionChecked && session && shouldStartWithFreshCapture(session)) {
-    initialSessionChecked = true;
+  if (session && needsCaptureHistoryRecovery(session, settingsCache.captureHistory ?? [])) {
+    await saveCaptureHistory(session);
+    settingsCache = await getSettings();
+  }
+  const resumeAutomaticPlanning = !initialSessionChecked
+    && session?.status === "stopped"
+    && Boolean(session.autoPlanningPending);
+  if (!initialSessionChecked && !resumeAutomaticPlanning && session && shouldStartWithFreshCapture(session) && !(await hasOpenStoryEditor())) {
     session = await resetSession();
-  } else {
+  }
+  if (!initialSessionChecked) {
     initialSessionChecked = true;
   }
   render();
+  if (resumeAutomaticPlanning) void prepareCapturePlan(true);
 }
 
 function render(): void {
@@ -112,6 +123,7 @@ function render(): void {
         </div>
         <div class="header-actions">
           <span class="status">${status}</span>
+          <button class="button secondary compact" id="history">Library</button>
           <button class="icon-button" id="settings" aria-label="Open Settings" title="Settings">⚙</button>
         </div>
       </div>
@@ -174,13 +186,33 @@ function render(): void {
   bind("#newCapture", "click", () => startFreshCapture());
   bind("#createPlan", "click", () => prepareCapturePlan());
   bind("#downloadPdf", "click", () => session && downloadPlanPdf(session));
+  bind("#history", "click", () => openHistoryPage());
   for (const button of document.querySelectorAll<HTMLButtonElement>(".load-history")) {
     button.addEventListener("click", async () => {
       const item = settings?.captureHistory?.find((capture) => capture.id === button.dataset.captureId);
       if (!item) return;
-      await saveSession(item.session);
-      localStatus = "Capture loaded.";
-      await refresh();
+      const currentSession = await getSession();
+      if (blocksLibraryCaptureActions(currentSession)) {
+        session = currentSession;
+        localStatus = "Finish the current capture before loading a previous one.";
+        render();
+        return;
+      }
+      await withStoryEditorOwnership(async () => {
+        const latestSession = await getSession();
+        if (blocksLibraryCaptureActions(latestSession)) {
+          session = latestSession;
+          localStatus = "Finish the current capture before loading a previous one.";
+          render();
+          return;
+        }
+        await saveSession(item.session);
+        localStatus = "Capture loaded.";
+        await refresh();
+      }, async () => {
+        localStatus = "Your open story editor was focused. Finish or close it before loading another capture.";
+        await refresh();
+      });
     });
   }
   bind("#settings", "click", () => chrome.runtime.openOptionsPage());
@@ -264,6 +296,7 @@ function renderOnboarding(settings: Awaited<ReturnType<typeof getSettings>> | un
 
 function renderHistory(history: CaptureHistoryItem[]): string {
   if (history.length === 0) return "";
+  const blocked = blocksLibraryCaptureActions(session);
   return `<details class="panel history-panel">
     <summary>
       <span><strong>History</strong><small>Load a previous local capture</small></span>
@@ -276,7 +309,7 @@ function renderHistory(history: CaptureHistoryItem[]): string {
             <strong>${escapeHtml(item.title)}</strong>
             <p class="hint">${formatHistoryDate(item.createdAt)} · ${item.imageCount} images · ${formatSeconds(item.durationSeconds)} · ${escapeHtml(item.folderName ?? "local capture")}</p>
           </div>
-          <button class="button secondary load-history" data-capture-id="${escapeHtml(item.id)}">Load</button>
+          <button class="button secondary load-history" data-capture-id="${escapeHtml(item.id)}" ${blocked ? "disabled" : ""}>${blocked ? "Finish current capture" : "Load"}</button>
         </div>
       `).join("")}
     </div>
@@ -343,31 +376,85 @@ async function run(message: RuntimeMessage, refreshAfter = true): Promise<void> 
   else render();
 }
 
-async function prepareCapturePlan(): Promise<void> {
-  localStatus = "Preparing the plan.";
-  render();
-  try {
-    await run({ type: "PREPARE_CAPTURE_PLAN" });
-    const current = await getSession();
-    await writeRecordingText("capture-analysis.json", JSON.stringify(current.captureAnalysis, null, 2), "application/json");
-    await saveCaptureHistory(current);
-    localStatus = "Plan ready. Review it, then generate the PDF.";
-    await refresh();
-    await openPlanPage();
-  } catch (error) {
-    localStatus = error instanceof Error ? error.message : String(error);
-    await refresh();
+async function prepareCapturePlan(waitForOwnership = false): Promise<void> {
+  const createPlan = async () => {
+    const latest = await getSession();
+    const automaticHandoffIsPending = latest.status === "stopped" && latest.autoPlanningPending;
+    const manualPlanningIsAvailable = ["stopped", "error"].includes(latest.status) && !latest.autoPlanningPending;
+    if ((waitForOwnership && !automaticHandoffIsPending) || (!waitForOwnership && !manualPlanningIsAvailable)) {
+      session = latest;
+      localStatus = automaticHandoffIsPending ? "The plan is already being prepared." : "This capture has already moved past planning.";
+      await refresh();
+      return;
+    }
+    localStatus = "Preparing the plan.";
+    render();
+    try {
+      await run({ type: "PREPARE_CAPTURE_PLAN" });
+      const current = await getSession();
+      await writeRecordingText("capture-analysis.json", JSON.stringify(current.captureAnalysis, null, 2), "application/json");
+      await saveCaptureHistory(current);
+      localStatus = "Plan ready. Review it, then generate the PDF.";
+      await refresh();
+      await openPlanPage(true);
+    } catch (error) {
+      localStatus = error instanceof Error ? error.message : String(error);
+      const failed = await getSession();
+      if (failed.status === "stopped") {
+        const retryable = failed.autoPlanningPending
+          ? { ...failed, autoPlanningPending: false, analysisError: localStatus }
+          : failed;
+        if (retryable !== failed) await saveSession(retryable);
+        await saveCaptureHistory(retryable);
+      }
+      await refresh();
+    }
+  };
+  if (waitForOwnership) {
+    await withStoryOwnershipLockWait(createPlan);
+    return;
   }
+  await withStoryEditorOwnership(createPlan, async () => {
+    localStatus = "Your open story editor was focused. Finish or close it before creating another story.";
+    await refresh();
+  });
 }
 
-async function openPlanPage(): Promise<void> {
-  await chrome.tabs.create({ url: chrome.runtime.getURL("plan.html") });
+async function openPlanPage(ownershipHeld = false): Promise<void> {
+  if (ownershipHeld) {
+    await openOrFocusStoryEditor();
+    return;
+  }
+  await withStoryEditorOwnership(async () => {
+    await openOrFocusStoryEditor();
+  }, async () => {
+    localStatus = "Your open story editor was focused.";
+    await refresh();
+  });
+}
+
+async function openHistoryPage(): Promise<void> {
+  await chrome.tabs.create({ url: chrome.runtime.getURL("history.html") });
 }
 
 async function startFreshCapture(): Promise<void> {
-  session = await resetSession();
-  localStatus = "";
-  await refresh();
+  await withStoryEditorOwnership(async () => {
+    const previousSession = await getSession();
+    if (blocksLibraryCaptureActions(previousSession)) {
+      session = previousSession;
+      localStatus = "Finish the current capture before starting another one.";
+      await refresh();
+      return;
+    }
+    const idleSession = await resetSession();
+    session = previousSession.activeWindowId ? { ...idleSession, activeWindowId: previousSession.activeWindowId } : idleSession;
+    if (session !== idleSession) await saveSession(session);
+    localStatus = "";
+    await refresh();
+  }, async () => {
+    localStatus = "Your open story editor was focused. Finish or close it before starting a new capture.";
+    await refresh();
+  });
 }
 
 async function startRecording(): Promise<void> {
@@ -384,78 +471,92 @@ async function startRecording(): Promise<void> {
   });
   const microphoneStreamPromise = requestMicrophoneStream(settingsCache);
   const screenStreamPromise = requestScreenStream();
+  let recordingClaimId: string | undefined;
   try {
-    await clearCurrentError();
-    await hardCleanupInterruptedRecording();
-    videoChunks.length = 0;
-    audioChunks.length = 0;
-
-    const audioContext = new AudioContext();
-    const destination = audioContext.createMediaStreamDestination();
+    captureAudioContext = new AudioContext();
+    const destination = captureAudioContext.createMediaStreamDestination();
     micStream = await microphoneStreamPromise;
-    audioContext.createMediaStreamSource(micStream).connect(destination);
+    captureAudioContext.createMediaStreamSource(micStream).connect(destination);
 
     displayStream = await screenStreamPromise;
-    for (const track of displayStream.getVideoTracks()) {
-      track.addEventListener("ended", () => {
-        void stopRecording();
-      });
-    }
-
     mixedStream = new MediaStream([...displayStream.getVideoTracks(), ...destination.stream.getAudioTracks()]);
     previewVideo = document.createElement("video");
     previewVideo.muted = true;
     previewVideo.srcObject = displayStream;
     await previewVideo.play();
 
-    const target = await getBestActiveTab();
-    await focusCaptureTarget(target);
-    const startedAt = Date.now();
-    const captureId = crypto.randomUUID();
-    const exportFolderName = await recordingFolderPromise;
-    const initialSession: RecordingSession = {
-      ...(await resetSession()),
-      status: "recording",
-      startedAt,
-      captureId,
-      activeTabId: target?.id,
-      activeWindowId: target?.windowId,
-      tabUrl: target?.url,
-      tabTitle: target?.title,
-      exportFolderName,
-      localExportWarning: exportFolderName ? undefined : supportsExportFolderSelection()
-        ? "Capture is stored in JesSee. Local-folder export is unavailable; reconnect the folder in Settings to save files there."
-        : "Capture is stored in JesSee. This browser will download the finished PDF.",
-      timeline: [
-        {
-          id: crypto.randomUUID(),
-          type: "recording-started",
-          atMs: 0,
-          url: target?.url ?? "",
-          title: target?.title ?? ""
-        }
-      ]
-    };
-    await saveSession(initialSession);
-    session = initialSession;
+    const recordingStarted = await withStoryEditorOwnership(async () => {
+      const currentSession = await getSession();
+      if (blocksLibraryCaptureActions(currentSession)) return false;
+      videoChunks.length = 0;
+      audioChunks.length = 0;
+      const target = await getBestActiveTab();
+      await focusCaptureTarget(target);
+      const startedAt = Date.now();
+      const captureId = crypto.randomUUID();
+      recordingClaimId = captureId;
+      const exportFolderName = await recordingFolderPromise;
+      const initialSession: RecordingSession = {
+        ...(await resetSession()),
+        status: "recording",
+        startedAt,
+        captureId,
+        activeTabId: target?.id,
+        activeWindowId: target?.windowId,
+        tabUrl: target?.url,
+        tabTitle: target?.title,
+        exportFolderName,
+        localExportWarning: exportFolderName ? undefined : supportsExportFolderSelection()
+          ? "Capture is stored in JesSee. Local-folder export is unavailable; reconnect the folder in Settings to save files there."
+          : "Capture is stored in JesSee. This browser will download the finished PDF.",
+        timeline: [
+          {
+            id: crypto.randomUUID(),
+            type: "recording-started",
+            atMs: 0,
+            url: target?.url ?? "",
+            title: target?.title ?? ""
+          }
+        ]
+      };
+      await saveSession(initialSession);
+      session = initialSession;
+      for (const track of displayStream!.getVideoTracks()) {
+        track.addEventListener("ended", () => {
+          void stopRecording();
+        });
+      }
 
-    lastScreenshotFingerprint = undefined;
-    lastStoredScreenshotAtMs = -Infinity;
-    mediaRecorder = createCompatibleMediaRecorder(mixedStream, ["video/webm;codecs=vp9,opus", "video/webm", "video/mp4;codecs=h264,aac", "video/mp4"]);
-    audioRecorder = createCompatibleMediaRecorder(new MediaStream(destination.stream.getAudioTracks()), ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]);
+      lastScreenshotFingerprint = undefined;
+      lastStoredScreenshotAtMs = -Infinity;
+      mediaRecorder = createCompatibleMediaRecorder(mixedStream!, ["video/webm;codecs=vp9,opus", "video/webm", "video/mp4;codecs=h264,aac", "video/mp4"]);
+      audioRecorder = createCompatibleMediaRecorder(new MediaStream(destination.stream.getAudioTracks()), ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]);
 
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) videoChunks.push(event.data);
-    };
-    mediaRecorder.onstop = () => {
-      void finishLocalRecording();
-    };
-    audioRecorder?.addEventListener("dataavailable", (event) => {
-      if (event.data.size > 0) audioChunks.push(event.data);
-    });
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) videoChunks.push(event.data);
+      };
+      mediaRecorder.onstop = () => {
+        void finishLocalRecording();
+      };
+      audioRecorder?.addEventListener("dataavailable", (event) => {
+        if (event.data.size > 0) audioChunks.push(event.data);
+      });
 
-    audioRecorder?.start(1000);
-    mediaRecorder.start(1000);
+      audioRecorder?.start(1000);
+      mediaRecorder.start(1000);
+      return true;
+    }, async () => false);
+    if (!recordingStarted) {
+      await recordingFolderPromise;
+      clearRecordingFolder();
+      cleanupRecorder();
+      const latestSession = await getSession();
+      localStatus = blocksLibraryCaptureActions(latestSession)
+        ? "Another capture is already running or being prepared. Finish it before starting a new one."
+        : "Your open story editor was focused. Close it before starting a new capture.";
+      await refresh();
+      return;
+    }
     await send({ type: "SET_OVERLAY_MODE", mode: "cursor" });
     localStatus = "Capturing. Click Close Capture when finished.";
     await captureMoment("screenshot");
@@ -466,21 +567,24 @@ async function startRecording(): Promise<void> {
   } catch (error) {
     void microphoneStreamPromise.then((stream) => stream.getTracks().forEach((track) => track.stop())).catch(() => undefined);
     void screenStreamPromise.then((stream) => stream.getTracks().forEach((track) => track.stop())).catch(() => undefined);
-    await disableOverlay();
+    if (recordingClaimId) await disableOverlay();
     cleanupRecorder();
-    await saveSession({
-      ...((await getSession()) ?? { timeline: [], screenshots: [] }),
-      status: "error",
-      error: permissionAwareErrorMessage(error)
+    const errorMessage = permissionAwareErrorMessage(error);
+    await withStoryEditorOwnership(async () => {
+      const latestSession = await getSession();
+      const ownsLatestSession = Boolean(recordingClaimId && latestSession.captureId === recordingClaimId);
+      if (!ownsLatestSession && blocksLibraryCaptureActions(latestSession)) {
+        session = latestSession;
+        localStatus = "Another capture is already running or being prepared.";
+        return;
+      }
+      await saveSession({ ...latestSession, status: "error", error: errorMessage });
+      localStatus = errorMessage;
+    }, async () => {
+      localStatus = "Your open story editor was focused. Close it before starting a new capture.";
     });
     await refresh();
   }
-}
-
-async function clearCurrentError(): Promise<void> {
-  const current = await getSession();
-  if (!current.error) return;
-  await saveSession({ ...current, error: undefined, status: current.status === "error" ? "idle" : current.status });
 }
 
 async function requestScreenStream(): Promise<MediaStream> {
@@ -542,6 +646,7 @@ async function finishLocalRecording(): Promise<void> {
   const nextSession: RecordingSession = {
     ...current,
     status: "stopped",
+    autoPlanningPending: true,
     stoppedAt: Date.now(),
     videoDataUrl,
     audioDataUrl,
@@ -555,7 +660,7 @@ async function finishLocalRecording(): Promise<void> {
     image_count: nextSession.screenshots.length
   });
   await refresh();
-  await prepareCapturePlan();
+  await prepareCapturePlan(true);
 }
 
 async function hardCleanupInterruptedRecording(message?: string): Promise<void> {
@@ -719,6 +824,8 @@ function cleanupRecorder(): void {
   displayStream = undefined;
   micStream = undefined;
   mixedStream = undefined;
+  void captureAudioContext?.close().catch(() => undefined);
+  captureAudioContext = undefined;
   previewVideo = undefined;
   mediaRecorder = undefined;
   audioRecorder = undefined;
@@ -781,7 +888,13 @@ function statusLabel(status?: RecordingSession["status"]): string {
 async function cleanupOldCaptures(retentionDays: number): Promise<void> {
   const normalized = normalizeRetentionDays(retentionDays);
   try {
-    await Promise.all([deleteOldCaptureFolders(normalized), pruneCaptureHistory(normalized)]);
+    await withStoryOwnershipLockWait(async () => {
+      const protection = await getCaptureRetentionProtection(normalized);
+      await Promise.all([
+        deleteOldCaptureFolders(normalized, false, protection.exportFolderName),
+        pruneCaptureHistory(normalized, protection.captureId)
+      ]);
+    });
   } catch (error) {
     console.warn("Could not clean old captures", error);
   }

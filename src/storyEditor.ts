@@ -2,7 +2,7 @@ import { Editor, Node, mergeAttributes, type JSONContent } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import type { CaptureAnalysis, CaptureStoryStep, ScreenshotEvidence } from "./types";
 
-export type StoryEditorAction = "bold" | "italic" | "bulletList" | "undo" | "redo";
+export type StoryEditorAction = "paragraph" | "bold" | "italic" | "bulletList" | "orderedList" | "callout" | "undo" | "redo";
 
 interface StoryEditorOptions {
   element: HTMLElement;
@@ -52,7 +52,7 @@ const StorySummary = Node.create({
 const StoryStep = Node.create({
   name: "storyStep",
   group: "block",
-  content: "heading (paragraph | bulletList)+ storyImage",
+  content: "heading (paragraph | bulletList | orderedList | blockquote)+ storySource storyImage",
   defining: true,
   isolating: true,
   addAttributes() {
@@ -82,6 +82,88 @@ const StoryStep = Node.create({
   parseHTML: () => [{ tag: "section[data-story-step]" }],
   renderHTML: ({ HTMLAttributes }) => ["section", mergeAttributes(HTMLAttributes, { "data-story-step": "" }), 0]
 });
+
+function createStorySource(editable: boolean): Node {
+  return Node.create({
+    name: "storySource",
+    group: "block",
+    atom: true,
+    selectable: false,
+    addAttributes() {
+      return {
+        stepIndex: { default: 0, rendered: false },
+        pageUrl: { default: "", rendered: false },
+        pageTitle: { default: "", rendered: false },
+        visible: { default: true, rendered: false }
+      };
+    },
+    parseHTML: () => [{ tag: "aside[data-story-source]" }],
+    renderHTML: ({ HTMLAttributes }) => ["aside", mergeAttributes(HTMLAttributes, { "data-story-source": "" })],
+    addNodeView() {
+      return ({ node, editor, getPos }) => {
+        let currentNode = node;
+        const container = document.createElement("aside");
+        container.dataset.storySource = "";
+        container.contentEditable = "false";
+
+        const render = () => {
+          const { pageUrl, pageTitle, visible, stepIndex } = currentNode.attrs;
+          container.replaceChildren();
+          container.className = `story-step-source${visible ? "" : " is-hidden"}${pageUrl ? "" : " is-missing"}`;
+          container.hidden = !editable && !visible;
+
+          const content = document.createElement("div");
+          const label = document.createElement("span");
+          label.textContent = "Source page";
+          const link = document.createElement("a");
+          link.textContent = pageTitle || pageUrl || "No page URL captured";
+          if (typeof pageUrl === "string" && /^https?:\/\//.test(pageUrl)) {
+            link.href = pageUrl;
+            link.target = "_blank";
+            link.rel = "noreferrer";
+            link.title = pageUrl;
+          }
+          const url = document.createElement("small");
+          url.textContent = pageUrl || "Choose a captured image to restore its page URL.";
+          content.append(label, link, url);
+          container.append(content);
+
+          if (editable) {
+            const toggle = document.createElement("button");
+            toggle.type = "button";
+            toggle.className = "story-source-toggle";
+            toggle.setAttribute("role", "switch");
+            toggle.setAttribute("aria-checked", String(Boolean(visible)));
+            toggle.setAttribute("aria-label", `${visible ? "Hide" : "Show"} source URL for step ${Number(stepIndex) + 1}`);
+            const toggleTrack = document.createElement("span");
+            const toggleLabel = document.createElement("strong");
+            toggleLabel.textContent = visible ? "Shown in PDF" : "Hidden from PDF";
+            toggle.append(toggleTrack, toggleLabel);
+            toggle.addEventListener("click", () => {
+              if (typeof getPos !== "function") return;
+              const position = getPos();
+              if (typeof position !== "number") return;
+              editor.view.dispatch(editor.state.tr.setNodeMarkup(position, undefined, { ...currentNode.attrs, visible: !visible }));
+            });
+            container.append(toggle);
+          }
+        };
+
+        render();
+        return {
+          dom: container,
+          update: (updatedNode) => {
+            if (updatedNode.type.name !== "storySource") return false;
+            currentNode = updatedNode;
+            render();
+            return true;
+          },
+          stopEvent: (event) => event.target instanceof HTMLElement && Boolean(event.target.closest("button, a"))
+        };
+      };
+    }
+  });
+}
 
 function createStoryImage(onImageClick: (stepIndex: number) => void): Node {
   return Node.create({
@@ -177,6 +259,7 @@ export class StoryEditor {
         StoryTitle,
         StorySummary,
         StoryStep,
+        createStorySource(options.editable),
         createStoryImage(options.onImageClick)
       ],
       content: buildEditorDocument(options.analysis, options.storySteps, options.screenshots, options.editable),
@@ -203,17 +286,23 @@ export class StoryEditor {
 
   run(action: StoryEditorAction): void {
     const chain = this.editor.chain().focus();
-    if (action === "bold") chain.toggleBold().run();
+    if (action === "paragraph") chain.setParagraph().run();
+    else if (action === "bold") chain.toggleBold().run();
     else if (action === "italic") chain.toggleItalic().run();
     else if (action === "bulletList") chain.toggleBulletList().run();
+    else if (action === "orderedList") chain.toggleOrderedList().run();
+    else if (action === "callout") chain.toggleBlockquote().run();
     else if (action === "undo") chain.undo().run();
     else chain.redo().run();
   }
 
   isActive(action: StoryEditorAction): boolean {
+    if (action === "paragraph") return this.editor.isActive("paragraph");
     if (action === "bold") return this.editor.isActive("bold");
     if (action === "italic") return this.editor.isActive("italic");
     if (action === "bulletList") return this.editor.isActive("bulletList");
+    if (action === "orderedList") return this.editor.isActive("orderedList");
+    if (action === "callout") return this.editor.isActive("blockquote");
     return false;
   }
 
@@ -223,7 +312,10 @@ export class StoryEditor {
     if (action === "redo") return chain.redo().run();
     if (action === "bold") return chain.toggleBold().run();
     if (action === "italic") return chain.toggleItalic().run();
-    return chain.toggleBulletList().run();
+    if (action === "bulletList") return chain.toggleBulletList().run();
+    if (action === "orderedList") return chain.toggleOrderedList().run();
+    if (action === "callout") return chain.toggleBlockquote().run();
+    return chain.setParagraph().run();
   }
 
   value(current: CaptureAnalysis): CaptureAnalysis {
@@ -239,15 +331,24 @@ export class StoryEditor {
     const { state, view } = this.editor;
     const transaction = state.tr;
     state.doc.descendants((node, position) => {
-      if (node.type.name !== "storyImage" || Number(node.attrs.stepIndex) !== stepIndex) return;
-      transaction.setNodeMarkup(position, undefined, {
-        ...node.attrs,
-        screenshotId: screenshot?.id ?? "",
-        src: screenshot?.dataUrl ?? "",
-        alt: screenshot ? `Selected visual for step ${stepIndex + 1}: ${screenshot.title || screenshot.url || "Captured screen"}` : "",
-        caption: screenshot?.title || screenshot?.url || "Text-only step",
-        timestamp: screenshot ? formatMs(screenshot.capturedAtMs) : "No image selected"
-      });
+      if (Number(node.attrs.stepIndex) !== stepIndex) return;
+      if (node.type.name === "storyImage") {
+        transaction.setNodeMarkup(position, undefined, {
+          ...node.attrs,
+          screenshotId: screenshot?.id ?? "",
+          src: screenshot?.dataUrl ?? "",
+          alt: screenshot ? `Selected visual for step ${stepIndex + 1}: ${screenshot.title || screenshot.url || "Captured screen"}` : "",
+          caption: screenshot?.title || screenshot?.url || "Text-only step",
+          timestamp: screenshot ? formatMs(screenshot.capturedAtMs) : "No image selected"
+        });
+      }
+      if (node.type.name === "storySource" && screenshot) {
+        transaction.setNodeMarkup(position, undefined, {
+          ...node.attrs,
+          pageUrl: screenshot.url,
+          pageTitle: screenshot.title
+        });
+      }
     });
     view.dispatch(transaction);
   }
@@ -314,7 +415,8 @@ export function parseEditorDocument(document: JSONContent, current: CaptureAnaly
   const keyPoints = keyPointList ? storyListEntries(keyPointList) : [];
   const storySteps = (document.content ?? []).filter((node) => node.type === "storyStep").map((node) => {
     const heading = node.content?.find((child) => child.type === "heading");
-    const bodyBlocks = node.content?.filter((child) => child.type === "paragraph" || child.type === "bulletList") ?? [];
+    const bodyBlocks = node.content?.filter((child) => ["paragraph", "bulletList", "orderedList", "blockquote"].includes(child.type ?? "")) ?? [];
+    const source = node.content?.find((child) => child.type === "storySource");
     const image = node.content?.find((child) => child.type === "storyImage");
     return {
       startSeconds: Number(node.attrs?.startSeconds ?? 0),
@@ -323,8 +425,9 @@ export function parseEditorDocument(document: JSONContent, current: CaptureAnaly
       narrative: bodyBlocks.map(storyBodyText).filter(Boolean).join("\n\n"),
       transcript: String(node.attrs?.transcript ?? ""),
       screenshotId: String(image?.attrs?.screenshotId || node.attrs?.screenshotId || "") || undefined,
-      pageUrl: String(node.attrs?.pageUrl ?? "") || undefined,
-      pageTitle: String(node.attrs?.pageTitle ?? "") || undefined,
+      pageUrl: String(source?.attrs?.pageUrl ?? node.attrs?.pageUrl ?? "") || undefined,
+      pageTitle: String(source?.attrs?.pageTitle ?? node.attrs?.pageTitle ?? "") || undefined,
+      showPageUrl: source ? source.attrs?.visible !== false : node.attrs?.showPageUrl !== false,
       kind: storyKind(node.attrs?.kind)
     } satisfies CaptureStoryStep;
   });
@@ -345,25 +448,40 @@ export function parseEditorDocument(document: JSONContent, current: CaptureAnaly
 }
 
 function storyBodyText(node: JSONContent): string {
-  if (node.type !== "bulletList") return trimHorizontalWhitespace(jsonText(node));
-  return storyListText(node);
+  if (node.type === "bulletList") return storyListText(node, false);
+  if (node.type === "orderedList") return storyListText(node, true);
+  if (node.type === "blockquote") {
+    return (node.content ?? [])
+      .map(storyBodyText)
+      .filter(Boolean)
+      .flatMap((block) => block.split("\n").map((line) => `> ${line}`))
+      .join("\n");
+  }
+  return trimHorizontalWhitespace(jsonText(node));
 }
 
-function storyListText(node: JSONContent, depth = 0): string {
+function storyListText(node: JSONContent, ordered: boolean, depth = 0): string {
+  const start = ordered ? orderedListStart(node) : 1;
   return (node.content ?? [])
     .filter((item) => item.type === "listItem")
-    .flatMap((item) => {
+    .flatMap((item, index) => {
       const directText = storyListItemText(item);
-      const lines = directText ? [`${"  ".repeat(depth)}- ${directText}`] : [];
+      const marker = ordered ? `${start + index}.` : "-";
+      const lines = directText ? [`${"  ".repeat(depth)}${marker} ${directText}`] : [];
       const nestedDepth = directText ? depth + 1 : depth;
-      for (const nestedList of (item.content ?? []).filter((child) => child.type === "bulletList")) {
-        const nestedText = storyListText(nestedList, nestedDepth);
+      for (const nestedList of (item.content ?? []).filter((child) => child.type === "bulletList" || child.type === "orderedList")) {
+        const nestedText = storyListText(nestedList, nestedList.type === "orderedList", nestedDepth);
         if (nestedText) lines.push(nestedText);
       }
       return lines;
     })
     .filter(Boolean)
     .join("\n");
+}
+
+function orderedListStart(node: JSONContent): number {
+  const start = Number(node.attrs?.start ?? 1);
+  return Number.isSafeInteger(start) ? start : 1;
 }
 
 function storyListEntries(node: JSONContent): string[] {
@@ -393,10 +511,25 @@ function hydrateStoryStep(node: JSONContent, step: CaptureStoryStep, index: numb
     screenshotId: step.screenshotId ?? "",
     pageUrl: step.pageUrl ?? "",
     pageTitle: step.pageTitle ?? "",
+    showPageUrl: step.showPageUrl !== false,
     kind: step.kind ?? "narration",
     stepIndex: index,
     stepLabel: `Step ${index + 1}`,
     stepMeta: `${storyKindLabel(step)} · ${formatTimeRange(step.startSeconds, step.endSeconds)}`
+  };
+  let source = node.content?.find((child) => child.type === "storySource");
+  if (!source) {
+    source = { type: "storySource" };
+    const imageIndex = node.content?.findIndex((child) => child.type === "storyImage") ?? -1;
+    if (!node.content) node.content = [];
+    if (imageIndex >= 0) node.content.splice(imageIndex, 0, source);
+    else node.content.push(source);
+  }
+  source.attrs = {
+    stepIndex: index,
+    pageUrl: step.pageUrl ?? "",
+    pageTitle: step.pageTitle ?? "",
+    visible: step.showPageUrl !== false
   };
   const image = node.content?.find((child) => child.type === "storyImage");
   if (!image) return;
@@ -437,6 +570,7 @@ function storyStepContent(step: CaptureStoryStep, index: number, screenshots: Sc
       screenshotId: step.screenshotId ?? "",
       pageUrl: step.pageUrl ?? "",
       pageTitle: step.pageTitle ?? "",
+      showPageUrl: step.showPageUrl !== false,
       kind: step.kind ?? "narration",
       stepIndex: index,
       stepLabel: `Step ${index + 1}`,
@@ -445,6 +579,15 @@ function storyStepContent(step: CaptureStoryStep, index: number, screenshots: Sc
     content: [
       { type: "heading", attrs: { level: 2 }, content: textContent(step.title) },
       ...narrativeParagraphs(step.narrative),
+      {
+        type: "storySource",
+        attrs: {
+          stepIndex: index,
+          pageUrl: step.pageUrl ?? "",
+          pageTitle: step.pageTitle ?? "",
+          visible: step.showPageUrl !== false
+        }
+      },
       {
         type: "storyImage",
         attrs: {

@@ -51,6 +51,12 @@ export function buildCaptureStory(
     const modelStep = modelIndex >= 0 ? modelSteps[modelIndex] : undefined;
     if (modelIndex >= 0) claimedModelSteps.add(modelIndex);
     const screenshot = screenshotAtOrAfter(screenshots, segment.end, modelStep?.pageUrl);
+    const pageUrl = modelStep?.pageUrl || screenshot?.url;
+    const pageTitle = modelStep?.pageUrl && modelStep.pageTitle
+      ? modelStep.pageTitle
+      : screenshot?.url === pageUrl
+        ? screenshot?.title
+        : undefined;
     return normalizeStep({
       ...modelStep,
       startSeconds: segment.start,
@@ -59,8 +65,8 @@ export function buildCaptureStory(
       narrative: modelStep?.narrative || segment.text,
       transcript: segment.text,
       screenshotId: modelStep?.screenshotId || screenshot?.id,
-      pageUrl: modelStep?.pageUrl || screenshot?.url,
-      pageTitle: modelStep?.pageTitle || screenshot?.title,
+      pageUrl,
+      pageTitle,
       kind: modelStep?.kind || "narration"
     });
   });
@@ -76,20 +82,47 @@ export function buildCaptureStory(
     );
     if (alreadyRepresented) continue;
     const screenshot = screenshotAtOrAfter(screenshots, eventSeconds, event.url);
+    const pageTitle = humanReadablePageTitle(event.title, event.url);
     story.push(normalizeStep({
       startSeconds: eventSeconds,
       endSeconds: eventSeconds,
-      title: event.title ? `Opened ${event.title}` : "Page changed",
-      narrative: event.url ? `The walkthrough moved to ${event.url}.` : "The walkthrough moved to a new page.",
+      title: pageTitle ? `Opened ${pageTitle}` : "Page changed",
+      narrative: pageTitle ? `The walkthrough moved to ${pageTitle}.` : "The walkthrough moved to a new page.",
       transcript: "",
       screenshotId: screenshot?.id,
       pageUrl: event.url,
-      pageTitle: event.title,
+      pageTitle,
       kind: "page-change"
     }));
   }
 
-  return story.sort((a, b) => a.startSeconds - b.startSeconds || storyKindOrder(a.kind) - storyKindOrder(b.kind));
+  const ordered = story.sort((a, b) => a.startSeconds - b.startSeconds || storyKindOrder(a.kind) - storyKindOrder(b.kind));
+  const pageScreenshots = [...screenshots]
+    .filter((shot) => Boolean(shot.url))
+    .sort((a, b) => a.capturedAtMs - b.capturedAtMs);
+  let lastPage: { url?: string; title?: string } = {};
+  return ordered.map((step) => {
+    const screenshot = screenshots.find((shot) => shot.id === step.screenshotId);
+    const targetMs = step.endSeconds * 1000;
+    const activeScreenshot = pageScreenshots.filter((shot) => shot.capturedAtMs <= targetMs).at(-1) ?? pageScreenshots[0];
+    const pageUrl = step.pageUrl || screenshot?.url || activeScreenshot?.url || lastPage.url;
+    const matchingScreenshot = screenshot && screenshot.url === pageUrl && screenshot.title
+      ? screenshot
+      : activeScreenshot && activeScreenshot.url === pageUrl && activeScreenshot.title
+        ? activeScreenshot
+        : pageScreenshots.find((shot) => shot.url === pageUrl && Boolean(shot.title));
+    const pageTitle = (step.pageUrl === pageUrl ? step.pageTitle : undefined)
+      || matchingScreenshot?.title
+      || (pageUrl === lastPage.url ? lastPage.title : undefined);
+    if (pageUrl) lastPage = { url: pageUrl, title: pageTitle };
+    return { ...step, pageUrl, pageTitle, showPageUrl: step.showPageUrl !== false };
+  });
+}
+
+function humanReadablePageTitle(title: string | undefined, pageUrl: string | undefined): string | undefined {
+  const value = title?.trim();
+  if (!value || value === pageUrl || /^(?:https?:\/\/|www\.)/i.test(value)) return undefined;
+  return value;
 }
 
 function closestUnclaimedStep(
@@ -135,6 +168,7 @@ function normalizeStep(step: Partial<CaptureStoryStep>): CaptureStoryStep {
     screenshotId: step.screenshotId,
     pageUrl: step.pageUrl,
     pageTitle: step.pageTitle,
+    showPageUrl: step.showPageUrl !== false,
     kind: step.kind === "page-change" || step.kind === "action" || step.kind === "manual" ? step.kind : "narration"
   };
 }

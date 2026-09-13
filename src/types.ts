@@ -67,6 +67,8 @@ export interface RecordingSession {
   captureAnalysis?: CaptureAnalysis;
   /** A capture remains usable when planning fails; this is retryable metadata. */
   analysisError?: string;
+  /** Keeps Library actions blocked between recording completion and automatic planning ownership. */
+  autoPlanningPending?: boolean;
   /** Local export is optional, but the UI should not hide a failed export. */
   localExportWarning?: string;
   openAiUsage?: OpenAiUsage;
@@ -116,14 +118,17 @@ export interface CaptureStoryStep {
   screenshotId?: string;
   pageUrl?: string;
   pageTitle?: string;
+  /** Controls whether the captured source URL appears in the reader-facing story and PDF. */
+  showPageUrl?: boolean;
   kind?: "narration" | "page-change" | "action" | "manual";
 }
 
 export type RuntimeMessage =
   | { type: "GET_SESSION" }
-  | { type: "OPEN_RECORDER" }
+  | { type: "OPEN_RECORDER"; windowId?: number }
   | { type: "STOP_CAPTURE" }
   | { type: "PREPARE_CAPTURE_PLAN" }
+  | { type: "SAVE_CAPTURE_STORY"; session: RecordingSession }
   | { type: "GENERATE_PDF" }
   | { type: "TEST_AI_SETUP"; apiKey?: string }
   | { type: "SET_OVERLAY_MODE"; mode: OverlayMode }

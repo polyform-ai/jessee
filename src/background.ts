@@ -1,8 +1,10 @@
 import { analyzeCapture, testOpenAiSetup, transcribeAudio } from "./openai";
 import { deleteArtifacts, hydrateSession } from "./artifacts";
 import { clearAnnotationEvidence } from "./captureEvidence";
+import { saveCaptureHistory, saveCaptureSessionHistory } from "./captureHistory";
 import { getSession, getSettings, saveSession } from "./storage";
 import { acceptsContentEvent, shouldRecordPageChange } from "./captureState";
+import { withStoryOwnershipLockWait } from "./storyEditorTabs";
 import type { RecordingSession, RuntimeMessage, TimelineEvent } from "./types";
 
 chrome.action.onClicked.addListener((tab) => {
@@ -18,13 +20,19 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, sender, sendRespo
   handleMessage(message, sender)
     .then(sendResponse)
     .catch(async (error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(message);
-      const session = await preserveCaptureFailure(message);
-      sendResponse({ ok: false, error: message, session });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(errorMessage);
+      const session = messageCanChangeCaptureState(message.type)
+        ? await preserveCaptureFailure(errorMessage)
+        : await getSession();
+      sendResponse({ ok: false, error: errorMessage, session });
     });
   return true;
 });
+
+function messageCanChangeCaptureState(type: RuntimeMessage["type"]): boolean {
+  return type === "PREPARE_CAPTURE_PLAN" || type === "GENERATE_PDF";
+}
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   const session = await getSession();
@@ -34,27 +42,62 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   await appendEvent("url-change", tabId, `Navigated to ${tab.url ?? changeInfo.url ?? ""}`);
 });
 
-async function openRecorder(tab?: chrome.tabs.Tab): Promise<void> {
-  const target = tab ?? (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
-  if (target?.id && target.url && /^https?:\/\//.test(target.url)) {
+async function openRecorder(tab?: chrome.tabs.Tab, preferredWindowId?: number): Promise<void> {
+  const session = await getSession();
+  const activeRecorder = recorderIsActive(session);
+  const retainedWindowId = activeRecorder
+    ? session.activeWindowId ?? preferredWindowId
+    : preferredWindowId;
+  const retainedWindowExists = retainedWindowId ? await windowExists(retainedWindowId) : false;
+  const sidePanel = getSidePanelApi();
+  const recorderWindowId = retainedWindowExists ? retainedWindowId : undefined;
+  const initialTarget = tab ?? (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
+  const targetWindowId = recorderWindowId ?? initialTarget?.windowId;
+  const target = activeRecorder ? initialTarget : await recorderTargetForWindow(initialTarget, targetWindowId);
+  if (!activeRecorder && target?.id && target.url && /^https?:\/\//.test(target.url)) {
     await chrome.storage.local.set({ recorderTargetTabId: target.id });
   }
 
-  const sidePanel = getSidePanelApi();
-  if (sidePanel && target?.windowId) {
-    await sidePanel.open({ windowId: target.windowId });
+  if (sidePanel && targetWindowId) {
+    await sidePanel.open({ windowId: targetWindowId });
+    if (recorderWindowId) await chrome.windows.update(recorderWindowId, { focused: true });
     return;
   }
 
   const recorderUrl = chrome.runtime.getURL("popup.html");
   const tabs = await chrome.tabs.query({});
-  const existing = tabs.find((candidate) => candidate.url?.startsWith(recorderUrl));
+  const existing = tabs.find((candidate) => candidate.windowId === targetWindowId && candidate.url?.startsWith(recorderUrl))
+    ?? (activeRecorder ? tabs.find((candidate) => candidate.url?.startsWith(recorderUrl)) : undefined);
   if (existing?.id) {
     await chrome.tabs.update(existing.id, { active: true });
     if (existing.windowId) await chrome.windows.update(existing.windowId, { focused: true });
     return;
   }
   await chrome.tabs.create({ url: recorderUrl, active: true });
+}
+
+async function recorderTargetForWindow(target: chrome.tabs.Tab | undefined, windowId: number | undefined): Promise<chrome.tabs.Tab | undefined> {
+  if (target?.url && /^https?:\/\//.test(target.url) && (!windowId || target.windowId === windowId)) return target;
+  if (!windowId) return target;
+  const candidates = (await chrome.tabs.query({ windowId }))
+    .filter((candidate) => candidate.url && /^https?:\/\//.test(candidate.url));
+  return candidates.sort((left, right) => (right.lastAccessed ?? 0) - (left.lastAccessed ?? 0))[0] ?? target;
+}
+
+function recorderIsActive(session: RecordingSession): boolean {
+  return ["recording", "paused", "planning", "generating"].includes(session.status);
+}
+
+function windowExists(windowId: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    try {
+      chrome.windows.get(windowId, (window) => {
+        resolve(!chrome.runtime.lastError && Boolean(window));
+      });
+    } catch {
+      resolve(false);
+    }
+  });
 }
 
 function getSidePanelApi(): Pick<typeof chrome.sidePanel, "open" | "setPanelBehavior"> | undefined {
@@ -66,7 +109,7 @@ async function handleMessage(message: RuntimeMessage, sender: chrome.runtime.Mes
     case "GET_SESSION":
       return { ok: true, session: await getSession() };
     case "OPEN_RECORDER":
-      await openRecorder();
+      await openRecorder(undefined, message.windowId);
       return { ok: true, session: await getSession() };
     case "STOP_CAPTURE":
       return { ok: true, session: await getSession() };
@@ -93,6 +136,19 @@ async function handleMessage(message: RuntimeMessage, sender: chrome.runtime.Mes
       return { ok: true };
     case "PREPARE_CAPTURE_PLAN":
       return prepareCapturePlanArtifact();
+    case "SAVE_CAPTURE_STORY": {
+      return withStoryOwnershipLockWait(async () => {
+        const current = await getSession();
+        const currentCaptureId = current.captureId ?? (current.startedAt ? `${current.startedAt}` : undefined);
+        const savedCaptureId = message.session.captureId ?? (message.session.startedAt ? `${message.session.startedAt}` : undefined);
+        if (!currentCaptureId || savedCaptureId !== currentCaptureId) {
+          await saveCaptureHistory(message.session);
+          return { ok: true, session: message.session };
+        }
+        await saveCaptureSessionHistory(message.session);
+        return { ok: true, session: message.session };
+      });
+    }
     case "GENERATE_PDF":
       return preparePdfArtifact();
     case "TEST_AI_SETUP": {
@@ -109,7 +165,7 @@ async function prepareCapturePlanArtifact(): Promise<unknown> {
   const settings = await getSettings();
   if (!settings.openAiKey) throw new Error("Add your OpenAI API key in Settings first.");
   const current = await getSession();
-  const planning = { ...current, status: "planning" as const, analysisError: undefined };
+  const planning = { ...current, status: "planning" as const, autoPlanningPending: false, analysisError: undefined };
   await saveSession(planning);
   let transcript = current.transcript;
   try {
@@ -126,11 +182,11 @@ async function prepareCapturePlanArtifact(): Promise<unknown> {
       analysisError: undefined,
       openAiUsage: generated.usage
     };
-    await saveSession(session);
+    await saveCaptureSessionHistory(session);
     return { ok: true, session };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await saveSession({ ...current, transcript, analysisError: message });
+    await saveCaptureSessionHistory({ ...current, autoPlanningPending: false, transcript, analysisError: message });
     throw error;
   }
 }
@@ -148,8 +204,13 @@ async function preparePdfArtifact(): Promise<unknown> {
 async function preserveCaptureFailure(error: string): Promise<RecordingSession> {
   const session = await getSession();
   if (session.screenshots.length || session.audioDataUrl || session.videoDataUrl) {
-    const next = { ...session, status: session.status === "planning" || session.status === "generating" ? "stopped" as const : session.status, analysisError: error };
-    await saveSession(next);
+    const next = {
+      ...session,
+      status: session.status === "planning" || session.status === "generating" ? "stopped" as const : session.status,
+      autoPlanningPending: false,
+      analysisError: error
+    };
+    await saveCaptureSessionHistory(next);
     return next;
   }
   const next = { ...session, status: "error" as const, error };

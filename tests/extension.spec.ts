@@ -40,7 +40,7 @@ test("loads extension settings page", async () => {
     let [serviceWorker] = context.serviceWorkers();
     serviceWorker ??= await context.waitForEvent("serviceworker");
     const extensionId = new URL(serviceWorker.url()).host;
-    const page = await context.newPage();
+    let page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/options.html`);
     await expect(page.getByRole("heading", { name: "JesSee" })).toBeVisible();
     await expect(page.getByLabel("OpenAI API key")).toBeVisible();
@@ -73,19 +73,56 @@ test("loads extension settings page", async () => {
     const controlsPage = await context.newPage();
     await controlsPage.goto(`chrome-extension://${extensionId}/controls.html`);
     await controlsPage.evaluate(async () => {
+      const currentWindow = await chrome.windows.getCurrent();
       await chrome.storage.local.set({
         settings: { email: "demo@example.test", openAiKey: "demo-key", microphoneEnabledAt: Date.now(), retentionDays: 30 },
-        recordingSession: { status: "recording", startedAt: Date.now(), timeline: [], screenshots: [] }
+        recordingSession: { status: "recording", startedAt: Date.now(), activeWindowId: currentWindow.id, timeline: [], screenshots: [] }
       });
     });
     await controlsPage.reload();
     await expect(controlsPage.getByRole("heading", { name: "Recording your walkthrough" })).toBeVisible();
     await expect(controlsPage.getByText("Hold + drag to outline")).toBeVisible();
+    await expect(controlsPage.getByRole("button", { name: "Open Library" })).toBeVisible();
+    const activeHistoryPage = await context.newPage();
+    await activeHistoryPage.goto(`chrome-extension://${extensionId}/history.html`);
+    await expect(activeHistoryPage.getByRole("button", { name: "Capture in progress" })).toBeDisabled();
+    await expect(activeHistoryPage.getByText("A capture is still recording or being prepared.", { exact: false })).toBeVisible();
+    await activeHistoryPage.getByRole("button", { name: "Back to capture" }).click();
+    await expect(activeHistoryPage).toHaveURL(`chrome-extension://${extensionId}/history.html`);
+    await expect.poll(() => activeHistoryPage.evaluate(async () => {
+      const stored = await chrome.storage.local.get("recordingSession");
+      return stored.recordingSession?.status;
+    })).toBe("recording");
+    await activeHistoryPage.locator("main").evaluate((element) => { element.dataset.renderMarker = "preserve-player"; });
+    await activeHistoryPage.evaluate(async () => {
+      const stored = await chrome.storage.local.get("recordingSession");
+      await chrome.storage.local.set({
+        recordingSession: {
+          ...stored.recordingSession,
+          timeline: [...stored.recordingSession.timeline, { id: "live-write", type: "click", atMs: 500, url: "", title: "" }]
+        }
+      });
+    });
+    await expect(activeHistoryPage.locator("main")).toHaveAttribute("data-render-marker", "preserve-player");
+    await activeHistoryPage.close();
     await controlsPage.getByRole("button", { name: "Finish Recording" }).click();
     await expect.poll(() => page.evaluate(async () => {
       const stored = await chrome.storage.local.get("recordingSession");
       return stored.recordingSession?.status;
     })).toBe("error");
+    const idleHistoryPage = await context.newPage();
+    await idleHistoryPage.goto(`chrome-extension://${extensionId}/history.html`);
+    await idleHistoryPage.getByRole("button", { name: "New capture" }).click();
+    await expect(idleHistoryPage).toHaveURL(`chrome-extension://${extensionId}/history.html`);
+    await expect.poll(() => idleHistoryPage.evaluate(async () => {
+      const stored = await chrome.storage.local.get("recordingSession");
+      return stored.recordingSession?.status;
+    })).toBe("idle");
+    await expect.poll(() => idleHistoryPage.evaluate(async () => {
+      const stored = await chrome.storage.local.get("recordingSession");
+      return stored.recordingSession?.activeWindowId;
+    })).toEqual(expect.any(Number));
+    await idleHistoryPage.close();
 
     const fallbackScreenshot = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=";
     const overviewScreenshot = process.env.JESSEE_VISUAL_QA
@@ -196,10 +233,26 @@ test("loads extension settings page", async () => {
     expect(nestedOverviewListStyle.paddingLeft).toBeGreaterThan(0);
     await page.getByRole("button", { name: "Undo" }).click();
     await expect(firstStepBody.locator("ul")).toHaveCount(0);
+    await firstStepBody.locator("p").first().click();
+    await page.getByRole("button", { name: "Numbered list" }).click();
+    await expect(firstStepBody.locator("ol")).toBeVisible();
+    await page.getByRole("button", { name: "Undo" }).click();
+    await firstStepBody.locator("p").first().click();
+    await page.getByRole("button", { name: "Callout" }).click();
+    await expect(firstStepBody.locator("blockquote")).toBeVisible();
+    await page.getByRole("button", { name: "Undo" }).click();
+    const sourceToggle = page.getByRole("switch", { name: "Hide source URL for step 1" });
+    await expect(sourceToggle).toBeVisible();
+    await sourceToggle.click();
+    await expect(page.getByRole("switch", { name: "Show source URL for step 1" })).toHaveAttribute("aria-checked", "false");
+    await page.getByRole("switch", { name: "Show source URL for step 1" }).click();
+    await expect(page.getByRole("switch", { name: "Hide source URL for step 1" })).toHaveAttribute("aria-checked", "true");
     if (process.env.JESSEE_VISUAL_QA) {
       await page.screenshot({ path: resolve(__dirname, "../website/assets/playbook-review.png") });
     }
-    await page.getByRole("button", { name: "Change image for step 1" }).click();
+    // Opening the picker intentionally rebuilds the editor, so dispatch the click
+    // without waiting for the source button to remain attached afterward.
+    await page.getByRole("button", { name: "Change image for step 1" }).dispatchEvent("click");
     await expect(page.getByRole("dialog")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Step through the captured moments" })).toBeVisible();
     if (process.env.JESSEE_VISUAL_QA) {
@@ -234,6 +287,115 @@ test("loads extension settings page", async () => {
       const stored = await chrome.storage.local.get("recordingSession");
       return stored.recordingSession?.captureAnalysis?.userGoal;
     })).toBe("Show the updated visual workflow");
+
+    if (process.env.JESSEE_VISUAL_QA) {
+      await page.evaluate(async () => {
+        const stored = await chrome.storage.local.get("settings");
+        const original = stored.settings.captureHistory[0];
+        const examples = [
+          { id: "show-updated-workflow", title: "Show the updated visual workflow", offset: 0, hasPdf: false },
+          { id: "explain-safari-install", title: "Explain the Safari installation flow", offset: 86_400_000, hasPdf: true },
+          { id: "report-image-picker", title: "Report the image picker bug", offset: 172_800_000, hasPdf: true }
+        ].map((example) => ({
+          ...original,
+          id: example.id,
+          title: example.title,
+          createdAt: original.createdAt - example.offset,
+          hasPdf: example.hasPdf,
+          session: {
+            ...original.session,
+            captureId: example.id,
+            startedAt: original.session.startedAt - example.offset,
+            stoppedAt: original.session.stoppedAt - example.offset,
+            captureAnalysis: { ...original.session.captureAnalysis, userGoal: example.title }
+          }
+        }));
+        await chrome.storage.local.set({ settings: { ...stored.settings, captureHistory: examples } });
+      });
+    }
+
+    const historyPage = await context.newPage();
+    await historyPage.setViewportSize({ width: 1440, height: 1000 });
+    await historyPage.goto(`chrome-extension://${extensionId}/history.html`);
+    await expect(historyPage.getByRole("heading", { name: "Your explanations stay useful." })).toBeVisible();
+    await expect(historyPage.locator("[data-history-card]")).toHaveCount(process.env.JESSEE_VISUAL_QA ? 3 : 1);
+    await expect(historyPage.locator("[data-history-thumbnail]:not([hidden])")).toHaveCount(process.env.JESSEE_VISUAL_QA ? 3 : 1);
+    await expect(historyPage.getByRole("heading", { name: "Show the updated visual workflow" })).toBeVisible();
+    await expect(historyPage.getByRole("button", { name: "Edit story" }).first()).toBeVisible();
+    await expect(historyPage.getByRole("button", { name: "Download PDF" }).first()).toBeVisible();
+    await historyPage.getByRole("button", { name: "New capture" }).click();
+    await expect(historyPage.getByText("Finish or close it before starting a new capture.", { exact: false })).toBeVisible();
+    await expect.poll(() => historyPage.evaluate(async () => {
+      const stored = await chrome.storage.local.get("recordingSession");
+      return stored.recordingSession?.captureAnalysis?.userGoal;
+    })).toBe("Show the updated visual workflow");
+    if (!process.env.JESSEE_VISUAL_QA) {
+      await historyPage.evaluate(async () => {
+        const stored = await chrome.storage.local.get("settings");
+        const original = stored.settings.captureHistory[0];
+        await chrome.storage.local.set({
+          settings: {
+            ...stored.settings,
+            captureHistory: [{ ...original, title: "Freshly completed walkthrough" }]
+          }
+        });
+      });
+      await expect(historyPage.getByRole("heading", { name: "Freshly completed walkthrough" })).toBeVisible();
+      await historyPage.evaluate(async () => {
+        const stored = await chrome.storage.local.get("settings");
+        const fresh = stored.settings.captureHistory[0];
+        await chrome.storage.local.set({
+          settings: {
+            ...stored.settings,
+            captureHistory: [{ ...fresh, title: "Show the updated visual workflow" }]
+          }
+        });
+      });
+      await expect(historyPage.getByRole("heading", { name: "Show the updated visual workflow" })).toBeVisible();
+    }
+    await historyPage.getByRole("searchbox", { name: "Search recordings" }).fill("#problem");
+    await expect(historyPage.locator("[data-history-card]:not([hidden])")).toHaveCount(process.env.JESSEE_VISUAL_QA ? 3 : 1);
+    await historyPage.getByRole("searchbox", { name: "Search recordings" }).fill("no matching recording");
+    await expect(historyPage.locator("[data-history-card]:not([hidden])")).toHaveCount(0);
+    await historyPage.getByRole("searchbox", { name: "Search recordings" }).fill("updated visual");
+    await expect(historyPage.locator("[data-history-card]:not([hidden])")).toHaveCount(1);
+    await historyPage.evaluate(async () => {
+      const stored = await chrome.storage.local.get("settings");
+      const [first, ...rest] = stored.settings.captureHistory;
+      await chrome.storage.local.set({
+        settings: {
+          ...stored.settings,
+          captureHistory: [{ ...first, title: `${first.title} (saved)` }, ...rest]
+        }
+      });
+    });
+    await expect(historyPage.getByRole("searchbox", { name: "Search recordings" })).toHaveValue("updated visual");
+    await expect(historyPage.locator("[data-history-card]:not([hidden])")).toHaveCount(1);
+    if (process.env.JESSEE_VISUAL_QA) {
+      await historyPage.getByRole("searchbox", { name: "Search recordings" }).fill("");
+      await expect(historyPage.locator("[data-history-card]:not([hidden])")).toHaveCount(3);
+      await historyPage.screenshot({ path: resolve(__dirname, "../website/assets/history-library.png"), fullPage: true });
+    } else {
+      await historyPage.getByRole("button", { name: "View recording" }).click();
+      await expect(historyPage.getByRole("dialog")).toBeVisible();
+      await expect(historyPage.getByText(/Start with the problem: text, screenshots, and video/)).toBeVisible();
+      await historyPage.getByRole("button", { name: "Close recording preview" }).click();
+      await historyPage.getByRole("button", { name: "Download PDF" }).click();
+      await expect(historyPage.getByText("Download there so the PDF includes your latest edits.", { exact: false })).toBeVisible();
+      await page.close();
+      const historyDownload = historyPage.waitForEvent("download");
+      await historyPage.getByRole("button", { name: "Download PDF" }).click();
+      await historyDownload;
+      page = await context.newPage();
+      await page.goto(`chrome-extension://${extensionId}/plan.html`);
+      await expect(page.getByRole("heading", { name: "Make the document sound like you" })).toBeVisible();
+      await historyPage.getByRole("button", { name: "Edit story" }).click();
+      await expect(historyPage).toHaveURL(`chrome-extension://${extensionId}/history.html`);
+      await expect(historyPage.getByText("Your open story editor was focused.", { exact: false })).toBeVisible();
+      await expect(page).toHaveURL(`chrome-extension://${extensionId}/plan.html`);
+    }
+    await historyPage.close();
+
     await page.evaluate(async (restoreShowcase) => {
       const stored = await chrome.storage.local.get("recordingSession");
       const recordingSession = stored.recordingSession;

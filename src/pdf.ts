@@ -113,6 +113,33 @@ function drawPlan(
 
   const addHeading = (runs: RichTextRun[], size = 16) => addRichText(runs, size, [24, 24, 27], true, 8);
   const addParagraph = (runs: RichTextRun[], color: [number, number, number] = [63, 63, 70]) => addRichText(runs, 10, color, false, 10);
+  const addCallout = (runs: RichTextRun[]) => {
+    const fontSize = Math.max(0.1, 10 * scale);
+    const lineHeight = 13 * scale;
+    const inset = 16 * scale;
+    const lines = wrapRichText(pdf, runs, maxTextWidth - inset * 2, fontSize, false);
+    const boxHeight = Math.max(lineHeight, lines.length * lineHeight) + 24 * scale;
+    if (shouldRender) {
+      pdf.setFillColor(245, 243, 255);
+      pdf.setDrawColor(221, 214, 254);
+      pdf.roundedRect(MARGIN, y, maxTextWidth, boxHeight, 8 * scale, 8 * scale, "FD");
+      pdf.setFillColor(124, 58, 237);
+      pdf.roundedRect(MARGIN, y, 4 * scale, boxHeight, 2 * scale, 2 * scale, "F");
+      pdf.setTextColor(76, 29, 149);
+      let lineY = y + 17 * scale;
+      lines.forEach((line) => {
+        let x = MARGIN + inset + line.offset;
+        line.runs.forEach((run) => {
+          setFont(pdf, run.bold, run.italic);
+          pdf.setFontSize(fontSize);
+          pdf.text(run.text, x, lineY);
+          x += run.width;
+        });
+        lineY += lineHeight;
+      });
+    }
+    y += boxHeight + 10 * scale;
+  };
 
   const addEvidenceImage = (step: CaptureStoryStep, screenshot: RecordingSession["screenshots"][number], index: number) => {
     const props = imageDimensions.get(screenshot.id);
@@ -121,7 +148,9 @@ function drawPlan(
     const naturalHeight = (props.height * maxTextWidth) / props.width;
     const imageHeight = Math.min(maximumImageHeight, naturalHeight);
     const imageWidth = Math.min(maxTextWidth, (props.width * imageHeight) / props.height);
-    const captionRuns = plainRuns(screenshot.title || step.title);
+    const hiddenSourceCaption = step.showPageUrl === false && urlLikeTitle(screenshot.title, screenshot.url);
+    const fallbackCaption = urlLikeTitle(step.title, step.pageUrl) ? "Selected visual" : step.title;
+    const captionRuns = plainRuns(hiddenSourceCaption ? fallbackCaption : screenshot.title || fallbackCaption);
     const captionFontSize = Math.max(0.1, 9 * scale);
     const captionLines = wrapRichText(pdf, captionRuns, Math.max(20, maxTextWidth - 24 * scale), captionFontSize, false);
     const captionHeight = Math.max(1, captionLines.length) * 11 * scale;
@@ -169,11 +198,15 @@ function drawPlan(
   storySteps.forEach((step, index) => {
     const editorStep = editorSteps[index];
     const headingNode = childOfType(editorStep, "heading");
-    const bodyNodes = editorStep?.content?.filter((child) => child.type === "paragraph" || child.type === "bulletList") ?? [];
+    const bodyNodes = editorStep?.content?.filter((child) => ["paragraph", "bulletList", "orderedList", "blockquote"].includes(child.type ?? "")) ?? [];
     const screenshot = step.screenshotId ? session.screenshots.find((shot) => shot.id === step.screenshotId) : undefined;
     addHeading([{ text: `${index + 1}. `, bold: false, italic: false }, ...runsFromNode(headingNode, step.title)], 14);
-    addParagraph(runsFromBodyNodes(bodyNodes, step.narrative));
-    if (step.pageUrl) addParagraph(plainRuns(`Reference: ${step.pageTitle || step.pageUrl}${step.pageTitle ? ` - ${step.pageUrl}` : ""}`), [3, 105, 161]);
+    if (!bodyNodes.length) addParagraph(plainRuns(step.narrative));
+    else bodyNodes.forEach((node) => {
+      if (node.type === "blockquote") addCallout(runsFromBodyNodes(node.content ?? [], ""));
+      else addParagraph(runsFromBodyNodes([node], ""));
+    });
+    if (step.pageUrl && step.showPageUrl !== false) addParagraph(plainRuns(`Source: ${step.pageTitle || step.pageUrl}${step.pageTitle ? ` - ${step.pageUrl}` : ""}`), [3, 105, 161]);
     if (screenshot) {
       try {
         addEvidenceImage(step, screenshot, index);
@@ -183,6 +216,11 @@ function drawPlan(
     }
   });
   return y;
+}
+
+function urlLikeTitle(title: string | undefined, pageUrl: string | undefined): boolean {
+  const value = title?.trim();
+  return Boolean(value && (value === pageUrl || /^(?:https?:\/\/|www\.)/i.test(value)));
 }
 
 function wrapRichText(pdf: jsPDF, runs: RichTextRun[], maxWidth: number, fontSize: number, baseBold: boolean): PositionedLine[] {
@@ -260,36 +298,46 @@ function runsFromBodyNodes(nodes: SerializedEditorNode[], fallback: string): Ric
   const runs: RichTextRun[] = [];
   nodes.forEach((node, index) => {
     if (index) runs.push({ text: "\n", bold: false, italic: false, resetIndent: true });
-    if (node.type !== "bulletList") {
+    if (node.type !== "bulletList" && node.type !== "orderedList") {
       runs.push(...runsFromNode(node, ""));
       return;
     }
-    runs.push(...runsFromBulletList(node));
+    runs.push(...runsFromList(node, node.type === "orderedList"));
   });
   return runs.length ? runs : plainRuns(fallback);
 }
 
 function runsFromBulletList(node: SerializedEditorNode | undefined, depth = 0): RichTextRun[] {
+  return runsFromList(node, false, depth);
+}
+
+function runsFromList(node: SerializedEditorNode | undefined, ordered: boolean, depth = 0): RichTextRun[] {
   const runs: RichTextRun[] = [];
-  childrenOfType(node, "listItem").forEach((item) => {
+  const start = ordered ? orderedListStart(node) : 1;
+  childrenOfType(node, "listItem").forEach((item, index) => {
     const directRuns: RichTextRun[] = [];
     childrenOfType(item, "paragraph").forEach((paragraph, paragraphIndex) => {
       if (paragraphIndex) directRuns.push({ text: "\n", bold: false, italic: false });
       directRuns.push(...runsFromNode(paragraph, ""));
     });
-    const nestedLists = childrenOfType(item, "bulletList");
+    const nestedLists = (item.content ?? []).filter((child) => child.type === "bulletList" || child.type === "orderedList");
     if (hasVisibleText(directRuns)) {
       if (runs.length) runs.push({ text: "\n", bold: false, italic: false, resetIndent: true });
-      runs.push({ text: "- ", bold: false, italic: false, indent: depth }, ...directRuns);
+      runs.push({ text: ordered ? `${start + index}. ` : "- ", bold: false, italic: false, indent: depth }, ...directRuns);
     }
     nestedLists.forEach((nestedList) => {
-      const nestedRuns = runsFromBulletList(nestedList, hasVisibleText(directRuns) ? depth + 1 : depth);
+      const nestedRuns = runsFromList(nestedList, nestedList.type === "orderedList", hasVisibleText(directRuns) ? depth + 1 : depth);
       if (!hasVisibleText(nestedRuns)) return;
       if (runs.length) runs.push({ text: "\n", bold: false, italic: false, resetIndent: true });
       runs.push(...nestedRuns);
     });
   });
   return runs;
+}
+
+function orderedListStart(node: SerializedEditorNode | undefined): number {
+  const start = Number(node?.attrs?.start ?? 1);
+  return Number.isSafeInteger(start) ? start : 1;
 }
 
 function hasVisibleText(runs: RichTextRun[]): boolean {

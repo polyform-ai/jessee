@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getCaptureFlowView, getPlanPdfAction } from "../src/captureFlow";
+import { blocksLibraryCaptureActions, getCaptureFlowView, getPlanPdfAction } from "../src/captureFlow";
 import type { RecordingSession, RecordingStatus } from "../src/types";
 
 describe("getCaptureFlowView", () => {
@@ -34,6 +34,18 @@ describe("getCaptureFlowView", () => {
     expect(getPlanPdfAction("ready", false).label).toBe("Download PDF");
     expect(getPlanPdfAction("ready", true).label).toBe("Generate PDF");
     expect(getPlanPdfAction("generating", false)).toEqual({ label: "Building PDF…", disabled: true });
+  });
+
+  it("blocks Library actions only while a stopped capture is entering automatic planning", () => {
+    const automaticHandoff = { ...session("stopped"), autoPlanningPending: true };
+    expect(blocksLibraryCaptureActions(automaticHandoff)).toBe(true);
+    expect(getCaptureFlowView(automaticHandoff, true, true)).toMatchObject({
+      title: "Creating your plan",
+      buttons: []
+    });
+    expect(blocksLibraryCaptureActions({ ...session("stopped"), autoPlanningPending: false, analysisError: "Retry planning" })).toBe(false);
+    expect(blocksLibraryCaptureActions(session("planning"))).toBe(true);
+    expect(blocksLibraryCaptureActions(session("ready"))).toBe(false);
   });
 });
 

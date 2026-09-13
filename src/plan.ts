@@ -6,7 +6,8 @@ import { getPlanPdfAction } from "./captureFlow";
 import { downloadPlanPdf } from "./pdfDownload";
 import { rankScreenshotsForStep, screenshotTimingLabel, type ScreenshotCandidate } from "./imagePicker";
 import { sendRuntimeMessage } from "./runtimeMessaging";
-import { getSession, saveSession } from "./storage";
+import { RevisionedSaveQueue } from "./revisionedSaveQueue";
+import { getSession } from "./storage";
 import { StoryEditor, type StoryEditorAction } from "./storyEditor";
 import type { CaptureAnalysis, CaptureStoryStep, RecordingSession, RuntimeMessage } from "./types";
 
@@ -24,12 +25,17 @@ let planMode: PlanMode = "edit";
 let storyEditor: StoryEditor | undefined;
 let saveTimer: number | undefined;
 let statusMessage = "Saved automatically";
-let planDirty = false;
+const planSaves = new RevisionedSaveQueue();
 let imageDialogStepIndex: number | undefined;
 let imageCandidateIndex = 0;
 let showAllScreenshots = false;
 
 void initialize();
+
+window.addEventListener("pagehide", flushPendingPlan);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") flushPendingPlan();
+});
 
 async function initialize(): Promise<void> {
   session = await getSession();
@@ -49,7 +55,7 @@ function render(): void {
   const storySteps = normalizedStorySteps(analysis);
   if (imageDialogStepIndex !== undefined && !storySteps[imageDialogStepIndex]) imageDialogStepIndex = undefined;
   const selectedVisualCount = storySteps.filter((step) => step.screenshotId).length;
-  const pdfAction = getPlanPdfAction(session.status, planDirty);
+  const pdfAction = getPlanPdfAction(session.status, planSaves.dirty);
 
   root.innerHTML = `
     <main class="plan-page story-workspace">
@@ -79,7 +85,7 @@ function render(): void {
             <p class="section-eyebrow">${planMode === "edit" ? "Edit the generated story" : "Final reader preview"}</p>
             <h2 id="storyEditorHeading">${planMode === "edit" ? "Make the document sound like you" : "Review what your audience will receive"}</h2>
           </div>
-          <p>${planMode === "edit" ? "Edit the text directly. Click any image to step through the captured moments and choose a better one." : "This same story, in this same order, becomes one continuous PDF."}</p>
+          <p>${planMode === "edit" ? "Shape paragraphs, lists, and callouts directly. Every step keeps its source URL and lets you choose whether readers see it." : "This same story, in this same order, becomes one continuous PDF."}</p>
         </div>
         ${planMode === "edit" ? renderEditorToolbar() : ""}
         <div class="story-paper" id="storyEditor"></div>
@@ -113,9 +119,12 @@ function render(): void {
 function renderEditorToolbar(): string {
   return `<div class="story-editor-toolbar" role="toolbar" aria-label="Story formatting">
     <div class="editor-format-group">
+      <button type="button" class="editor-tool editor-tool-list" data-editor-action="paragraph" aria-label="Paragraph" aria-pressed="false">Text</button>
       <button type="button" class="editor-tool" data-editor-action="bold" aria-label="Bold" aria-pressed="false"><strong>B</strong></button>
       <button type="button" class="editor-tool" data-editor-action="italic" aria-label="Italic" aria-pressed="false"><em>I</em></button>
-      <button type="button" class="editor-tool editor-tool-list" data-editor-action="bulletList" aria-label="Bullet list" aria-pressed="false">List</button>
+      <button type="button" class="editor-tool editor-tool-list" data-editor-action="bulletList" aria-label="Bullet list" aria-pressed="false">• Bullets</button>
+      <button type="button" class="editor-tool editor-tool-list" data-editor-action="orderedList" aria-label="Numbered list" aria-pressed="false">1. List</button>
+      <button type="button" class="editor-tool editor-tool-list" data-editor-action="callout" aria-label="Callout" aria-pressed="false">Callout</button>
     </div>
     <span class="editor-toolbar-divider"></span>
     <div class="editor-format-group">
@@ -272,7 +281,7 @@ async function selectImage(imageId: string): Promise<void> {
   const stepIndex = imageDialogStepIndex;
   const screenshot = hydrated.screenshots.find((shot) => shot.id === imageId);
   storyEditor.updateImage(stepIndex, screenshot);
-  planDirty = true;
+  planSaves.markChanged();
   await persistPlan();
   imageDialogStepIndex = undefined;
   statusMessage = imageId ? "Image selected and saved" : "Text-only step saved";
@@ -291,25 +300,52 @@ function currentDialogStep(): CaptureStoryStep | undefined {
 }
 
 function scheduleSave(): void {
-  planDirty = true;
+  planSaves.markChanged();
   statusMessage = "Saving…";
   updateSaveStatus();
   updatePdfAction();
   if (saveTimer) window.clearTimeout(saveTimer);
-  saveTimer = window.setTimeout(() => void persistPlan(), 450);
+  saveTimer = window.setTimeout(() => void persistPlan().catch(showSaveError), 450);
 }
 
 async function persistPlan(): Promise<void> {
   if (saveTimer) window.clearTimeout(saveTimer);
   saveTimer = undefined;
-  if (!session.captureAnalysis || !planDirty || !storyEditor) return;
-  session = { ...session, captureAnalysis: storyEditor.value(session.captureAnalysis), status: "planned", analysisError: undefined };
-  await saveSession(session);
-  await saveCaptureHistory(session);
-  planDirty = false;
+  if (!session.captureAnalysis || !planSaves.dirty || !storyEditor) return;
+  await planSaves.flush(async () => {
+    const next = currentStorySnapshot();
+    if (!next) return;
+    const response = await send({ type: "SAVE_CAPTURE_STORY", session: next });
+    if (!response.ok) throw new Error(response.error ?? "Story save failed.");
+    session = response.session ?? next;
+  });
   statusMessage = "Saved automatically";
   updateSaveStatus();
   updatePdfAction();
+}
+
+function flushPendingPlan(): void {
+  if (!planSaves.dirty) return;
+  const latest = currentStorySnapshot();
+  if (!latest) return;
+  void send({ type: "SAVE_CAPTURE_STORY", session: latest }).then((response) => {
+    if (!response.ok) throw new Error(response.error ?? "Story save failed.");
+  }).catch(showSaveError);
+}
+
+function currentStorySnapshot(): RecordingSession | undefined {
+  if (!session.captureAnalysis || !storyEditor) return undefined;
+  return {
+    ...session,
+    captureAnalysis: storyEditor.value(session.captureAnalysis),
+    status: "planned",
+    analysisError: undefined
+  };
+}
+
+function showSaveError(error: unknown): void {
+  statusMessage = `Could not save yet. ${error instanceof Error ? error.message : String(error)}`;
+  updateSaveStatus();
 }
 
 async function addStoryStep(): Promise<void> {
@@ -317,8 +353,18 @@ async function addStoryStep(): Promise<void> {
   const storySteps = normalizedStorySteps(storyEditor.value(session.captureAnalysis));
   const previous = storySteps.at(-1);
   const timestamp = previous?.endSeconds ?? session.transcript?.segments.at(-1)?.end ?? 0;
-  storyEditor.appendStep({ startSeconds: timestamp, endSeconds: timestamp, title: "New step", narrative: "Add the next part of the explanation.", transcript: "", kind: "manual" }, hydrated.screenshots);
-  planDirty = true;
+  storyEditor.appendStep({
+    startSeconds: timestamp,
+    endSeconds: timestamp,
+    title: "New step",
+    narrative: "Add the next part of the explanation.",
+    transcript: "",
+    pageUrl: previous?.pageUrl || session.tabUrl,
+    pageTitle: previous?.pageTitle || session.tabTitle,
+    showPageUrl: true,
+    kind: "manual"
+  }, hydrated.screenshots);
+  planSaves.markChanged();
   await persistPlan();
   render();
   storyEditor?.scrollToStep(storySteps.length);
@@ -365,7 +411,7 @@ function updateSaveStatus(): void {
 function updatePdfAction(): void {
   const element = document.querySelector<HTMLButtonElement>("#generatePdf");
   if (!element) return;
-  const action = getPlanPdfAction(session.status, planDirty);
+  const action = getPlanPdfAction(session.status, planSaves.dirty);
   element.textContent = action.label;
   element.disabled = action.disabled;
 }
