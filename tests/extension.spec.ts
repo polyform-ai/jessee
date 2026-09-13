@@ -98,6 +98,15 @@ test("loads extension settings page", async () => {
       const stored = await chrome.storage.local.get("recordingSession");
       return stored.recordingSession?.status;
     })).toBe("error");
+    const idleHistoryPage = await context.newPage();
+    await idleHistoryPage.goto(`chrome-extension://${extensionId}/history.html`);
+    await idleHistoryPage.getByRole("button", { name: "New capture" }).click();
+    await expect(idleHistoryPage).toHaveURL(`chrome-extension://${extensionId}/history.html`);
+    await expect.poll(() => idleHistoryPage.evaluate(async () => {
+      const stored = await chrome.storage.local.get("recordingSession");
+      return stored.recordingSession?.status;
+    })).toBe("idle");
+    await idleHistoryPage.close();
 
     const fallbackScreenshot = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=";
     const overviewScreenshot = process.env.JESSEE_VISUAL_QA

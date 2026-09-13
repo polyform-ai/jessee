@@ -265,7 +265,7 @@ async function openCapture(): Promise<void> {
 async function startNewCapture(): Promise<void> {
   if (await guardActiveCapture()) return;
   await resetSession();
-  window.location.assign(chrome.runtime.getURL("popup.html"));
+  await openCapture();
 }
 
 function observeThumbnails(): void {
