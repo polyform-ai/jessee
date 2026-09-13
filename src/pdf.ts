@@ -306,6 +306,7 @@ function runsFromBulletList(node: SerializedEditorNode | undefined, depth = 0): 
 
 function runsFromList(node: SerializedEditorNode | undefined, ordered: boolean, depth = 0): RichTextRun[] {
   const runs: RichTextRun[] = [];
+  const start = ordered ? orderedListStart(node) : 1;
   childrenOfType(node, "listItem").forEach((item, index) => {
     const directRuns: RichTextRun[] = [];
     childrenOfType(item, "paragraph").forEach((paragraph, paragraphIndex) => {
@@ -315,7 +316,7 @@ function runsFromList(node: SerializedEditorNode | undefined, ordered: boolean, 
     const nestedLists = (item.content ?? []).filter((child) => child.type === "bulletList" || child.type === "orderedList");
     if (hasVisibleText(directRuns)) {
       if (runs.length) runs.push({ text: "\n", bold: false, italic: false, resetIndent: true });
-      runs.push({ text: ordered ? `${index + 1}. ` : "- ", bold: false, italic: false, indent: depth }, ...directRuns);
+      runs.push({ text: ordered ? `${start + index}. ` : "- ", bold: false, italic: false, indent: depth }, ...directRuns);
     }
     nestedLists.forEach((nestedList) => {
       const nestedRuns = runsFromList(nestedList, nestedList.type === "orderedList", hasVisibleText(directRuns) ? depth + 1 : depth);
@@ -325,6 +326,11 @@ function runsFromList(node: SerializedEditorNode | undefined, ordered: boolean, 
     });
   });
   return runs;
+}
+
+function orderedListStart(node: SerializedEditorNode | undefined): number {
+  const start = Number(node?.attrs?.start ?? 1);
+  return Number.isSafeInteger(start) ? start : 1;
 }
 
 function hasVisibleText(runs: RichTextRun[]): boolean {

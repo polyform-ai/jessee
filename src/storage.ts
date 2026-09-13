@@ -1,5 +1,6 @@
 import type { CaptureHistoryItem, RecordingSession, Settings } from "./types";
 import { deleteSessionArtifacts } from "./artifacts";
+import { sessionIsInUse } from "./storyEditorTabs";
 
 const SESSION_KEY = "recordingSession";
 const SETTINGS_KEY = "settings";
@@ -60,10 +61,23 @@ export async function upsertCaptureHistory(item: CaptureHistoryItem): Promise<vo
   await deleteHistoryArtifacts(candidates.slice(50));
 }
 
-export async function pruneCaptureHistory(retentionDays: number): Promise<void> {
+export async function getCaptureRetentionProtection(retentionDays: number): Promise<{ captureId?: string; exportFolderName?: string }> {
+  const currentSession = await getSession();
+  if (!await sessionIsInUse(currentSession)) {
+    const sessionEndedAt = currentSession.stoppedAt ?? currentSession.startedAt;
+    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    if (sessionEndedAt && sessionEndedAt < cutoff) await resetSession();
+    return {};
+  }
+  return {
+    captureId: currentSession.captureId ?? (currentSession.startedAt ? `${currentSession.startedAt}` : undefined),
+    exportFolderName: currentSession.exportFolderName
+  };
+}
+
+export async function pruneCaptureHistory(retentionDays: number, protectedCaptureId?: string): Promise<void> {
   if (retentionDays <= 0) return;
-  const [settings, currentSession] = await Promise.all([getSettings(), getSession()]);
-  const protectedCaptureId = currentSession.captureId ?? (currentSession.startedAt ? `${currentSession.startedAt}` : undefined);
+  const settings = await getSettings();
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
   const expired = (settings.captureHistory ?? []).filter((item) => item.createdAt < cutoff && item.id !== protectedCaptureId);
   await saveSettings({

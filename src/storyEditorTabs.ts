@@ -1,3 +1,5 @@
+import type { RecordingSession } from "./types";
+
 const STORY_EDITOR_LOCK = "jessee-story-editor-owner";
 
 export async function withStoryEditorOwnership<T>(
@@ -14,6 +16,11 @@ export async function withStoryEditorOwnership<T>(
 
 export async function hasOpenStoryEditor(): Promise<boolean> {
   return Boolean(await openStoryEditorTab());
+}
+
+export async function sessionIsInUse(session: RecordingSession): Promise<boolean> {
+  if (["recording", "paused", "stopped", "planning", "generating"].includes(session.status)) return true;
+  return hasOpenStoryEditor();
 }
 
 export async function focusOpenStoryEditor(): Promise<boolean> {

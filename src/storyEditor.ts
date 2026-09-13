@@ -461,11 +461,12 @@ function storyBodyText(node: JSONContent): string {
 }
 
 function storyListText(node: JSONContent, ordered: boolean, depth = 0): string {
+  const start = ordered ? orderedListStart(node) : 1;
   return (node.content ?? [])
     .filter((item) => item.type === "listItem")
     .flatMap((item, index) => {
       const directText = storyListItemText(item);
-      const marker = ordered ? `${index + 1}.` : "-";
+      const marker = ordered ? `${start + index}.` : "-";
       const lines = directText ? [`${"  ".repeat(depth)}${marker} ${directText}`] : [];
       const nestedDepth = directText ? depth + 1 : depth;
       for (const nestedList of (item.content ?? []).filter((child) => child.type === "bulletList" || child.type === "orderedList")) {
@@ -476,6 +477,11 @@ function storyListText(node: JSONContent, ordered: boolean, depth = 0): string {
     })
     .filter(Boolean)
     .join("\n");
+}
+
+function orderedListStart(node: JSONContent): number {
+  const start = Number(node.attrs?.start ?? 1);
+  return Number.isSafeInteger(start) ? start : 1;
 }
 
 function storyListEntries(node: JSONContent): string[] {

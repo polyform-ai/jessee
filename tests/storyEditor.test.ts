@@ -116,6 +116,7 @@ describe("visual story editor document", () => {
     document.content![1].content!.splice(1, 1,
       {
         type: "orderedList",
+        attrs: { start: 5 },
         content: [
           { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Open settings" }] }] },
           { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Retry save" }] }] }
@@ -135,7 +136,7 @@ describe("visual story editor document", () => {
     const updated = parseEditorDocument(document, analysis());
 
     expect(updated.storySteps?.[0]).toMatchObject({
-      narrative: "1. Open settings\n2. Retry save\n\n> Keep this visible for the reviewer.\n> Preserve this second thought.",
+      narrative: "5. Open settings\n6. Retry save\n\n> Keep this visible for the reviewer.\n> Preserve this second thought.",
       pageUrl: "https://example.test/start",
       showPageUrl: false
     });

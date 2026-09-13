@@ -8,7 +8,7 @@ import {
   supportsExportFolderSelection
 } from "./localFiles";
 import { sendRuntimeMessage } from "./runtimeMessaging";
-import { clearApiKey, getSession, getSettings, pruneCaptureHistory, saveSession, saveSettings } from "./storage";
+import { clearApiKey, getCaptureRetentionProtection, getSession, getSettings, pruneCaptureHistory, saveSession, saveSettings } from "./storage";
 import { checkForJesseeUpdate, initialUpdateState, type UpdateState } from "./update";
 import { postWebhook } from "./webhook";
 
@@ -195,8 +195,11 @@ async function render(message = ""): Promise<void> {
     const retentionDays = Math.min(365, Math.max(1, Math.round(Number.isFinite(value) ? value : 30)));
     await saveSettings({ retentionDays });
     try {
-      const currentSession = await getSession();
-      await Promise.all([deleteOldCaptureFolders(retentionDays, true, currentSession.exportFolderName), pruneCaptureHistory(retentionDays)]);
+      const protection = await getCaptureRetentionProtection(retentionDays);
+      await Promise.all([
+        deleteOldCaptureFolders(retentionDays, true, protection.exportFolderName),
+        pruneCaptureHistory(retentionDays, protection.captureId)
+      ]);
       await render("Retention saved.");
     } catch (error) {
       await render(error instanceof Error ? error.message : String(error));

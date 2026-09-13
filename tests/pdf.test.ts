@@ -203,6 +203,13 @@ describe("createPlanPdf", () => {
                 { type: "paragraph", content: [{ type: "text", text: "Keep the source private." }] }
               ]
             },
+            {
+              type: "orderedList",
+              attrs: { start: 5 },
+              content: [
+                { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Continue from the prior procedure" }] }] }
+              ]
+            },
             { type: "storySource", attrs: { pageUrl: "https://example.test/private-source", visible: false } },
             { type: "storyImage" }
           ]
@@ -215,6 +222,7 @@ describe("createPlanPdf", () => {
     expect(text).toContain("Check this before sharing.");
     expect(text).toContain("Keep the source private.");
     expect(text).not.toContain("sharing.Keep");
+    expect(text).toContain("5. Continue from the prior procedure");
     expect(text).not.toContain("private-source");
   });
 
