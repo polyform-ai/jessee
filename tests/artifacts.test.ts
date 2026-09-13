@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import "fake-indexeddb/auto";
-import { artifactRef, deleteSessionArtifacts, getArtifact, hydrateSession, putArtifact } from "../src/artifacts";
+import { artifactRef, deleteSessionArtifacts, getArtifact, hydrateRecordingMedia, hydrateSession, putArtifact } from "../src/artifacts";
 import type { RecordingSession } from "../src/types";
 
 describe("hydrateSession", () => {
@@ -32,6 +32,22 @@ describe("hydrateSession", () => {
 });
 
 describe("capture-scoped media artifacts", () => {
+  it("hydrates playback media without reading screenshot artifacts", async () => {
+    const screenshot = await putArtifact("screenshot:playback", "data:image/jpeg;base64,c2NyZWVu");
+    const video = await putArtifact("video:playback", "data:video/webm;base64,dmlkZW8=");
+    const session: RecordingSession = {
+      status: "stopped",
+      timeline: [],
+      screenshots: [{ id: "shot", capturedAtMs: 0, url: "", title: "", dataUrl: screenshot, annotations: [], redactions: [] }],
+      videoDataUrl: video
+    };
+
+    const hydrated = await hydrateRecordingMedia(session);
+
+    expect(hydrated.videoDataUrl).toBe("data:video/webm;base64,dmlkZW8=");
+    expect(hydrated.screenshots[0].dataUrl).toBe(screenshot);
+  });
+
   it("keeps recording media isolated between history entries", async () => {
     const firstVideo = await putArtifact("video:capture-one", "data:video/webm;base64,b25l");
     const secondVideo = await putArtifact("video:capture-two", "data:video/webm;base64,dHdv");

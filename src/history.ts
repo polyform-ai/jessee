@@ -1,10 +1,10 @@
 import "./ui.css";
-import { getArtifact, hydrateSession } from "./artifacts";
+import { getArtifact, hydrateRecordingMedia } from "./artifacts";
 import { saveCaptureHistory } from "./captureHistory";
 import { downloadPlanPdf } from "./pdfDownload";
 import { sendRuntimeMessage } from "./runtimeMessaging";
 import { getSession, getSettings, resetSession, saveSession } from "./storage";
-import type { CaptureHistoryItem, RecordingSession, ScreenshotEvidence } from "./types";
+import type { CaptureHistoryItem, RecordingSession, ScreenshotEvidence, Settings } from "./types";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("Missing #app");
@@ -21,16 +21,28 @@ let thumbnailObserver: IntersectionObserver | undefined;
 void initialize();
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName !== "local" || !changes.recordingSession) return;
-  activeCapture = isActiveCapture(changes.recordingSession.newValue as RecordingSession | undefined);
-  if (activeCapture) message = activeCaptureMessage();
-  else if (message === activeCaptureMessage()) message = "";
-  render();
+  if (areaName !== "local") return;
+  let changed = false;
+  if (changes.settings) {
+    const settings = changes.settings.newValue as Settings | undefined;
+    history = sortedHistory(settings?.captureHistory ?? []);
+    const retainedIds = new Set(history.map((item) => item.id));
+    thumbnails = new Map([...thumbnails].filter(([captureId]) => retainedIds.has(captureId)));
+    if (preview && !retainedIds.has(preview.item.id)) preview = undefined;
+    changed = true;
+  }
+  if (changes.recordingSession) {
+    activeCapture = isActiveCapture(changes.recordingSession.newValue as RecordingSession | undefined);
+    if (activeCapture) message = activeCaptureMessage();
+    else if (message === activeCaptureMessage()) message = "";
+    changed = true;
+  }
+  if (changed) render();
 });
 
 async function initialize(): Promise<void> {
   const [settings, session] = await Promise.all([getSettings(), getSession()]);
-  history = [...(settings.captureHistory ?? [])].sort((left, right) => right.createdAt - left.createdAt);
+  history = sortedHistory(settings.captureHistory ?? []);
   activeCapture = isActiveCapture(session);
   if (activeCapture) message = activeCaptureMessage();
   render();
@@ -182,6 +194,10 @@ async function editCapture(captureId: string): Promise<void> {
   if (!item.hasPlan) {
     const response = await sendRuntimeMessage({ type: "PREPARE_CAPTURE_PLAN" });
     if (!response.ok || !response.session) {
+      if (response.session) {
+        item.session = response.session;
+        await saveCaptureHistory(response.session);
+      }
       busyCaptureId = undefined;
       message = response.error ?? "JesSee could not create this story.";
       render();
@@ -220,7 +236,7 @@ async function previewCapture(captureId: string): Promise<void> {
   message = "Loading the local recording…";
   render();
   try {
-    preview = { item, session: await hydrateSession(item.session) };
+    preview = { item, session: await hydrateRecordingMedia(item.session) };
     message = "";
   } catch (error) {
     message = error instanceof Error ? error.message : String(error);
@@ -303,6 +319,10 @@ function isActiveCapture(session: RecordingSession | undefined): boolean {
 
 function activeCaptureMessage(): string {
   return "A capture is still recording or being prepared. Return to capture and finish it before starting or editing another walkthrough.";
+}
+
+function sortedHistory(items: CaptureHistoryItem[]): CaptureHistoryItem[] {
+  return [...items].sort((left, right) => right.createdAt - left.createdAt);
 }
 
 function selectedScreenshot(session: RecordingSession): ScreenshotEvidence | undefined {

@@ -48,6 +48,14 @@ export async function hydrateSession(session: RecordingSession): Promise<Recordi
   };
 }
 
+export async function hydrateRecordingMedia(session: RecordingSession): Promise<RecordingSession> {
+  return {
+    ...session,
+    videoDataUrl: (await getArtifact(session.videoDataUrl)) ?? (isArtifactRef(session.videoDataUrl) ? undefined : session.videoDataUrl),
+    audioDataUrl: (await getArtifact(session.audioDataUrl)) ?? (isArtifactRef(session.audioDataUrl) ? undefined : session.audioDataUrl)
+  };
+}
+
 export async function deleteSessionArtifacts(session: RecordingSession): Promise<void> {
   await deleteArtifacts([
     ...session.screenshots.map((screenshot) => screenshot.dataUrl),
