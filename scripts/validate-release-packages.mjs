@@ -50,6 +50,7 @@ for (const browserPackage of packages) {
   browserPackage.validateManifest(manifest);
 
   const referencedResources = collectManifestResources(manifest);
+  referencedResources.add("history.html");
   const missing = [...referencedResources].filter((resource) => !zipContains(entries, resource));
   if (missing.length) {
     throw new Error(`${browserPackage.browser} package is missing manifest resources: ${missing.join(", ")}`);

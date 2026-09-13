@@ -135,6 +135,7 @@ em { color: var(--violet); font-family: var(--serif); font-weight: 400; }
 .compact-shot { max-width: 408px; justify-self: end; background: #f8f8fa; }
 .compact-shot img { aspect-ratio: auto; object-fit: contain; }
 .playbook-shot img { aspect-ratio: 16/10; object-position: top; }
+.history-shot img { aspect-ratio: 16/10; object-position: top; }
 .final-step { grid-template-columns: .72fr 1.28fr; border-bottom: 0; }
 .pdf-result { min-height: 500px; display: grid; place-items: center; position: relative; background: radial-gradient(circle at center, rgba(91,94,248,.11), transparent 65%); }
 .pdf-page { width: 300px; height: 400px; border: 1px solid rgba(25,25,28,.12); border-radius: 4px; background: white; box-shadow: 0 25px 65px rgba(36,33,49,.17); }

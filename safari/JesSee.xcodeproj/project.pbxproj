@@ -25,6 +25,7 @@
 		1EE94984300691CF004803F7 /* plan.html in Resources */ = {isa = PBXBuildFile; fileRef = 1EE9497D300691CF004803F7 /* plan.html */; };
 		1EE94985300691CF004803F7 /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 1EE9497E300691CF004803F7 /* assets */; };
 		1EE94986300691CF004803F7 /* controls.html in Resources */ = {isa = PBXBuildFile; fileRef = 1EE94987300691CF004803F7 /* controls.html */; };
+		1EE94988300691CF004803F7 /* history.html in Resources */ = {isa = PBXBuildFile; fileRef = 1EE94989300691CF004803F7 /* history.html */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -73,6 +74,7 @@
 		1EE9497D300691CF004803F7 /* plan.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = plan.html; path = Resources/plan.html; sourceTree = "<group>"; };
 		1EE9497E300691CF004803F7 /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; name = assets; path = Resources/assets; sourceTree = "<group>"; };
 		1EE94987300691CF004803F7 /* controls.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = controls.html; path = Resources/controls.html; sourceTree = "<group>"; };
+		1EE94989300691CF004803F7 /* history.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = history.html; path = Resources/history.html; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -156,6 +158,7 @@
 				1EE9497D300691CF004803F7 /* plan.html */,
 				1EE9497E300691CF004803F7 /* assets */,
 				1EE94987300691CF004803F7 /* controls.html */,
+				1EE94989300691CF004803F7 /* history.html */,
 			);
 			name = Resources;
 			path = "JesSee Extension";
@@ -268,6 +271,7 @@
 				1EE94980300691CF004803F7 /* icon.svg in Resources */,
 				1EE94984300691CF004803F7 /* plan.html in Resources */,
 				1EE94986300691CF004803F7 /* controls.html in Resources */,
+				1EE94988300691CF004803F7 /* history.html in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -443,7 +447,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
@@ -477,7 +481,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
@@ -514,7 +518,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
@@ -555,7 +559,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;

@@ -112,6 +112,7 @@ function render(): void {
         </div>
         <div class="header-actions">
           <span class="status">${status}</span>
+          <button class="button secondary compact" id="history">Library</button>
           <button class="icon-button" id="settings" aria-label="Open Settings" title="Settings">⚙</button>
         </div>
       </div>
@@ -174,6 +175,7 @@ function render(): void {
   bind("#newCapture", "click", () => startFreshCapture());
   bind("#createPlan", "click", () => prepareCapturePlan());
   bind("#downloadPdf", "click", () => session && downloadPlanPdf(session));
+  bind("#history", "click", () => openHistoryPage());
   for (const button of document.querySelectorAll<HTMLButtonElement>(".load-history")) {
     button.addEventListener("click", async () => {
       const item = settings?.captureHistory?.find((capture) => capture.id === button.dataset.captureId);
@@ -362,6 +364,10 @@ async function prepareCapturePlan(): Promise<void> {
 
 async function openPlanPage(): Promise<void> {
   await chrome.tabs.create({ url: chrome.runtime.getURL("plan.html") });
+}
+
+async function openHistoryPage(): Promise<void> {
+  await chrome.tabs.create({ url: chrome.runtime.getURL("history.html") });
 }
 
 async function startFreshCapture(): Promise<void> {

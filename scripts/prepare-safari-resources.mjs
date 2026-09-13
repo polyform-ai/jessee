@@ -10,6 +10,7 @@ cpSync(chromeBuild, safariResources, { recursive: true });
 
 const manifestPath = resolve(safariResources, "manifest.json");
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+delete manifest.update_url;
 delete manifest.side_panel;
 manifest.action = {
   ...(manifest.action ?? {}),

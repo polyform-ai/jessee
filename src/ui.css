@@ -87,6 +87,236 @@
     @apply min-h-screen bg-zinc-50 p-6;
   }
 
+  .history-page {
+    @apply min-h-screen bg-zinc-50 px-6 py-5;
+  }
+
+  .library-header {
+    @apply mx-auto mb-5 flex max-w-[1440px] items-center justify-between gap-5 border border-zinc-200/80 bg-white p-4 shadow-sm;
+    border-radius: 12px;
+  }
+
+  .library-shell {
+    @apply mx-auto max-w-[1440px] border border-zinc-200 bg-white p-6 shadow-sm;
+    border-radius: 14px;
+  }
+
+  .library-intro {
+    @apply mb-6 flex items-end justify-between gap-6 border-b border-zinc-100 pb-5;
+  }
+
+  .library-intro h2 {
+    @apply text-2xl tracking-[-0.03em];
+  }
+
+  .library-search {
+    @apply w-full max-w-sm;
+  }
+
+  .library-search span {
+    @apply mb-2 block text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500;
+  }
+
+  .library-search input {
+    @apply w-full border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none transition;
+    border-radius: 8px;
+  }
+
+  .library-search input:focus {
+    @apply border-violet-400 bg-white ring-2 ring-violet-100;
+  }
+
+  .library-message {
+    @apply mb-5 border border-violet-100 bg-violet-50 px-4 py-3 text-sm text-violet-800;
+    border-radius: 9px;
+  }
+
+  .history-grid {
+    @apply grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3;
+  }
+
+  .history-card {
+    @apply overflow-hidden border border-zinc-200 bg-white shadow-sm transition;
+    border-radius: 13px;
+  }
+
+  .history-card:hover {
+    @apply border-zinc-300 shadow-lg;
+    transform: translateY(-2px);
+  }
+
+  .history-card-visual {
+    @apply relative flex aspect-[16/9] items-center justify-center overflow-hidden bg-zinc-950;
+  }
+
+  .history-card-visual > img {
+    @apply size-full object-cover object-top;
+  }
+
+  .history-card-placeholder {
+    @apply flex flex-col items-center gap-3 text-xs text-zinc-400;
+  }
+
+  .history-card-placeholder img {
+    @apply size-12 opacity-80;
+  }
+
+  .history-state {
+    @apply absolute left-3 top-3 border border-white/20 bg-zinc-950/80 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.08em] text-white backdrop-blur;
+    border-radius: 999px;
+  }
+
+  .history-state.planned {
+    @apply bg-emerald-600/90;
+  }
+
+  .history-card-body {
+    @apply p-5;
+  }
+
+  .history-card-heading {
+    @apply flex items-start justify-between gap-4;
+  }
+
+  .history-card-heading p {
+    @apply mb-1 text-[10px] font-medium uppercase tracking-[0.08em] text-zinc-400;
+  }
+
+  .history-card-heading h3 {
+    @apply m-0 text-lg font-semibold leading-tight tracking-[-0.025em] text-zinc-950;
+  }
+
+  .history-card-heading > span {
+    @apply shrink-0 bg-zinc-100 px-2 py-1 text-[10px] font-semibold text-zinc-600;
+    border-radius: 999px;
+  }
+
+  .history-page-context {
+    @apply mt-2 truncate text-xs text-zinc-500;
+  }
+
+  .history-card-meta {
+    @apply my-4 grid grid-cols-3 gap-2 border-y border-zinc-100 py-3 text-[10px] text-zinc-500;
+  }
+
+  .history-card-meta span {
+    @apply min-w-0;
+  }
+
+  .history-card-meta strong {
+    @apply block text-xs text-zinc-900;
+  }
+
+  .history-card-actions {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .history-card-actions .button {
+    @apply w-auto;
+  }
+
+  .history-text-action {
+    @apply cursor-pointer border-0 bg-transparent px-2 py-2 text-xs font-semibold text-violet-700 underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .library-empty {
+    @apply mx-auto flex max-w-lg flex-col items-center px-6 py-20 text-center;
+  }
+
+  .library-empty img {
+    @apply mb-5 size-16;
+  }
+
+  .library-empty h3 {
+    @apply m-0 text-xl font-semibold tracking-[-0.03em];
+  }
+
+  .library-empty p {
+    @apply my-3 text-sm leading-6 text-zinc-500;
+  }
+
+  .library-empty .button {
+    @apply mt-3 w-auto;
+  }
+
+  .recording-dialog {
+    @apply m-auto w-[min(94vw,920px)] border-0 bg-transparent p-0;
+  }
+
+  .recording-dialog::backdrop {
+    @apply bg-zinc-950/70 backdrop-blur-sm;
+  }
+
+  .recording-dialog-card {
+    @apply max-h-[92vh] overflow-y-auto bg-white p-5 shadow-2xl;
+    border-radius: 14px;
+  }
+
+  .recording-dialog-header {
+    @apply mb-4 flex items-start justify-between gap-4;
+  }
+
+  .recording-dialog-header h2 {
+    @apply text-xl tracking-[-0.03em];
+  }
+
+  .recording-player {
+    @apply flex min-h-44 items-center justify-center overflow-hidden bg-zinc-950;
+    border-radius: 10px;
+  }
+
+  .recording-player video,
+  .recording-player audio {
+    @apply w-full;
+  }
+
+  .recording-preview-empty {
+    @apply px-8 text-center text-sm text-zinc-400;
+  }
+
+  .recording-transcript {
+    @apply mt-4 border border-zinc-200 bg-zinc-50 p-4;
+    border-radius: 10px;
+  }
+
+  .recording-transcript > p:last-child {
+    @apply whitespace-pre-wrap text-sm leading-6 text-zinc-700;
+  }
+
+  .recording-dialog-actions {
+    @apply mt-4 flex justify-end gap-2;
+  }
+
+  .update-panel {
+    @apply relative overflow-hidden;
+  }
+
+  .update-panel.update-available {
+    @apply border-violet-200 bg-violet-50/40;
+  }
+
+  .update-panel .panel-header {
+    @apply items-center;
+  }
+
+  .update-panel .row {
+    @apply mt-4;
+  }
+
+  .update-panel .row .button {
+    @apply w-auto;
+  }
+
+  .update-dot {
+    @apply size-2 shrink-0 rounded-full bg-emerald-500;
+    box-shadow: 0 0 0 5px rgba(16, 185, 129, 0.12);
+  }
+
+  .update-available .update-dot {
+    @apply bg-violet-500;
+    box-shadow: 0 0 0 5px rgba(91, 94, 248, 0.12);
+  }
+
   .plan-header {
     @apply sticky top-3 z-20 mx-auto mb-5 flex max-w-[1440px] items-center justify-between gap-4 border border-zinc-200/80 bg-white/95 p-4 shadow-sm backdrop-blur;
     border-radius: 12px;
@@ -1115,6 +1345,19 @@
   }
 
   @media (max-width: 900px) {
+    .library-header,
+    .library-intro {
+      @apply items-start;
+    }
+
+    .library-intro {
+      @apply flex-col;
+    }
+
+    .library-search {
+      @apply max-w-none;
+    }
+
     .plan-header {
       @apply items-start;
     }
@@ -1142,8 +1385,34 @@
 
   @media (max-width: 620px) {
     .plan-page,
-    .recorder-page {
+    .recorder-page,
+    .history-page {
       @apply p-3;
+    }
+
+    .library-header {
+      @apply flex-col items-stretch;
+    }
+
+    .library-shell {
+      @apply p-4;
+    }
+
+    .history-card-body {
+      @apply p-4;
+    }
+
+    .history-card-actions .button,
+    .history-text-action {
+      @apply flex-1 justify-center text-center;
+    }
+
+    .recording-dialog-actions {
+      @apply flex-col;
+    }
+
+    .recording-dialog-actions .button {
+      @apply w-full;
     }
 
     .plan-header,

@@ -23,6 +23,8 @@ A single recording can become:
 - A step by step tutorial
 - Or anything else the recipient needs
 
+JesSee keeps recent walkthroughs in a local library, so the recording does not disappear after the first PDF. Search by title or page, replay the retained recording, reopen the reader-facing story in the visual editor, change its words or screenshots, and download a fresh PDF.
+
 The recording is simply the source of truth. The output is tailored to the purpose.
 
 ## Beyond Documentation
@@ -153,6 +155,7 @@ Captures, recordings, and generated PDFs stay on your computer. When you choose 
 8. While recording, the glowing pointer compresses and rebounds on every click so actions remain clear without covering the page. Hold **B** and drag to draw an outline box, or hold **R** and drag to blur/redact an area. Press **C** to clear every annotation and redaction from the current capture. Clicks and marked frames are captured automatically.
 9. Create the story to open the visual editor. JesSee supplies the first draft; edit its headings, paragraphs, and key points directly in the document. Click any large image to step backward or forward through the captured moments, then choose the best one. **Best matches** ranks screenshots by timing, page context, and useful markup, while **All images** keeps the complete capture available.
 10. Generate and download the PDF from the plan editor or the recorder.
+11. Open **Library** to search prior walkthroughs, replay a retained recording, continue editing its story, or download a fresh PDF.
 
 Mic narration and cursor highlighting are always enabled. JesSee captures timestamped screenshots automatically and pairs them with a sentence-level timestamped transcript. Planning aligns narration to the end of each sentence so evidence reflects the completed action or resulting screen state. Representative transition images help the model understand major changes, while the full screenshot timeline remains available by ID so the plan can choose an earlier or later frame when it tells the story better.
 
@@ -163,6 +166,8 @@ For a concise product walkthrough, use the [two-minute demo playbook](docs/DEMO_
 The open-source product site lives in `website/` and is hosted at [jessee.ai](https://jessee.ai) on Cloudflare Pages. Preview it locally with `npm run site:preview`. Maintainers can deploy a branch preview with `npm run deploy:cloudflare:preview`; `npm run deploy:cloudflare` publishes the `main` production branch.
 
 Early Chrome and Safari downloads are published as GitHub prerelease assets. Run `npm run release:package` to produce both ZIP files and their checksums. See [the developer-preview installation guide](docs/INSTALL_PREVIEW.md) for the deliberate installation steps and current verification limits.
+
+Settings includes a release check for developer-preview installs. Trusted automatic installation will use the Chrome Web Store on Chrome and a signed, notarized macOS app update channel on Safari; see [the automatic update path](docs/AUTOMATIC_UPDATES.md) for the release gates.
 
 ## Safari
 

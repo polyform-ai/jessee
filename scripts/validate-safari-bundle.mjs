@@ -31,6 +31,7 @@ for (const resourcesDirectory of resourceDirectories) {
   for (const entry of manifest.web_accessible_resources ?? []) {
     for (const resource of entry.resources ?? []) addResource(resource);
   }
+  addResource("history.html");
 
   const missing = [...referencedResources].filter((resource) => {
     const wildcardIndex = resource.search(/[?*]/);

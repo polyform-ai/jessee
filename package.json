@@ -1,6 +1,6 @@
 {
   "name": "jessee-extension",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "description": "Chrome and Safari extension that turns screen walkthroughs into structured AI-ready documents.",
   "license": "MIT",
   "repository": {
@@ -22,7 +22,7 @@
     "site:build": "node scripts/prepare-website.mjs",
     "site:preview": "npm run site:build && wrangler pages dev ./site-dist",
     "deploy:cloudflare": "npm run site:build && wrangler pages deploy ./site-dist --project-name jessee --branch main",
-    "deploy:cloudflare:preview": "npm run site:build && wrangler pages deploy ./site-dist --project-name jessee --branch codex-safari-web-extension",
+    "deploy:cloudflare:preview": "npm run site:build && wrangler pages deploy ./site-dist --project-name jessee --branch preview",
     "dev": "vite build --watch",
     "test": "vitest run",
     "test:e2e": "playwright test",
