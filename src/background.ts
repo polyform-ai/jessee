@@ -47,9 +47,6 @@ async function openRecorder(tab?: chrome.tabs.Tab, preferredWindowId?: number): 
   const retainedWindowId = preferredWindowId ?? session.activeWindowId;
   const retainedWindowExists = retainedWindowId ? await windowExists(retainedWindowId) : false;
   const sidePanel = getSidePanelApi();
-  if (sidePanel && retainedWindowId && !retainedWindowExists && recorderIsActive(session)) {
-    throw new Error("The original JesSee recorder window was closed during capture. Return to the capture recovery screen before starting another one.");
-  }
   const recorderWindowId = retainedWindowExists ? retainedWindowId : undefined;
   const target = tab ?? (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
   if (!recorderWindowId && !recorderIsActive(session) && target?.id && target.url && /^https?:\/\//.test(target.url)) {
@@ -72,7 +69,6 @@ async function openRecorder(tab?: chrome.tabs.Tab, preferredWindowId?: number): 
     if (existing.windowId) await chrome.windows.update(existing.windowId, { focused: true });
     return;
   }
-  if (retainedWindowId && recorderIsActive(session)) throw new Error("The original JesSee recorder is no longer open. Finish or recover that capture before starting another one.");
   await chrome.tabs.create({ url: recorderUrl, active: true });
 }
 
