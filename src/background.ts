@@ -70,7 +70,7 @@ async function openRecorder(tab?: chrome.tabs.Tab, preferredWindowId?: number): 
 }
 
 function recorderOwnsWindow(session: RecordingSession): boolean {
-  return Boolean(session.activeWindowId && ["recording", "paused", "planning", "generating"].includes(session.status));
+  return Boolean(session.activeWindowId);
 }
 
 function getSidePanelApi(): Pick<typeof chrome.sidePanel, "open" | "setPanelBehavior"> | undefined {
