@@ -313,8 +313,8 @@ async function persistPlan(): Promise<void> {
   saveTimer = undefined;
   if (!session.captureAnalysis || !planSaves.dirty || !storyEditor) return;
   await planSaves.flush(async () => {
-    if (!session.captureAnalysis || !storyEditor) return;
-    const next = { ...session, captureAnalysis: storyEditor.value(session.captureAnalysis), status: "planned" as const, analysisError: undefined };
+    const next = currentStorySnapshot();
+    if (!next) return;
     const response = await send({ type: "SAVE_CAPTURE_STORY", session: next });
     if (!response.ok) throw new Error(response.error ?? "Story save failed.");
     session = response.session ?? next;
@@ -325,7 +325,22 @@ async function persistPlan(): Promise<void> {
 }
 
 function flushPendingPlan(): void {
-  if (planSaves.dirty) void persistPlan().catch(showSaveError);
+  if (!planSaves.dirty) return;
+  const latest = currentStorySnapshot();
+  if (!latest) return;
+  void send({ type: "SAVE_CAPTURE_STORY", session: latest }).then((response) => {
+    if (!response.ok) throw new Error(response.error ?? "Story save failed.");
+  }).catch(showSaveError);
+}
+
+function currentStorySnapshot(): RecordingSession | undefined {
+  if (!session.captureAnalysis || !storyEditor) return undefined;
+  return {
+    ...session,
+    captureAnalysis: storyEditor.value(session.captureAnalysis),
+    status: "planned",
+    analysisError: undefined
+  };
 }
 
 function showSaveError(error: unknown): void {
