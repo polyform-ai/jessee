@@ -6,6 +6,7 @@ import { getPlanPdfAction } from "./captureFlow";
 import { downloadPlanPdf } from "./pdfDownload";
 import { rankScreenshotsForStep, screenshotTimingLabel, type ScreenshotCandidate } from "./imagePicker";
 import { sendRuntimeMessage } from "./runtimeMessaging";
+import { RevisionedSaveQueue } from "./revisionedSaveQueue";
 import { getSession, saveSession } from "./storage";
 import { StoryEditor, type StoryEditorAction } from "./storyEditor";
 import type { CaptureAnalysis, CaptureStoryStep, RecordingSession, RuntimeMessage } from "./types";
@@ -24,12 +25,17 @@ let planMode: PlanMode = "edit";
 let storyEditor: StoryEditor | undefined;
 let saveTimer: number | undefined;
 let statusMessage = "Saved automatically";
-let planDirty = false;
+const planSaves = new RevisionedSaveQueue();
 let imageDialogStepIndex: number | undefined;
 let imageCandidateIndex = 0;
 let showAllScreenshots = false;
 
 void initialize();
+
+window.addEventListener("pagehide", flushPendingPlan);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") flushPendingPlan();
+});
 
 async function initialize(): Promise<void> {
   session = await getSession();
@@ -49,7 +55,7 @@ function render(): void {
   const storySteps = normalizedStorySteps(analysis);
   if (imageDialogStepIndex !== undefined && !storySteps[imageDialogStepIndex]) imageDialogStepIndex = undefined;
   const selectedVisualCount = storySteps.filter((step) => step.screenshotId).length;
-  const pdfAction = getPlanPdfAction(session.status, planDirty);
+  const pdfAction = getPlanPdfAction(session.status, planSaves.dirty);
 
   root.innerHTML = `
     <main class="plan-page story-workspace">
@@ -275,7 +281,7 @@ async function selectImage(imageId: string): Promise<void> {
   const stepIndex = imageDialogStepIndex;
   const screenshot = hydrated.screenshots.find((shot) => shot.id === imageId);
   storyEditor.updateImage(stepIndex, screenshot);
-  planDirty = true;
+  planSaves.markChanged();
   await persistPlan();
   imageDialogStepIndex = undefined;
   statusMessage = imageId ? "Image selected and saved" : "Text-only step saved";
@@ -294,25 +300,37 @@ function currentDialogStep(): CaptureStoryStep | undefined {
 }
 
 function scheduleSave(): void {
-  planDirty = true;
+  planSaves.markChanged();
   statusMessage = "Saving…";
   updateSaveStatus();
   updatePdfAction();
   if (saveTimer) window.clearTimeout(saveTimer);
-  saveTimer = window.setTimeout(() => void persistPlan(), 450);
+  saveTimer = window.setTimeout(() => void persistPlan().catch(showSaveError), 450);
 }
 
 async function persistPlan(): Promise<void> {
   if (saveTimer) window.clearTimeout(saveTimer);
   saveTimer = undefined;
-  if (!session.captureAnalysis || !planDirty || !storyEditor) return;
-  session = { ...session, captureAnalysis: storyEditor.value(session.captureAnalysis), status: "planned", analysisError: undefined };
-  await saveSession(session);
-  await saveCaptureHistory(session);
-  planDirty = false;
+  if (!session.captureAnalysis || !planSaves.dirty || !storyEditor) return;
+  await planSaves.flush(async () => {
+    if (!session.captureAnalysis || !storyEditor) return;
+    const next = { ...session, captureAnalysis: storyEditor.value(session.captureAnalysis), status: "planned" as const, analysisError: undefined };
+    await saveSession(next);
+    await saveCaptureHistory(next);
+    session = next;
+  });
   statusMessage = "Saved automatically";
   updateSaveStatus();
   updatePdfAction();
+}
+
+function flushPendingPlan(): void {
+  if (planSaves.dirty) void persistPlan().catch(showSaveError);
+}
+
+function showSaveError(error: unknown): void {
+  statusMessage = `Could not save yet. ${error instanceof Error ? error.message : String(error)}`;
+  updateSaveStatus();
 }
 
 async function addStoryStep(): Promise<void> {
@@ -331,7 +349,7 @@ async function addStoryStep(): Promise<void> {
     showPageUrl: true,
     kind: "manual"
   }, hydrated.screenshots);
-  planDirty = true;
+  planSaves.markChanged();
   await persistPlan();
   render();
   storyEditor?.scrollToStep(storySteps.length);
@@ -378,7 +396,7 @@ function updateSaveStatus(): void {
 function updatePdfAction(): void {
   const element = document.querySelector<HTMLButtonElement>("#generatePdf");
   if (!element) return;
-  const action = getPlanPdfAction(session.status, planDirty);
+  const action = getPlanPdfAction(session.status, planSaves.dirty);
   element.textContent = action.label;
   element.disabled = action.disabled;
 }

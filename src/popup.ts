@@ -3,7 +3,7 @@ import { artifactRef, putArtifact } from "./artifacts";
 import { createCompatibleMediaRecorder, mediaFileExtension, screenCaptureOptions, usesFullPageRecorder } from "./browserSupport";
 import { shouldStartWithFreshCapture } from "./captureHome";
 import { saveCaptureHistory } from "./captureHistory";
-import { getCaptureFlowView, type CaptureFlowButton } from "./captureFlow";
+import { blocksLibraryCaptureActions, getCaptureFlowView, type CaptureFlowButton } from "./captureFlow";
 import { dataUrlToBlob } from "./dataUrl";
 import {
   chooseExportFolder,
@@ -183,6 +183,13 @@ function render(): void {
     button.addEventListener("click", async () => {
       const item = settings?.captureHistory?.find((capture) => capture.id === button.dataset.captureId);
       if (!item) return;
+      const currentSession = await getSession();
+      if (blocksLibraryCaptureActions(currentSession)) {
+        session = currentSession;
+        localStatus = "Finish the current capture before loading a previous one.";
+        render();
+        return;
+      }
       await withStoryEditorOwnership(async () => {
         await saveSession(item.session);
         localStatus = "Capture loaded.";
@@ -274,6 +281,7 @@ function renderOnboarding(settings: Awaited<ReturnType<typeof getSettings>> | un
 
 function renderHistory(history: CaptureHistoryItem[]): string {
   if (history.length === 0) return "";
+  const blocked = blocksLibraryCaptureActions(session);
   return `<details class="panel history-panel">
     <summary>
       <span><strong>History</strong><small>Load a previous local capture</small></span>
@@ -286,7 +294,7 @@ function renderHistory(history: CaptureHistoryItem[]): string {
             <strong>${escapeHtml(item.title)}</strong>
             <p class="hint">${formatHistoryDate(item.createdAt)} · ${item.imageCount} images · ${formatSeconds(item.durationSeconds)} · ${escapeHtml(item.folderName ?? "local capture")}</p>
           </div>
-          <button class="button secondary load-history" data-capture-id="${escapeHtml(item.id)}">Load</button>
+          <button class="button secondary load-history" data-capture-id="${escapeHtml(item.id)}" ${blocked ? "disabled" : ""}>${blocked ? "Finish current capture" : "Load"}</button>
         </div>
       `).join("")}
     </div>
