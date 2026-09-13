@@ -4,6 +4,7 @@ import { saveCaptureHistory } from "./captureHistory";
 import { downloadPlanPdf } from "./pdfDownload";
 import { sendRuntimeMessage } from "./runtimeMessaging";
 import { getSession, getSettings, resetSession, saveSession } from "./storage";
+import { focusOpenStoryEditor } from "./storyEditorTabs";
 import type { CaptureHistoryItem, RecordingSession, ScreenshotEvidence, Settings } from "./types";
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -223,16 +224,6 @@ async function editCapture(captureId: string): Promise<void> {
     await saveCaptureHistory(response.session);
   }
   window.location.assign(chrome.runtime.getURL("plan.html"));
-}
-
-async function focusOpenStoryEditor(): Promise<boolean> {
-  const editorUrl = chrome.runtime.getURL("plan.html");
-  const tabs = await chrome.tabs.query({});
-  const existing = tabs.find((tab) => tab.id && tab.url?.startsWith(editorUrl));
-  if (!existing?.id) return false;
-  await chrome.tabs.update(existing.id, { active: true });
-  if (existing.windowId) await chrome.windows.update(existing.windowId, { focused: true });
-  return true;
 }
 
 async function downloadCapture(captureId: string): Promise<void> {

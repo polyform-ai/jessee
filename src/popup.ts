@@ -24,6 +24,7 @@ import { getSession, getSettings, pruneCaptureHistory, resetSession, saveSession
 import type { CaptureHistoryItem, RecordingSession, RuntimeMessage, ScreenshotEvidence, TimelineEvent } from "./types";
 import { postWebhook } from "./webhook";
 import { sendRuntimeMessage } from "./runtimeMessaging";
+import { focusOpenStoryEditor, hasOpenStoryEditor, openOrFocusStoryEditor } from "./storyEditorTabs";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("Missing #app");
@@ -75,7 +76,7 @@ async function refresh(): Promise<void> {
   }
   const response = await send({ type: "GET_SESSION" });
   session = response.session ?? await getSession();
-  if (!initialSessionChecked && session && shouldStartWithFreshCapture(session)) {
+  if (!initialSessionChecked && session && shouldStartWithFreshCapture(session) && !(await hasOpenStoryEditor())) {
     initialSessionChecked = true;
     session = await resetSession();
   } else {
@@ -180,6 +181,11 @@ function render(): void {
     button.addEventListener("click", async () => {
       const item = settings?.captureHistory?.find((capture) => capture.id === button.dataset.captureId);
       if (!item) return;
+      if (await focusOpenStoryEditor()) {
+        localStatus = "Your open story editor was focused. Finish or close it before loading another capture.";
+        await refresh();
+        return;
+      }
       await saveSession(item.session);
       localStatus = "Capture loaded.";
       await refresh();
@@ -346,6 +352,11 @@ async function run(message: RuntimeMessage, refreshAfter = true): Promise<void> 
 }
 
 async function prepareCapturePlan(): Promise<void> {
+  if (await focusOpenStoryEditor()) {
+    localStatus = "Your open story editor was focused. Finish or close it before creating another story.";
+    await refresh();
+    return;
+  }
   localStatus = "Preparing the plan.";
   render();
   try {
@@ -363,7 +374,7 @@ async function prepareCapturePlan(): Promise<void> {
 }
 
 async function openPlanPage(): Promise<void> {
-  await chrome.tabs.create({ url: chrome.runtime.getURL("plan.html") });
+  await openOrFocusStoryEditor();
 }
 
 async function openHistoryPage(): Promise<void> {
@@ -371,6 +382,11 @@ async function openHistoryPage(): Promise<void> {
 }
 
 async function startFreshCapture(): Promise<void> {
+  if (await focusOpenStoryEditor()) {
+    localStatus = "Your open story editor was focused. Finish or close it before starting a new capture.";
+    await refresh();
+    return;
+  }
   session = await resetSession();
   localStatus = "";
   await refresh();
