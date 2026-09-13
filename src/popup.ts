@@ -7,6 +7,7 @@ import { getCaptureFlowView, type CaptureFlowButton } from "./captureFlow";
 import { dataUrlToBlob } from "./dataUrl";
 import {
   chooseExportFolder,
+  clearRecordingFolder,
   deleteOldCaptureFolders,
   exportFolderName,
   hasCaptureStorage,
@@ -20,7 +21,7 @@ import {
 } from "./localFiles";
 import { downloadPlanPdf } from "./pdfDownload";
 import { visiblePageRects } from "./captureEvidence";
-import { getSession, getSettings, pruneCaptureHistory, resetSession, saveSession, saveSettings } from "./storage";
+import { getCaptureRetentionProtection, getSession, getSettings, pruneCaptureHistory, resetSession, saveSession, saveSettings } from "./storage";
 import type { CaptureHistoryItem, RecordingSession, RuntimeMessage, ScreenshotEvidence, TimelineEvent } from "./types";
 import { postWebhook } from "./webhook";
 import { sendRuntimeMessage } from "./runtimeMessaging";
@@ -36,6 +37,7 @@ let audioRecorder: MediaRecorder | undefined;
 let displayStream: MediaStream | undefined;
 let micStream: MediaStream | undefined;
 let mixedStream: MediaStream | undefined;
+let captureAudioContext: AudioContext | undefined;
 let previewVideo: HTMLVideoElement | undefined;
 let screenshotInterval: number | undefined;
 let screenshotInFlight = false;
@@ -424,72 +426,82 @@ async function startRecording(): Promise<void> {
     videoChunks.length = 0;
     audioChunks.length = 0;
 
-    const audioContext = new AudioContext();
-    const destination = audioContext.createMediaStreamDestination();
+    captureAudioContext = new AudioContext();
+    const destination = captureAudioContext.createMediaStreamDestination();
     micStream = await microphoneStreamPromise;
-    audioContext.createMediaStreamSource(micStream).connect(destination);
+    captureAudioContext.createMediaStreamSource(micStream).connect(destination);
 
     displayStream = await screenStreamPromise;
-    for (const track of displayStream.getVideoTracks()) {
-      track.addEventListener("ended", () => {
-        void stopRecording();
-      });
-    }
-
     mixedStream = new MediaStream([...displayStream.getVideoTracks(), ...destination.stream.getAudioTracks()]);
     previewVideo = document.createElement("video");
     previewVideo.muted = true;
     previewVideo.srcObject = displayStream;
     await previewVideo.play();
 
-    const target = await getBestActiveTab();
-    await focusCaptureTarget(target);
-    const startedAt = Date.now();
-    const captureId = crypto.randomUUID();
-    const exportFolderName = await recordingFolderPromise;
-    const initialSession: RecordingSession = {
-      ...(await resetSession()),
-      status: "recording",
-      startedAt,
-      captureId,
-      activeTabId: target?.id,
-      activeWindowId: target?.windowId,
-      tabUrl: target?.url,
-      tabTitle: target?.title,
-      exportFolderName,
-      localExportWarning: exportFolderName ? undefined : supportsExportFolderSelection()
-        ? "Capture is stored in JesSee. Local-folder export is unavailable; reconnect the folder in Settings to save files there."
-        : "Capture is stored in JesSee. This browser will download the finished PDF.",
-      timeline: [
-        {
-          id: crypto.randomUUID(),
-          type: "recording-started",
-          atMs: 0,
-          url: target?.url ?? "",
-          title: target?.title ?? ""
-        }
-      ]
-    };
-    await saveSession(initialSession);
-    session = initialSession;
+    const recordingStarted = await withStoryEditorOwnership(async () => {
+      const target = await getBestActiveTab();
+      await focusCaptureTarget(target);
+      const startedAt = Date.now();
+      const captureId = crypto.randomUUID();
+      const exportFolderName = await recordingFolderPromise;
+      const initialSession: RecordingSession = {
+        ...(await resetSession()),
+        status: "recording",
+        startedAt,
+        captureId,
+        activeTabId: target?.id,
+        activeWindowId: target?.windowId,
+        tabUrl: target?.url,
+        tabTitle: target?.title,
+        exportFolderName,
+        localExportWarning: exportFolderName ? undefined : supportsExportFolderSelection()
+          ? "Capture is stored in JesSee. Local-folder export is unavailable; reconnect the folder in Settings to save files there."
+          : "Capture is stored in JesSee. This browser will download the finished PDF.",
+        timeline: [
+          {
+            id: crypto.randomUUID(),
+            type: "recording-started",
+            atMs: 0,
+            url: target?.url ?? "",
+            title: target?.title ?? ""
+          }
+        ]
+      };
+      await saveSession(initialSession);
+      session = initialSession;
+      for (const track of displayStream!.getVideoTracks()) {
+        track.addEventListener("ended", () => {
+          void stopRecording();
+        });
+      }
 
-    lastScreenshotFingerprint = undefined;
-    lastStoredScreenshotAtMs = -Infinity;
-    mediaRecorder = createCompatibleMediaRecorder(mixedStream, ["video/webm;codecs=vp9,opus", "video/webm", "video/mp4;codecs=h264,aac", "video/mp4"]);
-    audioRecorder = createCompatibleMediaRecorder(new MediaStream(destination.stream.getAudioTracks()), ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]);
+      lastScreenshotFingerprint = undefined;
+      lastStoredScreenshotAtMs = -Infinity;
+      mediaRecorder = createCompatibleMediaRecorder(mixedStream!, ["video/webm;codecs=vp9,opus", "video/webm", "video/mp4;codecs=h264,aac", "video/mp4"]);
+      audioRecorder = createCompatibleMediaRecorder(new MediaStream(destination.stream.getAudioTracks()), ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]);
 
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) videoChunks.push(event.data);
-    };
-    mediaRecorder.onstop = () => {
-      void finishLocalRecording();
-    };
-    audioRecorder?.addEventListener("dataavailable", (event) => {
-      if (event.data.size > 0) audioChunks.push(event.data);
-    });
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) videoChunks.push(event.data);
+      };
+      mediaRecorder.onstop = () => {
+        void finishLocalRecording();
+      };
+      audioRecorder?.addEventListener("dataavailable", (event) => {
+        if (event.data.size > 0) audioChunks.push(event.data);
+      });
 
-    audioRecorder?.start(1000);
-    mediaRecorder.start(1000);
+      audioRecorder?.start(1000);
+      mediaRecorder.start(1000);
+      return true;
+    }, async () => false);
+    if (!recordingStarted) {
+      await recordingFolderPromise;
+      clearRecordingFolder();
+      cleanupRecorder();
+      localStatus = "Your open story editor was focused. Close it before starting a new capture.";
+      await refresh();
+      return;
+    }
     await send({ type: "SET_OVERLAY_MODE", mode: "cursor" });
     localStatus = "Capturing. Click Close Capture when finished.";
     await captureMoment("screenshot");
@@ -753,6 +765,8 @@ function cleanupRecorder(): void {
   displayStream = undefined;
   micStream = undefined;
   mixedStream = undefined;
+  void captureAudioContext?.close().catch(() => undefined);
+  captureAudioContext = undefined;
   previewVideo = undefined;
   mediaRecorder = undefined;
   audioRecorder = undefined;
@@ -815,8 +829,11 @@ function statusLabel(status?: RecordingSession["status"]): string {
 async function cleanupOldCaptures(retentionDays: number): Promise<void> {
   const normalized = normalizeRetentionDays(retentionDays);
   try {
-    const currentSession = await getSession();
-    await Promise.all([deleteOldCaptureFolders(normalized, false, currentSession.exportFolderName), pruneCaptureHistory(normalized)]);
+    const protection = await getCaptureRetentionProtection(normalized);
+    await Promise.all([
+      deleteOldCaptureFolders(normalized, false, protection.exportFolderName),
+      pruneCaptureHistory(normalized, protection.captureId)
+    ]);
   } catch (error) {
     console.warn("Could not clean old captures", error);
   }
