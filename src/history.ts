@@ -199,6 +199,11 @@ async function editCapture(captureId: string): Promise<void> {
   const item = history.find((candidate) => candidate.id === captureId);
   if (!item) return;
   if (await guardActiveCapture()) return;
+  if (await focusOpenStoryEditor()) {
+    message = "Your open story editor was focused. Finish or close it before opening a different saved walkthrough.";
+    render();
+    return;
+  }
   busyCaptureId = captureId;
   message = item.hasPlan ? "Opening the editable story…" : "Creating an editable story from this recording…";
   render();
@@ -218,6 +223,16 @@ async function editCapture(captureId: string): Promise<void> {
     await saveCaptureHistory(response.session);
   }
   window.location.assign(chrome.runtime.getURL("plan.html"));
+}
+
+async function focusOpenStoryEditor(): Promise<boolean> {
+  const editorUrl = chrome.runtime.getURL("plan.html");
+  const tabs = await chrome.tabs.query({});
+  const existing = tabs.find((tab) => tab.id && tab.url?.startsWith(editorUrl));
+  if (!existing?.id) return false;
+  await chrome.tabs.update(existing.id, { active: true });
+  if (existing.windowId) await chrome.windows.update(existing.windowId, { focused: true });
+  return true;
 }
 
 async function downloadCapture(captureId: string): Promise<void> {

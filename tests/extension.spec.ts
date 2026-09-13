@@ -344,8 +344,9 @@ test("loads extension settings page", async () => {
       await historyPage.getByRole("button", { name: "Download PDF" }).click();
       await historyDownload;
       await historyPage.getByRole("button", { name: "Edit story" }).click();
-      await expect(historyPage).toHaveURL(`chrome-extension://${extensionId}/plan.html`);
-      await expect(historyPage.getByRole("heading", { name: "Make the document sound like you" })).toBeVisible();
+      await expect(historyPage).toHaveURL(`chrome-extension://${extensionId}/history.html`);
+      await expect(historyPage.getByText("Your open story editor was focused.", { exact: false })).toBeVisible();
+      await expect(page).toHaveURL(`chrome-extension://${extensionId}/plan.html`);
     }
     await historyPage.close();
 
