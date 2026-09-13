@@ -368,8 +368,8 @@ async function run(message: RuntimeMessage, refreshAfter = true): Promise<void> 
   else render();
 }
 
-async function prepareCapturePlan(): Promise<void> {
-  await withStoryEditorOwnership(async () => {
+async function prepareCapturePlan(waitForOwnership = false): Promise<void> {
+  const createPlan = async () => {
     localStatus = "Preparing the plan.";
     render();
     try {
@@ -392,7 +392,12 @@ async function prepareCapturePlan(): Promise<void> {
       }
       await refresh();
     }
-  }, async () => {
+  };
+  if (waitForOwnership) {
+    await withStoryOwnershipLockWait(createPlan);
+    return;
+  }
+  await withStoryEditorOwnership(createPlan, async () => {
     localStatus = "Your open story editor was focused. Finish or close it before creating another story.";
     await refresh();
   });
@@ -638,7 +643,7 @@ async function finishLocalRecording(): Promise<void> {
     image_count: nextSession.screenshots.length
   });
   await refresh();
-  await prepareCapturePlan();
+  await prepareCapturePlan(true);
 }
 
 async function hardCleanupInterruptedRecording(message?: string): Promise<void> {
