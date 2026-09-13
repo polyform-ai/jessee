@@ -1,6 +1,6 @@
 import "./ui.css";
 import { getArtifact, hydrateRecordingMedia } from "./artifacts";
-import { saveCaptureHistory } from "./captureHistory";
+import { needsCaptureHistoryRecovery, saveCaptureHistory } from "./captureHistory";
 import { blocksLibraryCaptureActions } from "./captureFlow";
 import { downloadPlanPdf } from "./pdfDownload";
 import { sendRuntimeMessage } from "./runtimeMessaging";
@@ -58,7 +58,12 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
 async function initialize(): Promise<void> {
   const [settings, session] = await Promise.all([getSettings(), getSession()]);
-  history = sortedHistory(settings.captureHistory ?? []);
+  let retainedHistory = settings.captureHistory ?? [];
+  if (needsCaptureHistoryRecovery(session, retainedHistory)) {
+    await saveCaptureHistory(session);
+    retainedHistory = (await getSettings()).captureHistory ?? [];
+  }
+  history = sortedHistory(retainedHistory);
   activeCapture = isActiveCapture(session);
   if (activeCapture) message = activeCaptureMessage();
   render();

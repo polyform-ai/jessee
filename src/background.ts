@@ -1,7 +1,7 @@
 import { analyzeCapture, testOpenAiSetup, transcribeAudio } from "./openai";
 import { deleteArtifacts, hydrateSession } from "./artifacts";
 import { clearAnnotationEvidence } from "./captureEvidence";
-import { saveCaptureSessionHistory } from "./captureHistory";
+import { saveCaptureHistory, saveCaptureSessionHistory } from "./captureHistory";
 import { getSession, getSettings, saveSession } from "./storage";
 import { acceptsContentEvent, shouldRecordPageChange } from "./captureState";
 import { withStoryOwnershipLockWait } from "./storyEditorTabs";
@@ -133,7 +133,8 @@ async function handleMessage(message: RuntimeMessage, sender: chrome.runtime.Mes
         const currentCaptureId = current.captureId ?? (current.startedAt ? `${current.startedAt}` : undefined);
         const savedCaptureId = message.session.captureId ?? (message.session.startedAt ? `${message.session.startedAt}` : undefined);
         if (!currentCaptureId || savedCaptureId !== currentCaptureId) {
-          throw new Error("This story is no longer the active capture.");
+          await saveCaptureHistory(message.session);
+          return { ok: true, session: message.session };
         }
         await saveCaptureSessionHistory(message.session);
         return { ok: true, session: message.session };

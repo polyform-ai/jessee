@@ -11,6 +11,20 @@ export async function saveCaptureSessionHistory(current: RecordingSession): Prom
   await upsertCaptureHistory(captureHistoryItem(current), current);
 }
 
+export function needsCaptureHistoryRecovery(current: RecordingSession, history: CaptureHistoryItem[]): boolean {
+  if (!current.startedAt || !["stopped", "planned", "ready", "error"].includes(current.status)) return false;
+  const hasRetainedContent = Boolean(
+    current.screenshots.length
+    || current.videoDataUrl
+    || current.audioDataUrl
+    || current.transcript?.text
+    || current.captureAnalysis
+  );
+  if (!hasRetainedContent) return false;
+  const captureId = current.captureId ?? `${current.startedAt}`;
+  return !history.some((item) => item.id === captureId);
+}
+
 function captureHistoryItem(current: RecordingSession): CaptureHistoryItem {
   return {
     id: current.captureId ?? `${current.startedAt}`,
