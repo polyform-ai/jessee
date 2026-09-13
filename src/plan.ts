@@ -79,7 +79,7 @@ function render(): void {
             <p class="section-eyebrow">${planMode === "edit" ? "Edit the generated story" : "Final reader preview"}</p>
             <h2 id="storyEditorHeading">${planMode === "edit" ? "Make the document sound like you" : "Review what your audience will receive"}</h2>
           </div>
-          <p>${planMode === "edit" ? "Edit the text directly. Click any image to step through the captured moments and choose a better one." : "This same story, in this same order, becomes one continuous PDF."}</p>
+          <p>${planMode === "edit" ? "Shape paragraphs, lists, and callouts directly. Every step keeps its source URL and lets you choose whether readers see it." : "This same story, in this same order, becomes one continuous PDF."}</p>
         </div>
         ${planMode === "edit" ? renderEditorToolbar() : ""}
         <div class="story-paper" id="storyEditor"></div>
@@ -113,9 +113,12 @@ function render(): void {
 function renderEditorToolbar(): string {
   return `<div class="story-editor-toolbar" role="toolbar" aria-label="Story formatting">
     <div class="editor-format-group">
+      <button type="button" class="editor-tool editor-tool-list" data-editor-action="paragraph" aria-label="Paragraph" aria-pressed="false">Text</button>
       <button type="button" class="editor-tool" data-editor-action="bold" aria-label="Bold" aria-pressed="false"><strong>B</strong></button>
       <button type="button" class="editor-tool" data-editor-action="italic" aria-label="Italic" aria-pressed="false"><em>I</em></button>
-      <button type="button" class="editor-tool editor-tool-list" data-editor-action="bulletList" aria-label="Bullet list" aria-pressed="false">List</button>
+      <button type="button" class="editor-tool editor-tool-list" data-editor-action="bulletList" aria-label="Bullet list" aria-pressed="false">• Bullets</button>
+      <button type="button" class="editor-tool editor-tool-list" data-editor-action="orderedList" aria-label="Numbered list" aria-pressed="false">1. List</button>
+      <button type="button" class="editor-tool editor-tool-list" data-editor-action="callout" aria-label="Callout" aria-pressed="false">Callout</button>
     </div>
     <span class="editor-toolbar-divider"></span>
     <div class="editor-format-group">
@@ -317,7 +320,17 @@ async function addStoryStep(): Promise<void> {
   const storySteps = normalizedStorySteps(storyEditor.value(session.captureAnalysis));
   const previous = storySteps.at(-1);
   const timestamp = previous?.endSeconds ?? session.transcript?.segments.at(-1)?.end ?? 0;
-  storyEditor.appendStep({ startSeconds: timestamp, endSeconds: timestamp, title: "New step", narrative: "Add the next part of the explanation.", transcript: "", kind: "manual" }, hydrated.screenshots);
+  storyEditor.appendStep({
+    startSeconds: timestamp,
+    endSeconds: timestamp,
+    title: "New step",
+    narrative: "Add the next part of the explanation.",
+    transcript: "",
+    pageUrl: previous?.pageUrl || session.tabUrl,
+    pageTitle: previous?.pageTitle || session.tabTitle,
+    showPageUrl: true,
+    kind: "manual"
+  }, hydrated.screenshots);
   planDirty = true;
   await persistPlan();
   render();

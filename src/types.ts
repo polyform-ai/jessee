@@ -116,6 +116,8 @@ export interface CaptureStoryStep {
   screenshotId?: string;
   pageUrl?: string;
   pageTitle?: string;
+  /** Controls whether the captured source URL appears in the reader-facing story and PDF. */
+  showPageUrl?: boolean;
   kind?: "narration" | "page-change" | "action" | "manual";
 }
 

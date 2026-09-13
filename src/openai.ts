@@ -135,6 +135,7 @@ export async function analyzeCapture(
     "storySteps are the detailed chronological plan. Create a step for every meaningful transcript sentence, action, page change, annotation, redaction, error, and visible state transition unless it is truly redundant.",
     "Each story step must explain the point directly in narrative, preserve the exact relevant transcript sentence in transcript as private source material, and select the screenshot that best illustrates the resulting state.",
     "Titles and narratives must make sense without the transcript. The transcript is provenance for editing and is not part of the reader-facing PDF.",
+    "Give every story step the pageUrl and pageTitle of its selected screenshot or the page active at that moment so readers can trace the source.",
     "Every URL change in the timeline must appear as a page-change story step with pageUrl and pageTitle. Page changes are part of the story, not incidental metadata.",
     "Transcript timestamps mark when a sentence starts and ends. For screenshot selection, use selectionAtSeconds and screenshotAtSentenceEnd so the chosen image reflects the completed sentence and resulting UI state, not the beginning of the narration.",
     "Prefer the first screenshot at or after a sentence ends. Use the closest prior screenshot only when no later screenshot exists. Return the exact screenshotId from evidenceFrames whenever possible.",

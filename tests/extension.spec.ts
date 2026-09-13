@@ -233,6 +233,20 @@ test("loads extension settings page", async () => {
     expect(nestedOverviewListStyle.paddingLeft).toBeGreaterThan(0);
     await page.getByRole("button", { name: "Undo" }).click();
     await expect(firstStepBody.locator("ul")).toHaveCount(0);
+    await firstStepBody.locator("p").first().click();
+    await page.getByRole("button", { name: "Numbered list" }).click();
+    await expect(firstStepBody.locator("ol")).toBeVisible();
+    await page.getByRole("button", { name: "Undo" }).click();
+    await firstStepBody.locator("p").first().click();
+    await page.getByRole("button", { name: "Callout" }).click();
+    await expect(firstStepBody.locator("blockquote")).toBeVisible();
+    await page.getByRole("button", { name: "Undo" }).click();
+    const sourceToggle = page.getByRole("switch", { name: "Hide source URL for step 1" });
+    await expect(sourceToggle).toBeVisible();
+    await sourceToggle.click();
+    await expect(page.getByRole("switch", { name: "Show source URL for step 1" })).toHaveAttribute("aria-checked", "false");
+    await page.getByRole("switch", { name: "Show source URL for step 1" }).click();
+    await expect(page.getByRole("switch", { name: "Hide source URL for step 1" })).toHaveAttribute("aria-checked", "true");
     if (process.env.JESSEE_VISUAL_QA) {
       await page.screenshot({ path: resolve(__dirname, "../website/assets/playbook-review.png") });
     }

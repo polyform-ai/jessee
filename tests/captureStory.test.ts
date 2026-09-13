@@ -54,6 +54,7 @@ describe("buildCaptureStory", () => {
     );
 
     expect(story.map((step) => step.kind)).toEqual(["narration", "page-change", "narration"]);
+    expect(story.every((step) => Boolean(step.pageUrl) && step.showPageUrl === true)).toBe(true);
     expect(story[1]).toEqual(expect.objectContaining({
       title: "Opened Results",
       pageUrl: "https://example.test/results",

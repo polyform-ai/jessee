@@ -89,7 +89,15 @@ export function buildCaptureStory(
     }));
   }
 
-  return story.sort((a, b) => a.startSeconds - b.startSeconds || storyKindOrder(a.kind) - storyKindOrder(b.kind));
+  const ordered = story.sort((a, b) => a.startSeconds - b.startSeconds || storyKindOrder(a.kind) - storyKindOrder(b.kind));
+  let lastPage: { url?: string; title?: string } = {};
+  return ordered.map((step) => {
+    const screenshot = screenshots.find((shot) => shot.id === step.screenshotId);
+    const pageUrl = step.pageUrl || screenshot?.url || lastPage.url;
+    const pageTitle = step.pageTitle || screenshot?.title || (pageUrl === lastPage.url ? lastPage.title : undefined);
+    if (pageUrl) lastPage = { url: pageUrl, title: pageTitle };
+    return { ...step, pageUrl, pageTitle, showPageUrl: step.showPageUrl !== false };
+  });
 }
 
 function closestUnclaimedStep(
@@ -135,6 +143,7 @@ function normalizeStep(step: Partial<CaptureStoryStep>): CaptureStoryStep {
     screenshotId: step.screenshotId,
     pageUrl: step.pageUrl,
     pageTitle: step.pageTitle,
+    showPageUrl: step.showPageUrl !== false,
     kind: step.kind === "page-change" || step.kind === "action" || step.kind === "manual" ? step.kind : "narration"
   };
 }

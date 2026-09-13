@@ -111,6 +111,31 @@ describe("visual story editor document", () => {
     expect(updated.storySteps?.[0].narrative).toBe("- First detail\n  - Nested detail\n- Second detail");
   });
 
+  it("preserves numbered lists, callouts, and per-step source visibility", () => {
+    const document = buildEditorDocument(analysis(), steps(), screenshots());
+    document.content![1].content!.splice(1, 1,
+      {
+        type: "orderedList",
+        content: [
+          { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Open settings" }] }] },
+          { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Retry save" }] }] }
+        ]
+      },
+      { type: "blockquote", content: [{ type: "paragraph", content: [{ type: "text", text: "Keep this visible for the reviewer." }] }] }
+    );
+    const source = document.content![1].content!.find((node) => node.type === "storySource")!;
+    source.attrs!.visible = false;
+
+    const updated = parseEditorDocument(document, analysis());
+
+    expect(updated.storySteps?.[0]).toMatchObject({
+      narrative: "1. Open settings\n2. Retry save\n\n> Keep this visible for the reviewer.",
+      pageUrl: "https://example.test/start",
+      showPageUrl: false
+    });
+    expect(updated.editorDocument?.content?.[1].content?.some((node) => node.type === "blockquote")).toBe(true);
+  });
+
   it("keeps nested overview bullets as separate saved key points", () => {
     const document = buildEditorDocument(analysis(), steps(), screenshots());
     document.content![0].content![2].content![0] = {
@@ -164,8 +189,8 @@ function analysis(): CaptureAnalysis {
 
 function steps(): CaptureStoryStep[] {
   return [
-    { startSeconds: 0, endSeconds: 4, title: "Start here", narrative: "Show the starting point.", transcript: "Original sentence.", screenshotId: "shot-1", kind: "narration" },
-    { startSeconds: 4, endSeconds: 8, title: "Show the result", narrative: "Finish with the result.", transcript: "Second sentence.", screenshotId: "shot-2", kind: "action" }
+    { startSeconds: 0, endSeconds: 4, title: "Start here", narrative: "Show the starting point.", transcript: "Original sentence.", screenshotId: "shot-1", pageUrl: "https://example.test/start", pageTitle: "Start", kind: "narration" },
+    { startSeconds: 4, endSeconds: 8, title: "Show the result", narrative: "Finish with the result.", transcript: "Second sentence.", screenshotId: "shot-2", pageUrl: "https://example.test/result", pageTitle: "Result", kind: "action" }
   ];
 }
 
