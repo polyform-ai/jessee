@@ -104,7 +104,7 @@ export function buildCaptureStory(
       : activeScreenshot && activeScreenshot.url === pageUrl && activeScreenshot.title
         ? activeScreenshot
         : pageScreenshots.find((shot) => shot.url === pageUrl && Boolean(shot.title));
-    const pageTitle = step.pageTitle
+    const pageTitle = (step.pageUrl === pageUrl ? step.pageTitle : undefined)
       || matchingScreenshot?.title
       || (pageUrl === lastPage.url ? lastPage.title : undefined);
     if (pageUrl) lastPage = { url: pageUrl, title: pageTitle };

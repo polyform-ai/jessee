@@ -18,6 +18,7 @@ let message = "";
 let busyCaptureId: string | undefined;
 let activeCapture = false;
 let thumbnailObserver: IntersectionObserver | undefined;
+let searchQuery = "";
 
 void initialize();
 
@@ -87,7 +88,7 @@ function render(): void {
             <p class="section-eyebrow">Saved locally</p>
             <h2 id="libraryHeading">${history.length} walkthrough${history.length === 1 ? "" : "s"}</h2>
           </div>
-          ${history.length ? `<label class="library-search"><span>Search recordings</span><input id="historySearch" type="search" placeholder="Search by title or page" /></label>` : ""}
+          ${history.length ? `<label class="library-search"><span>Search recordings</span><input id="historySearch" type="search" placeholder="Search by title or page" value="${escapeHtml(searchQuery)}" /></label>` : ""}
         </div>
         ${message ? `<p class="library-message" role="status">${escapeHtml(message)}</p>` : ""}
         ${history.length ? `<div class="history-grid">${history.map(renderHistoryCard).join("")}</div>` : renderEmptyLibrary()}
@@ -96,6 +97,7 @@ function render(): void {
     </main>`;
 
   bindEvents();
+  applyHistorySearch();
   observeThumbnails();
   const dialog = document.querySelector<HTMLDialogElement>("#recordingPreview");
   if (dialog && !dialog.open) dialog.showModal();
@@ -174,10 +176,8 @@ function bindEvents(): void {
   document.querySelector("#newCapture")?.addEventListener("click", startNewCapture);
   document.querySelector("#emptyNewCapture")?.addEventListener("click", startNewCapture);
   document.querySelector<HTMLInputElement>("#historySearch")?.addEventListener("input", (event) => {
-    const query = (event.currentTarget as HTMLInputElement).value.trim().toLowerCase();
-    for (const card of document.querySelectorAll<HTMLElement>("[data-history-card]")) {
-      card.hidden = !String(card.dataset.search).includes(query);
-    }
+    searchQuery = (event.currentTarget as HTMLInputElement).value;
+    applyHistorySearch();
   });
   for (const button of document.querySelectorAll<HTMLButtonElement>("[data-edit-capture]")) {
     button.addEventListener("click", () => void editCapture(button.dataset.editCapture ?? ""));
@@ -197,6 +197,13 @@ function bindEvents(): void {
     event.preventDefault();
     closePreview();
   });
+}
+
+function applyHistorySearch(): void {
+  const query = searchQuery.trim().toLowerCase();
+  for (const card of document.querySelectorAll<HTMLElement>("[data-history-card]")) {
+    card.hidden = !String(card.dataset.search).includes(query);
+  }
 }
 
 async function editCapture(captureId: string): Promise<void> {

@@ -357,6 +357,18 @@ test("loads extension settings page", async () => {
     await expect(historyPage.locator("[data-history-card]:not([hidden])")).toHaveCount(0);
     await historyPage.getByRole("searchbox", { name: "Search recordings" }).fill("updated visual");
     await expect(historyPage.locator("[data-history-card]:not([hidden])")).toHaveCount(1);
+    await historyPage.evaluate(async () => {
+      const stored = await chrome.storage.local.get("settings");
+      const [first, ...rest] = stored.settings.captureHistory;
+      await chrome.storage.local.set({
+        settings: {
+          ...stored.settings,
+          captureHistory: [{ ...first, title: `${first.title} (saved)` }, ...rest]
+        }
+      });
+    });
+    await expect(historyPage.getByRole("searchbox", { name: "Search recordings" })).toHaveValue("updated visual");
+    await expect(historyPage.locator("[data-history-card]:not([hidden])")).toHaveCount(1);
     if (process.env.JESSEE_VISUAL_QA) {
       await historyPage.getByRole("searchbox", { name: "Search recordings" }).fill("");
       await expect(historyPage.locator("[data-history-card]:not([hidden])")).toHaveCount(3);

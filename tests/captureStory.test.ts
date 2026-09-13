@@ -101,6 +101,15 @@ describe("buildCaptureStory", () => {
             transcript: "",
             pageUrl: "https://unmatched.example.test/",
             kind: "manual"
+          },
+          {
+            startSeconds: 5,
+            endSeconds: 5,
+            title: "Incomplete source",
+            narrative: "Use captured evidence for the source metadata.",
+            transcript: "",
+            pageTitle: "Unrelated model title",
+            kind: "manual"
           }
         ]
       },
@@ -120,5 +129,9 @@ describe("buildCaptureStory", () => {
     expect(story[1]).toMatchObject({ pageUrl: "https://example.test/later", pageTitle: "Later" });
     expect(story[2]).toMatchObject({ pageUrl: "https://unmatched.example.test/" });
     expect(story[2].pageTitle).toBeUndefined();
+    expect(story[3]).toMatchObject({
+      pageUrl: "https://example.test/later",
+      pageTitle: "Later"
+    });
   });
 });
