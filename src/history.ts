@@ -197,33 +197,39 @@ function bindEvents(): void {
 
 async function editCapture(captureId: string): Promise<void> {
   if (busyCaptureId) return;
-  const item = history.find((candidate) => candidate.id === captureId);
-  if (!item) return;
-  if (await guardActiveCapture()) return;
-  if (await focusOpenStoryEditor()) {
-    message = "Your open story editor was focused. Finish or close it before opening a different saved walkthrough.";
-    render();
-    return;
-  }
   busyCaptureId = captureId;
-  message = item.hasPlan ? "Opening the editable story…" : "Creating an editable story from this recording…";
-  render();
-  await saveSession(item.session);
-  if (!item.hasPlan) {
-    const response = await sendRuntimeMessage({ type: "PREPARE_CAPTURE_PLAN" });
-    if (!response.ok || !response.session) {
-      if (response.session) {
-        item.session = response.session;
-        await saveCaptureHistory(response.session);
-      }
-      busyCaptureId = undefined;
-      message = response.error ?? "JesSee could not create this story.";
-      render();
+  const item = history.find((candidate) => candidate.id === captureId);
+  let navigating = false;
+  try {
+    if (!item) return;
+    if (await guardActiveCapture()) return;
+    if (await focusOpenStoryEditor()) {
+      message = "Your open story editor was focused. Finish or close it before opening a different saved walkthrough.";
       return;
     }
-    await saveCaptureHistory(response.session);
+    message = item.hasPlan ? "Opening the editable story…" : "Creating an editable story from this recording…";
+    render();
+    await saveSession(item.session);
+    if (!item.hasPlan) {
+      const response = await sendRuntimeMessage({ type: "PREPARE_CAPTURE_PLAN" });
+      if (!response.ok || !response.session) {
+        if (response.session) {
+          item.session = response.session;
+          await saveCaptureHistory(response.session);
+        }
+        message = response.error ?? "JesSee could not create this story.";
+        return;
+      }
+      await saveCaptureHistory(response.session);
+    }
+    navigating = true;
+    window.location.assign(chrome.runtime.getURL("plan.html"));
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error);
+  } finally {
+    busyCaptureId = undefined;
+    if (!navigating) render();
   }
-  window.location.assign(chrome.runtime.getURL("plan.html"));
 }
 
 async function downloadCapture(captureId: string): Promise<void> {
