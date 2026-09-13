@@ -32,5 +32,5 @@ export async function openOrFocusStoryEditor(): Promise<void> {
 async function openStoryEditorTab(): Promise<chrome.tabs.Tab | undefined> {
   const editorUrl = chrome.runtime.getURL("plan.html");
   const tabs = await chrome.tabs.query({});
-  return tabs.find((tab) => tab.id && tab.url?.startsWith(editorUrl));
+  return tabs.find((tab) => tab.id && (tab.url?.startsWith(editorUrl) || tab.pendingUrl?.startsWith(editorUrl)));
 }

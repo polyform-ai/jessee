@@ -340,12 +340,15 @@ async function loadThumbnail(target: HTMLElement): Promise<void> {
   const item = history.find((candidate) => candidate.id === captureId);
   const screenshot = item && selectedScreenshot(item.session);
   if (!item || !screenshot) return;
+  const requestedSource = thumbnailSource(item.session);
   let thumbnail = "";
   try {
     thumbnail = await getArtifact(screenshot.dataUrl) ?? "";
   } catch {
     // A missing preview must not prevent the retained story from being opened.
   }
+  const currentItem = history.find((candidate) => candidate.id === captureId);
+  if (!currentItem || thumbnailSource(currentItem.session) !== requestedSource) return;
   thumbnails.set(item.id, thumbnail);
   const image = [...document.querySelectorAll<HTMLImageElement>("[data-thumbnail-image]")]
     .find((candidate) => candidate.dataset.thumbnailImage === item.id);
