@@ -90,7 +90,7 @@ export function clearRecordingFolder(): void {
   recordingDirectory = undefined;
 }
 
-export async function deleteOldCaptureFolders(retentionDays: number, requestPermission = false): Promise<number> {
+export async function deleteOldCaptureFolders(retentionDays: number, requestPermission = false, protectedFolderName?: string): Promise<number> {
   if (retentionDays <= 0) return 0;
   if (!await ensureExportFolderPermission(requestPermission)) return 0;
   rootDirectoryName = rootDirectory?.name;
@@ -103,6 +103,7 @@ export async function deleteOldCaptureFolders(retentionDays: number, requestPerm
   if (!entries.entries) return 0;
   for await (const [name, handle] of entries.entries()) {
     if (handle.kind !== "directory") continue;
+    if (name === protectedFolderName) continue;
     const createdAt = timestampFromCaptureFolderName(name);
     if (!createdAt || createdAt >= cutoff) continue;
     await rootDirectory.removeEntry(name, { recursive: true });

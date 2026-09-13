@@ -1,3 +1,17 @@
+const STORY_EDITOR_LOCK = "jessee-story-editor-owner";
+
+export async function withStoryEditorOwnership<T>(
+  run: () => Promise<T>,
+  unavailable: () => Promise<T>
+): Promise<T> {
+  const attempt = async (available: boolean): Promise<T> => {
+    if (!available || await focusOpenStoryEditor()) return unavailable();
+    return run();
+  };
+  if (!navigator.locks?.request) return attempt(true);
+  return navigator.locks.request(STORY_EDITOR_LOCK, { mode: "exclusive", ifAvailable: true }, (lock) => attempt(Boolean(lock)));
+}
+
 export async function hasOpenStoryEditor(): Promise<boolean> {
   return Boolean(await openStoryEditorTab());
 }

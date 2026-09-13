@@ -24,7 +24,7 @@ import { getSession, getSettings, pruneCaptureHistory, resetSession, saveSession
 import type { CaptureHistoryItem, RecordingSession, RuntimeMessage, ScreenshotEvidence, TimelineEvent } from "./types";
 import { postWebhook } from "./webhook";
 import { sendRuntimeMessage } from "./runtimeMessaging";
-import { focusOpenStoryEditor, hasOpenStoryEditor, openOrFocusStoryEditor } from "./storyEditorTabs";
+import { hasOpenStoryEditor, openOrFocusStoryEditor, withStoryEditorOwnership } from "./storyEditorTabs";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("Missing #app");
@@ -181,14 +181,14 @@ function render(): void {
     button.addEventListener("click", async () => {
       const item = settings?.captureHistory?.find((capture) => capture.id === button.dataset.captureId);
       if (!item) return;
-      if (await focusOpenStoryEditor()) {
+      await withStoryEditorOwnership(async () => {
+        await saveSession(item.session);
+        localStatus = "Capture loaded.";
+        await refresh();
+      }, async () => {
         localStatus = "Your open story editor was focused. Finish or close it before loading another capture.";
         await refresh();
-        return;
-      }
-      await saveSession(item.session);
-      localStatus = "Capture loaded.";
-      await refresh();
+      });
     });
   }
   bind("#settings", "click", () => chrome.runtime.openOptionsPage());
@@ -352,29 +352,38 @@ async function run(message: RuntimeMessage, refreshAfter = true): Promise<void> 
 }
 
 async function prepareCapturePlan(): Promise<void> {
-  if (await focusOpenStoryEditor()) {
+  await withStoryEditorOwnership(async () => {
+    localStatus = "Preparing the plan.";
+    render();
+    try {
+      await run({ type: "PREPARE_CAPTURE_PLAN" });
+      const current = await getSession();
+      await writeRecordingText("capture-analysis.json", JSON.stringify(current.captureAnalysis, null, 2), "application/json");
+      await saveCaptureHistory(current);
+      localStatus = "Plan ready. Review it, then generate the PDF.";
+      await refresh();
+      await openPlanPage(true);
+    } catch (error) {
+      localStatus = error instanceof Error ? error.message : String(error);
+      await refresh();
+    }
+  }, async () => {
     localStatus = "Your open story editor was focused. Finish or close it before creating another story.";
     await refresh();
-    return;
-  }
-  localStatus = "Preparing the plan.";
-  render();
-  try {
-    await run({ type: "PREPARE_CAPTURE_PLAN" });
-    const current = await getSession();
-    await writeRecordingText("capture-analysis.json", JSON.stringify(current.captureAnalysis, null, 2), "application/json");
-    await saveCaptureHistory(current);
-    localStatus = "Plan ready. Review it, then generate the PDF.";
-    await refresh();
-    await openPlanPage();
-  } catch (error) {
-    localStatus = error instanceof Error ? error.message : String(error);
-    await refresh();
-  }
+  });
 }
 
-async function openPlanPage(): Promise<void> {
-  await openOrFocusStoryEditor();
+async function openPlanPage(ownershipHeld = false): Promise<void> {
+  if (ownershipHeld) {
+    await openOrFocusStoryEditor();
+    return;
+  }
+  await withStoryEditorOwnership(async () => {
+    await openOrFocusStoryEditor();
+  }, async () => {
+    localStatus = "Your open story editor was focused.";
+    await refresh();
+  });
 }
 
 async function openHistoryPage(): Promise<void> {
@@ -382,14 +391,14 @@ async function openHistoryPage(): Promise<void> {
 }
 
 async function startFreshCapture(): Promise<void> {
-  if (await focusOpenStoryEditor()) {
+  await withStoryEditorOwnership(async () => {
+    session = await resetSession();
+    localStatus = "";
+    await refresh();
+  }, async () => {
     localStatus = "Your open story editor was focused. Finish or close it before starting a new capture.";
     await refresh();
-    return;
-  }
-  session = await resetSession();
-  localStatus = "";
-  await refresh();
+  });
 }
 
 async function startRecording(): Promise<void> {
@@ -803,7 +812,8 @@ function statusLabel(status?: RecordingSession["status"]): string {
 async function cleanupOldCaptures(retentionDays: number): Promise<void> {
   const normalized = normalizeRetentionDays(retentionDays);
   try {
-    await Promise.all([deleteOldCaptureFolders(normalized), pruneCaptureHistory(normalized)]);
+    const currentSession = await getSession();
+    await Promise.all([deleteOldCaptureFolders(normalized, false, currentSession.exportFolderName), pruneCaptureHistory(normalized)]);
   } catch (error) {
     console.warn("Could not clean old captures", error);
   }

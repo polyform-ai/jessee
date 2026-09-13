@@ -4,7 +4,7 @@ import { saveCaptureHistory } from "./captureHistory";
 import { downloadPlanPdf } from "./pdfDownload";
 import { sendRuntimeMessage } from "./runtimeMessaging";
 import { getSession, getSettings, resetSession, saveSession } from "./storage";
-import { focusOpenStoryEditor } from "./storyEditorTabs";
+import { withStoryEditorOwnership } from "./storyEditorTabs";
 import type { CaptureHistoryItem, RecordingSession, ScreenshotEvidence, Settings } from "./types";
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -35,8 +35,12 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       const next = nextHistory.find((item) => item.id === captureId);
       return Boolean(previous && next && thumbnailSource(previous.session) === thumbnailSource(next.session));
     }));
-    if (preview && !retainedIds.has(preview.item.id)) preview = undefined;
-    changed = true;
+    if (preview && !retainedIds.has(preview.item.id)) {
+      preview = undefined;
+      changed = true;
+    } else if (!preview) {
+      changed = true;
+    }
   }
   if (changes.recordingSession) {
     const nextActiveCapture = isActiveCapture(changes.recordingSession.newValue as RecordingSession | undefined);
@@ -203,27 +207,29 @@ async function editCapture(captureId: string): Promise<void> {
   try {
     if (!item) return;
     if (await guardActiveCapture()) return;
-    if (await focusOpenStoryEditor()) {
-      message = "Your open story editor was focused. Finish or close it before opening a different saved walkthrough.";
-      return;
-    }
-    message = item.hasPlan ? "Opening the editable story…" : "Creating an editable story from this recording…";
-    render();
-    await saveSession(item.session);
-    if (!item.hasPlan) {
-      const response = await sendRuntimeMessage({ type: "PREPARE_CAPTURE_PLAN" });
-      if (!response.ok || !response.session) {
-        if (response.session) {
-          item.session = response.session;
-          await saveCaptureHistory(response.session);
+    await withStoryEditorOwnership(async () => {
+      message = item.hasPlan ? "Opening the editable story…" : "Creating an editable story from this recording…";
+      render();
+      await saveSession(item.session);
+      if (!item.hasPlan) {
+        const response = await sendRuntimeMessage({ type: "PREPARE_CAPTURE_PLAN" });
+        if (!response.ok || !response.session) {
+          if (response.session) {
+            item.session = response.session;
+            await saveCaptureHistory(response.session);
+          }
+          message = response.error ?? "JesSee could not create this story.";
+          return;
         }
-        message = response.error ?? "JesSee could not create this story.";
-        return;
+        await saveCaptureHistory(response.session);
       }
-      await saveCaptureHistory(response.session);
-    }
-    navigating = true;
-    window.location.assign(chrome.runtime.getURL("plan.html"));
+      navigating = true;
+      const unloading = new Promise<void>((resolve) => window.addEventListener("pagehide", () => resolve(), { once: true }));
+      window.location.assign(chrome.runtime.getURL("plan.html"));
+      await unloading;
+    }, async () => {
+      message = "Your open story editor was focused. Finish or close it before opening a different saved walkthrough.";
+    });
   } catch (error) {
     message = error instanceof Error ? error.message : String(error);
   } finally {
@@ -238,18 +244,18 @@ async function downloadCapture(captureId: string): Promise<void> {
   if (!item?.session.captureAnalysis) return;
   busyCaptureId = captureId;
   try {
-    if (await focusOpenStoryEditor()) {
+    await withStoryEditorOwnership(async () => {
+      message = "Preparing a fresh PDF from the saved story…";
+      render();
+      await downloadPlanPdf(item.session);
+      const readySession: RecordingSession = { ...item.session, status: "ready" };
+      await saveCaptureHistory(readySession);
+      item.hasPdf = true;
+      item.session = readySession;
+      message = "PDF downloaded. The saved story is unchanged.";
+    }, async () => {
       message = "Your open story editor was focused. Download there so the PDF includes your latest edits.";
-      return;
-    }
-    message = "Preparing a fresh PDF from the saved story…";
-    render();
-    await downloadPlanPdf(item.session);
-    const readySession: RecordingSession = { ...item.session, status: "ready" };
-    await saveCaptureHistory(readySession);
-    item.hasPdf = true;
-    item.session = readySession;
-    message = "PDF downloaded. The saved story is unchanged.";
+    });
   } catch (error) {
     message = error instanceof Error ? error.message : String(error);
   } finally {
@@ -297,13 +303,13 @@ async function startNewCapture(): Promise<void> {
   busyCaptureId = "new-capture";
   try {
     if (await guardActiveCapture()) return;
-    if (await focusOpenStoryEditor()) {
+    await withStoryEditorOwnership(async () => {
+      const previousSession = await getSession();
+      await resetSession();
+      await openCapture(previousSession.activeWindowId);
+    }, async () => {
       message = "Your open story editor was focused. Finish or close it before starting a new capture.";
-      return;
-    }
-    const previousSession = await getSession();
-    await resetSession();
-    await openCapture(previousSession.activeWindowId);
+    });
   } catch (error) {
     message = error instanceof Error ? error.message : String(error);
   } finally {

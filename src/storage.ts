@@ -62,11 +62,12 @@ export async function upsertCaptureHistory(item: CaptureHistoryItem): Promise<vo
 
 export async function pruneCaptureHistory(retentionDays: number): Promise<void> {
   if (retentionDays <= 0) return;
-  const settings = await getSettings();
+  const [settings, currentSession] = await Promise.all([getSettings(), getSession()]);
+  const protectedCaptureId = currentSession.captureId ?? (currentSession.startedAt ? `${currentSession.startedAt}` : undefined);
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
-  const expired = (settings.captureHistory ?? []).filter((item) => item.createdAt < cutoff);
+  const expired = (settings.captureHistory ?? []).filter((item) => item.createdAt < cutoff && item.id !== protectedCaptureId);
   await saveSettings({
-    captureHistory: (settings.captureHistory ?? []).filter((item) => item.createdAt >= cutoff)
+    captureHistory: (settings.captureHistory ?? []).filter((item) => item.createdAt >= cutoff || item.id === protectedCaptureId)
   });
   await deleteHistoryArtifacts(expired);
 }
