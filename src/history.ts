@@ -305,7 +305,10 @@ async function startNewCapture(): Promise<void> {
     if (await guardActiveCapture()) return;
     await withStoryEditorOwnership(async () => {
       const previousSession = await getSession();
-      await resetSession();
+      const idleSession = await resetSession();
+      if (previousSession.activeWindowId) {
+        await saveSession({ ...idleSession, activeWindowId: previousSession.activeWindowId });
+      }
       await openCapture(previousSession.activeWindowId);
     }, async () => {
       message = "Your open story editor was focused. Finish or close it before starting a new capture.";

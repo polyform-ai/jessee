@@ -118,6 +118,10 @@ test("loads extension settings page", async () => {
       const stored = await chrome.storage.local.get("recordingSession");
       return stored.recordingSession?.status;
     })).toBe("idle");
+    await expect.poll(() => idleHistoryPage.evaluate(async () => {
+      const stored = await chrome.storage.local.get("recordingSession");
+      return stored.recordingSession?.activeWindowId;
+    })).toEqual(expect.any(Number));
     await idleHistoryPage.close();
 
     const fallbackScreenshot = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=";

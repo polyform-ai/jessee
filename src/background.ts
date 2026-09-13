@@ -64,7 +64,7 @@ async function openRecorder(tab?: chrome.tabs.Tab, preferredWindowId?: number): 
   const recorderUrl = chrome.runtime.getURL("popup.html");
   const tabs = await chrome.tabs.query({});
   const existing = tabs.find((candidate) => candidate.windowId === recorderWindowId && candidate.url?.startsWith(recorderUrl))
-    ?? (recorderWindowId && recorderIsActive(session) ? undefined : tabs.find((candidate) => candidate.url?.startsWith(recorderUrl)));
+    ?? tabs.find((candidate) => candidate.url?.startsWith(recorderUrl));
   if (existing?.id) {
     await chrome.tabs.update(existing.id, { active: true });
     if (existing.windowId) await chrome.windows.update(existing.windowId, { focused: true });
