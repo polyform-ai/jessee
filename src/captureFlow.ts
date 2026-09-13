@@ -19,6 +19,12 @@ export function getPlanPdfAction(status: RecordingSession["status"], dirty: bool
   return { label: "Generate PDF", disabled: false };
 }
 
+export function blocksLibraryCaptureActions(session: RecordingSession | undefined): boolean {
+  if (!session) return false;
+  if (["recording", "paused", "planning", "generating"].includes(session.status)) return true;
+  return session.status === "stopped" && Boolean(session.autoPlanningPending);
+}
+
 export function getCaptureFlowView(
   session: RecordingSession | undefined,
   microphoneReady: boolean,

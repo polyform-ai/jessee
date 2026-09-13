@@ -1,6 +1,7 @@
 import "./ui.css";
 import { getArtifact, hydrateRecordingMedia } from "./artifacts";
 import { saveCaptureHistory } from "./captureHistory";
+import { blocksLibraryCaptureActions } from "./captureFlow";
 import { downloadPlanPdf } from "./pdfDownload";
 import { sendRuntimeMessage } from "./runtimeMessaging";
 import { getSession, getSettings, resetSession, saveSession } from "./storage";
@@ -394,7 +395,7 @@ async function guardActiveCapture(): Promise<boolean> {
 }
 
 function isActiveCapture(session: RecordingSession | undefined): boolean {
-  return Boolean(session && ["recording", "paused", "planning", "generating"].includes(session.status));
+  return blocksLibraryCaptureActions(session);
 }
 
 function activeCaptureMessage(): string {

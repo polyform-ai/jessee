@@ -67,6 +67,8 @@ export interface RecordingSession {
   captureAnalysis?: CaptureAnalysis;
   /** A capture remains usable when planning fails; this is retryable metadata. */
   analysisError?: string;
+  /** Keeps Library actions blocked between recording completion and automatic planning ownership. */
+  autoPlanningPending?: boolean;
   /** Local export is optional, but the UI should not hide a failed export. */
   localExportWarning?: string;
   openAiUsage?: OpenAiUsage;

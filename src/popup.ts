@@ -367,6 +367,12 @@ async function prepareCapturePlan(): Promise<void> {
       await openPlanPage(true);
     } catch (error) {
       localStatus = error instanceof Error ? error.message : String(error);
+      const failed = await getSession();
+      if (failed.status === "stopped" && failed.autoPlanningPending) {
+        const retryable = { ...failed, autoPlanningPending: false, analysisError: localStatus };
+        await saveSession(retryable);
+        await saveCaptureHistory(retryable);
+      }
       await refresh();
     }
   }, async () => {
@@ -588,6 +594,7 @@ async function finishLocalRecording(): Promise<void> {
   const nextSession: RecordingSession = {
     ...current,
     status: "stopped",
+    autoPlanningPending: true,
     stoppedAt: Date.now(),
     videoDataUrl,
     audioDataUrl,

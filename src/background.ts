@@ -142,7 +142,7 @@ async function prepareCapturePlanArtifact(): Promise<unknown> {
   const settings = await getSettings();
   if (!settings.openAiKey) throw new Error("Add your OpenAI API key in Settings first.");
   const current = await getSession();
-  const planning = { ...current, status: "planning" as const, analysisError: undefined };
+  const planning = { ...current, status: "planning" as const, autoPlanningPending: false, analysisError: undefined };
   await saveSession(planning);
   let transcript = current.transcript;
   try {
@@ -163,7 +163,7 @@ async function prepareCapturePlanArtifact(): Promise<unknown> {
     return { ok: true, session };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await saveSession({ ...current, transcript, analysisError: message });
+    await saveSession({ ...current, autoPlanningPending: false, transcript, analysisError: message });
     throw error;
   }
 }
