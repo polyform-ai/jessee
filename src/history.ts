@@ -132,7 +132,7 @@ function renderHistoryCard(item: CaptureHistoryItem): string {
       </div>
       <div class="history-card-actions">
         <button class="button primary" data-edit-capture="${escapeHtml(item.id)}" ${busy || activeCapture ? "disabled" : ""}>${item.hasPlan ? "Edit story" : "Create story"}</button>
-        ${item.hasPlan ? `<button class="button secondary" data-download-capture="${escapeHtml(item.id)}" ${busy ? "disabled" : ""}>${preparingThisCapture ? "Preparing PDF…" : "Download PDF"}</button>` : ""}
+        ${item.hasPlan ? `<button class="button secondary" data-download-capture="${escapeHtml(item.id)}" ${busy || activeCapture ? "disabled" : ""}>${preparingThisCapture ? "Preparing PDF…" : "Download PDF"}</button>` : ""}
         ${hasRecording ? `<button class="history-text-action" data-preview-capture="${escapeHtml(item.id)}" ${busy ? "disabled" : ""}>View recording</button>` : ""}
       </div>
     </div>
@@ -177,7 +177,7 @@ function renderPreview(item: CaptureHistoryItem, session: RecordingSession): str
       ${transcript ? `<section class="recording-transcript"><p class="section-eyebrow">Transcript</p><p>${escapeHtml(transcript)}</p></section>` : ""}
       <div class="recording-dialog-actions">
         <button class="button secondary" data-edit-capture="${escapeHtml(item.id)}" ${activeCapture || busy ? "disabled" : ""}>Edit this story</button>
-        ${item.hasPlan ? `<button class="button primary" data-download-capture="${escapeHtml(item.id)}" ${busy ? "disabled" : ""}>${busyCaptureId === item.id ? "Preparing PDF…" : "Download PDF"}</button>` : ""}
+        ${item.hasPlan ? `<button class="button primary" data-download-capture="${escapeHtml(item.id)}" ${busy || activeCapture ? "disabled" : ""}>${busyCaptureId === item.id ? "Preparing PDF…" : "Download PDF"}</button>` : ""}
       </div>
     </div>
   </dialog>`;
@@ -265,11 +265,18 @@ async function editCapture(captureId: string): Promise<void> {
 
 async function downloadCapture(captureId: string): Promise<void> {
   if (busyCaptureId) return;
+  if (await guardActiveCapture()) return;
   const item = history.find((candidate) => candidate.id === captureId);
   if (!item?.session.captureAnalysis) return;
   busyCaptureId = captureId;
   try {
     await withStoryEditorOwnership(async () => {
+      const currentSession = await getSession();
+      if (blocksLibraryCaptureActions(currentSession)) {
+        activeCapture = true;
+        message = activeCaptureMessage();
+        return;
+      }
       message = "Preparing a fresh PDF from the saved story…";
       render();
       await downloadPlanPdf(item.session);

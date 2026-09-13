@@ -135,4 +135,36 @@ describe("buildCaptureStory", () => {
       pageTitle: "Later"
     });
   });
+
+  it("does not pair a model URL with a title from a different screenshot", () => {
+    const story = buildCaptureStory(
+      {
+        userGoal: "Explain the source",
+        keyPoints: [],
+        breakingPoints: [],
+        helpfulImageMoments: [],
+        story: "Explain the page.",
+        storySteps: [{
+          startSeconds: 1,
+          endSeconds: 2,
+          title: "Explain the page",
+          narrative: "Show where the issue appears.",
+          transcript: "Explain the page.",
+          pageUrl: "https://model.example.test/source",
+          kind: "narration"
+        }]
+      },
+      { text: "Explain the page.", segments: [{ start: 1, end: 2, text: "Explain the page." }] },
+      [],
+      [{
+        id: "different-page",
+        capturedAtMs: 2_000,
+        url: "https://screenshot.example.test/fallback",
+        title: "Fallback screenshot"
+      }]
+    );
+
+    expect(story[0]).toMatchObject({ pageUrl: "https://model.example.test/source" });
+    expect(story[0].pageTitle).toBeUndefined();
+  });
 });

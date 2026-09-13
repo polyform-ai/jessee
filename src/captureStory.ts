@@ -51,6 +51,12 @@ export function buildCaptureStory(
     const modelStep = modelIndex >= 0 ? modelSteps[modelIndex] : undefined;
     if (modelIndex >= 0) claimedModelSteps.add(modelIndex);
     const screenshot = screenshotAtOrAfter(screenshots, segment.end, modelStep?.pageUrl);
+    const pageUrl = modelStep?.pageUrl || screenshot?.url;
+    const pageTitle = modelStep?.pageUrl && modelStep.pageTitle
+      ? modelStep.pageTitle
+      : screenshot?.url === pageUrl
+        ? screenshot?.title
+        : undefined;
     return normalizeStep({
       ...modelStep,
       startSeconds: segment.start,
@@ -59,8 +65,8 @@ export function buildCaptureStory(
       narrative: modelStep?.narrative || segment.text,
       transcript: segment.text,
       screenshotId: modelStep?.screenshotId || screenshot?.id,
-      pageUrl: modelStep?.pageUrl || screenshot?.url,
-      pageTitle: modelStep?.pageTitle || screenshot?.title,
+      pageUrl,
+      pageTitle,
       kind: modelStep?.kind || "narration"
     });
   });
