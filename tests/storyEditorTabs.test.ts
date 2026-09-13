@@ -14,7 +14,8 @@ describe("sessionIsInUse", () => {
     });
     const session = (status: RecordingSession["status"]): RecordingSession => ({ status, timeline: [], screenshots: [] });
 
-    expect(await sessionIsInUse(session("stopped"))).toBe(true);
+    expect(await sessionIsInUse({ ...session("stopped"), autoPlanningPending: true })).toBe(true);
+    expect(await sessionIsInUse({ ...session("stopped"), autoPlanningPending: false, analysisError: "Retry planning" })).toBe(false);
     expect(await sessionIsInUse(session("ready"))).toBe(false);
 
     query.mockResolvedValue([{ id: 7, url: "chrome-extension://jessee/plan.html" }]);

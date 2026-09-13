@@ -28,7 +28,8 @@ export async function hasOpenStoryEditor(): Promise<boolean> {
 }
 
 export async function sessionIsInUse(session: RecordingSession): Promise<boolean> {
-  if (["recording", "paused", "stopped", "planning", "generating"].includes(session.status)) return true;
+  if (["recording", "paused", "planning", "generating"].includes(session.status)) return true;
+  if (session.status === "stopped" && session.autoPlanningPending) return true;
   return hasOpenStoryEditor();
 }
 
