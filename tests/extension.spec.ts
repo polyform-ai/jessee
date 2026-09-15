@@ -128,7 +128,7 @@ test("loads extension settings page", async () => {
 
     await context.route("http://jessee.test/**", (route) => route.fulfill({
       contentType: "text/html",
-      body: "<!doctype html><html><body><main><h1>Product page</h1><button>Save changes</button></main><script>window.hudEvents = []; for (const type of ['click', 'mousemove', 'mouseover', 'pointermove', 'pointerover']) window.addEventListener(type, () => window.hudEvents.push(type));</script></body></html>"
+      body: "<!doctype html><html><body style='min-height:3000px'><main><h1>Product page</h1><button>Save changes</button></main><script>window.hudEvents = []; window.blockHudEvents = false; for (const type of ['click', 'mousemove', 'mouseover', 'pointermove', 'pointerover']) { window.addEventListener(type, (event) => { window.hudEvents.push('capture:' + type); if (window.blockHudEvents) event.stopImmediatePropagation(); }, true); window.addEventListener(type, () => window.hudEvents.push('bubble:' + type)); }</script></body></html>"
     }));
     const capturedPage = await context.newPage();
     await capturedPage.goto("http://jessee.test/workflow");
@@ -152,19 +152,31 @@ test("loads extension settings page", async () => {
     await serviceWorker.evaluate(async ({ capturedTabId, overlayStartedAt }) => {
       await chrome.tabs.sendMessage(capturedTabId!, { type: "SET_OVERLAY_MODE", mode: "cursor", startedAt: overlayStartedAt });
     }, { capturedTabId, overlayStartedAt });
-    const recordingHud = capturedPage.getByLabel("JesSee recording controls");
+    const recordingHudFrame = capturedPage.locator("iframe[title='JesSee recording controls']");
+    const recordingHud = capturedPage.frameLocator("iframe[title='JesSee recording controls']").getByLabel("JesSee recording controls");
+    await expect(recordingHudFrame).toBeVisible();
     await expect(recordingHud).toBeVisible();
     const overlayLayers = await capturedPage.evaluate(() => ({
       cursor: Number(getComputedStyle(document.querySelector(".str-cursor")!).zIndex),
-      hud: Number(getComputedStyle(document.querySelector(".str-recording-hud")!).zIndex)
+      hud: Number(getComputedStyle(document.querySelector(".str-recording-hud-frame")!).zIndex)
     }));
     expect(overlayLayers.cursor).toBeGreaterThan(overlayLayers.hud);
-    await expect(recordingHud.locator(".str-recording-time")).toHaveText(/01:0[5-9]/);
+    await expect(recordingHud.locator(".recording-time")).toHaveText(/01:0[5-9]/);
     await recordingHud.getByRole("button", { name: /Recording/ }).hover();
     await expect(recordingHud.getByText("Frame it")).toBeVisible();
     await expect(recordingHud.getByText("Redact")).toBeVisible();
     await expect(recordingHud.getByRole("button", { name: "Finish recording" })).toBeVisible();
+    await capturedPage.evaluate(() => {
+      const host = window as typeof window & { blockHudEvents?: boolean; hudEvents?: string[] };
+      host.blockHudEvents = true;
+      host.hudEvents = [];
+    });
+    await capturedPage.evaluate(() => window.scrollTo(0, 500));
+    const scrollBeforeHudWheel = await capturedPage.evaluate(() => window.scrollY);
+    await recordingHud.getByRole("button", { name: "Finish recording" }).hover();
+    await capturedPage.mouse.wheel(0, 400);
     await expect.poll(() => capturedPage.evaluate(() => (window as typeof window & { hudEvents?: string[] }).hudEvents)).toEqual([]);
+    await expect.poll(() => capturedPage.evaluate(() => window.scrollY)).toBe(scrollBeforeHudWheel);
     if (process.env.JESSEE_HUD_QA) {
       await capturedPage.screenshot({ path: resolve(__dirname, "../test-results/recording-hud.png") });
     }
@@ -174,7 +186,7 @@ test("loads extension settings page", async () => {
     await serviceWorker.evaluate(async ({ capturedTabId }) => {
       await chrome.tabs.sendMessage(capturedTabId!, { type: "SET_OVERLAY_MODE", mode: "off" });
     }, { capturedTabId });
-    await expect(recordingHud).toHaveCount(0);
+    await expect(recordingHudFrame).toHaveCount(0);
     await capturedPage.close();
 
     const controlsPage = await context.newPage();

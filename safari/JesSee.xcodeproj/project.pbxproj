@@ -26,6 +26,7 @@
 		1EE94985300691CF004803F7 /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 1EE9497E300691CF004803F7 /* assets */; };
 		1EE94986300691CF004803F7 /* controls.html in Resources */ = {isa = PBXBuildFile; fileRef = 1EE94987300691CF004803F7 /* controls.html */; };
 		1EE94988300691CF004803F7 /* history.html in Resources */ = {isa = PBXBuildFile; fileRef = 1EE94989300691CF004803F7 /* history.html */; };
+		1EE9498B300691CF004803F7 /* hud.html in Resources */ = {isa = PBXBuildFile; fileRef = 1EE9498A300691CF004803F7 /* hud.html */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -75,6 +76,7 @@
 		1EE9497E300691CF004803F7 /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; name = assets; path = Resources/assets; sourceTree = "<group>"; };
 		1EE94987300691CF004803F7 /* controls.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = controls.html; path = Resources/controls.html; sourceTree = "<group>"; };
 		1EE94989300691CF004803F7 /* history.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = history.html; path = Resources/history.html; sourceTree = "<group>"; };
+		1EE9498A300691CF004803F7 /* hud.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = hud.html; path = Resources/hud.html; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -159,6 +161,7 @@
 				1EE9497E300691CF004803F7 /* assets */,
 				1EE94987300691CF004803F7 /* controls.html */,
 				1EE94989300691CF004803F7 /* history.html */,
+				1EE9498A300691CF004803F7 /* hud.html */,
 			);
 			name = Resources;
 			path = "JesSee Extension";
@@ -272,6 +275,7 @@
 				1EE94984300691CF004803F7 /* plan.html in Resources */,
 				1EE94986300691CF004803F7 /* controls.html in Resources */,
 				1EE94988300691CF004803F7 /* history.html in Resources */,
+				1EE9498B300691CF004803F7 /* hud.html in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
