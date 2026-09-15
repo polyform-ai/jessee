@@ -90,6 +90,18 @@ test("loads extension settings page", async () => {
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(openAiPanel.locator(".section-feedback")).toContainText("Email and OpenAI API key saved.");
     await expect(page.locator("main.page > .stack > .success")).toHaveCount(0);
+    await page.getByLabel("OpenAI API key").fill("unsaved-key");
+    await page.getByLabel("Email").fill("not-an-email");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByLabel("OpenAI API key")).toHaveValue("unsaved-key");
+    await page.getByRole("button", { name: "Remove key" }).click();
+    await expect(page.getByLabel("OpenAI API key")).toHaveValue("");
+    await expect(openAiPanel.locator(".section-feedback")).toContainText("OpenAI API key removed.");
+    await expect.poll(() => page.evaluate(async () => (await chrome.storage.local.get("settings")).settings.openAiKey)).toBeUndefined();
+    await page.evaluate(async () => {
+      const stored = await chrome.storage.local.get("settings");
+      await chrome.storage.local.set({ settings: { ...stored.settings, openAiKey: "demo-key" } });
+    });
     if (process.env.JESSEE_HUD_QA) {
       await openAiPanel.screenshot({ path: resolve(__dirname, "../test-results/settings-feedback.png") });
     }
@@ -116,7 +128,7 @@ test("loads extension settings page", async () => {
 
     await context.route("http://jessee.test/**", (route) => route.fulfill({
       contentType: "text/html",
-      body: "<!doctype html><html><body><main><h1>Product page</h1><button>Save changes</button></main></body></html>"
+      body: "<!doctype html><html><body><main><h1>Product page</h1><button>Save changes</button></main><script>window.hudClickEvents = 0; window.addEventListener('click', () => { window.hudClickEvents += 1; });</script></body></html>"
     }));
     const capturedPage = await context.newPage();
     await capturedPage.goto("http://jessee.test/workflow");
@@ -142,6 +154,11 @@ test("loads extension settings page", async () => {
     }, { capturedTabId, overlayStartedAt });
     const recordingHud = capturedPage.getByLabel("JesSee recording controls");
     await expect(recordingHud).toBeVisible();
+    const overlayLayers = await capturedPage.evaluate(() => ({
+      cursor: Number(getComputedStyle(document.querySelector(".str-cursor")!).zIndex),
+      hud: Number(getComputedStyle(document.querySelector(".str-recording-hud")!).zIndex)
+    }));
+    expect(overlayLayers.cursor).toBeGreaterThan(overlayLayers.hud);
     await expect(recordingHud.locator(".str-recording-time")).toHaveText(/01:0[5-9]/);
     await recordingHud.getByRole("button", { name: /Recording/ }).hover();
     await expect(recordingHud.getByText("Frame it")).toBeVisible();
@@ -151,6 +168,11 @@ test("loads extension settings page", async () => {
       await capturedPage.screenshot({ path: resolve(__dirname, "../test-results/recording-hud.png") });
     }
     await recordingHud.getByRole("button", { name: "Finish recording" }).click();
+    await expect(recordingHud.getByRole("button", { name: "Finishing…" })).toBeDisabled();
+    await expect.poll(() => capturedPage.evaluate(() => (window as typeof window & { hudClickEvents?: number }).hudClickEvents)).toBe(0);
+    await serviceWorker.evaluate(async ({ capturedTabId }) => {
+      await chrome.tabs.sendMessage(capturedTabId!, { type: "SET_OVERLAY_MODE", mode: "off" });
+    }, { capturedTabId });
     await expect(recordingHud).toHaveCount(0);
     await capturedPage.close();
 
@@ -189,11 +211,17 @@ test("loads extension settings page", async () => {
     });
     await expect(activeHistoryPage.locator("main")).toHaveAttribute("data-render-marker", "preserve-player");
     await activeHistoryPage.close();
-    await controlsPage.getByRole("button", { name: "Finish Recording" }).click();
-    await expect.poll(() => page.evaluate(async () => {
+    await controlsPage.evaluate(async () => {
       const stored = await chrome.storage.local.get("recordingSession");
-      return stored.recordingSession?.status;
-    })).toBe("error");
+      await chrome.storage.local.set({
+        recordingSession: {
+          ...stored.recordingSession,
+          status: "error",
+          error: "The test capture has ended."
+        }
+      });
+    });
+    await controlsPage.close();
     const idleHistoryPage = await context.newPage();
     await idleHistoryPage.goto(`chrome-extension://${extensionId}/history.html`);
     await idleHistoryPage.getByRole("button", { name: "New capture" }).click();

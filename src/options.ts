@@ -149,6 +149,7 @@ async function render(feedback?: SettingsFeedback): Promise<void> {
     await render(settingsFeedback("profile", "ready", "Email and OpenAI API key saved."));
   });
   document.querySelector("#delete")?.addEventListener("click", async () => {
+    profileDraft = undefined;
     await clearApiKey();
     await render(settingsFeedback("profile", "ready", "OpenAI API key removed."));
   });

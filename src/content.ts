@@ -126,6 +126,7 @@ function ensureOverlay(): void {
     }
     #screen-ticket-recorder-overlay .str-cursor {
       position: fixed;
+      z-index: 2;
       width: 38px;
       height: 42px;
       pointer-events: none;
@@ -198,6 +199,7 @@ function ensureOverlay(): void {
     }
     #screen-ticket-recorder-overlay .str-recording-hud {
       position: fixed;
+      z-index: 1;
       top: 18px;
       right: 18px;
       width: 224px;
@@ -437,6 +439,10 @@ function ensureRecordingHud(): void {
       <button class="str-finish-recording" type="button">Finish recording</button>
     </div>`;
   root.append(hud);
+
+  for (const eventName of ["pointerdown", "pointerup", "mousedown", "mouseup", "click"]) {
+    hud.addEventListener(eventName, (event) => event.stopPropagation());
+  }
 
   const summary = hud.querySelector<HTMLButtonElement>(".str-recording-hud-summary");
   summary?.addEventListener("click", () => {
