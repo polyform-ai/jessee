@@ -128,7 +128,7 @@ test("loads extension settings page", async () => {
 
     await context.route("http://jessee.test/**", (route) => route.fulfill({
       contentType: "text/html",
-      body: "<!doctype html><html><body><main><h1>Product page</h1><button>Save changes</button></main><script>window.hudClickEvents = 0; window.addEventListener('click', () => { window.hudClickEvents += 1; });</script></body></html>"
+      body: "<!doctype html><html><body><main><h1>Product page</h1><button>Save changes</button></main><script>window.hudEvents = []; for (const type of ['click', 'mousemove', 'mouseover', 'pointermove', 'pointerover']) window.addEventListener(type, () => window.hudEvents.push(type));</script></body></html>"
     }));
     const capturedPage = await context.newPage();
     await capturedPage.goto("http://jessee.test/workflow");
@@ -164,12 +164,13 @@ test("loads extension settings page", async () => {
     await expect(recordingHud.getByText("Frame it")).toBeVisible();
     await expect(recordingHud.getByText("Redact")).toBeVisible();
     await expect(recordingHud.getByRole("button", { name: "Finish recording" })).toBeVisible();
+    await expect.poll(() => capturedPage.evaluate(() => (window as typeof window & { hudEvents?: string[] }).hudEvents)).toEqual([]);
     if (process.env.JESSEE_HUD_QA) {
       await capturedPage.screenshot({ path: resolve(__dirname, "../test-results/recording-hud.png") });
     }
     await recordingHud.getByRole("button", { name: "Finish recording" }).click();
     await expect(recordingHud.getByRole("button", { name: "Finishing…" })).toBeDisabled();
-    await expect.poll(() => capturedPage.evaluate(() => (window as typeof window & { hudClickEvents?: number }).hudClickEvents)).toBe(0);
+    await expect.poll(() => capturedPage.evaluate(() => (window as typeof window & { hudEvents?: string[] }).hudEvents)).toEqual([]);
     await serviceWorker.evaluate(async ({ capturedTabId }) => {
       await chrome.tabs.sendMessage(capturedTabId!, { type: "SET_OVERLAY_MODE", mode: "off" });
     }, { capturedTabId });

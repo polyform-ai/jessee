@@ -440,7 +440,11 @@ function ensureRecordingHud(): void {
     </div>`;
   root.append(hud);
 
-  for (const eventName of ["pointerdown", "pointerup", "mousedown", "mouseup", "click"]) {
+  for (const eventName of [
+    "pointerdown", "pointerup", "pointermove", "pointerover", "pointerout", "pointerenter", "pointerleave",
+    "mousedown", "mouseup", "mousemove", "mouseover", "mouseout", "mouseenter", "mouseleave",
+    "click", "dblclick", "contextmenu", "wheel", "touchstart", "touchmove", "touchend"
+  ]) {
     hud.addEventListener(eventName, (event) => event.stopPropagation());
   }
 
