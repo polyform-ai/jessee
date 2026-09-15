@@ -272,7 +272,8 @@ export class StoryEditor {
       },
       onUpdate: options.onChange,
       onSelectionUpdate: options.onSelectionChange,
-      onTransaction: options.onSelectionChange
+      onTransaction: options.onSelectionChange,
+      onBlur: options.onSelectionChange
     });
   }
 
@@ -316,6 +317,17 @@ export class StoryEditor {
     if (action === "orderedList") return chain.toggleOrderedList().run();
     if (action === "callout") return chain.toggleBlockquote().run();
     return chain.setParagraph().run();
+  }
+
+  selectionCoordinates(): { left: number; top: number } | undefined {
+    const selection = this.editor.state.selection;
+    if (!this.editor.isFocused || selection.empty || !selection.$from.parent.isTextblock) return undefined;
+    const start = this.editor.view.coordsAtPos(selection.from);
+    const end = this.editor.view.coordsAtPos(selection.to);
+    return {
+      left: (Math.min(start.left, end.left) + Math.max(start.right, end.right)) / 2,
+      top: Math.min(start.top, end.top)
+    };
   }
 
   value(current: CaptureAnalysis): CaptureAnalysis {

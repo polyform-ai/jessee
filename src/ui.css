@@ -510,6 +510,30 @@
     border-radius: 12px 12px 0 0;
   }
 
+  .story-selection-toolbar {
+    @apply fixed z-30 -translate-x-1/2 -translate-y-full items-center gap-1 border border-zinc-700 bg-zinc-950 p-1 text-white shadow-xl;
+    display: flex;
+    border-radius: 9px;
+  }
+
+  .story-selection-toolbar[hidden] {
+    display: none;
+  }
+
+  .story-selection-toolbar .editor-tool {
+    @apply text-zinc-200;
+  }
+
+  .story-selection-toolbar .editor-tool:hover:not(:disabled),
+  .story-selection-toolbar .editor-tool[aria-pressed="true"] {
+    @apply border-zinc-700 bg-zinc-800 text-white;
+  }
+
+  .story-selection-toolbar::after {
+    content: "";
+    @apply absolute left-1/2 top-full -translate-x-1/2 border-[6px] border-transparent border-t-zinc-950;
+  }
+
   .editor-format-group {
     @apply flex items-center gap-1;
   }
@@ -554,7 +578,7 @@
   }
 
   .story-editor-content {
-    @apply min-h-[720px] outline-none;
+    @apply min-h-[720px] caret-violet-600 outline-none;
   }
 
   .story-editor-content [data-story-overview] {
@@ -607,7 +631,7 @@
   }
 
   .story-editor-content [data-story-step] + [data-story-step] {
-    @apply border-t border-zinc-200;
+    @apply border-t-2 border-zinc-200;
   }
 
   .story-editor-content [data-story-step]::before {
@@ -743,6 +767,24 @@
   .story-editor-content.is-editable [data-story-step] li p,
   .story-editor-content.is-editable [data-story-overview] li p {
     @apply transition;
+  }
+
+  .story-editor-content.is-editable [data-story-step]:focus-within {
+    background: linear-gradient(90deg, rgba(245, 243, 255, 0.62), transparent 52px);
+    box-shadow: inset 3px 0 0 #8b5cf6;
+  }
+
+  .story-editor-content.is-editable [data-story-title]:focus,
+  .story-editor-content.is-editable [data-story-summary]:focus,
+  .story-editor-content.is-editable [data-story-step] > h2:focus,
+  .story-editor-content.is-editable [data-story-step] > p:focus,
+  .story-editor-content.is-editable [data-story-step] > blockquote:focus,
+  .story-editor-content.is-editable [data-story-step] li p:focus,
+  .story-editor-content.is-editable [data-story-overview] li p:focus {
+    @apply outline-none;
+    background: rgba(245, 243, 255, 0.8);
+    box-shadow: 0 0 0 5px rgba(91, 94, 248, 0.1);
+    border-radius: 4px;
   }
 
   .story-editor-content.is-editable [data-story-title]:hover,
@@ -949,6 +991,10 @@
 
   .inline-feedback.error {
     @apply border-rose-200 bg-rose-50 text-rose-700;
+  }
+
+  .section-feedback {
+    @apply mt-3;
   }
 
   .flow-actions {

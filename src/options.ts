@@ -19,10 +19,18 @@ const root = app;
 let profileDraft: { email: string; apiKey: string } | undefined;
 let updateState: UpdateState = initialUpdateState();
 
+type SettingsSection = "profile" | "microphone" | "storage";
+type SettingsFeedbackState = "checking" | "ready" | "error";
+interface SettingsFeedback {
+  section: SettingsSection;
+  state: SettingsFeedbackState;
+  message: string;
+}
+
 void render();
 void refreshUpdateState();
 
-async function render(message = ""): Promise<void> {
+async function render(feedback?: SettingsFeedback): Promise<void> {
   await restoreExportFolder();
   const settings = await getSettings();
   const microphones = await getMicrophones();
@@ -61,6 +69,7 @@ async function render(message = ""): Promise<void> {
             <button class="button primary" id="save">Save</button>
             <button class="button secondary" id="delete">Remove key</button>
           </div>
+          ${renderSettingsFeedback(feedback, "profile")}
           <div class="ai-test-control">
             <button class="button secondary" id="testAiSetup">Test AI setup</button>
             <div class="inline-feedback" id="aiTestResult" role="status" aria-live="polite" hidden></div>
@@ -91,6 +100,7 @@ async function render(message = ""): Promise<void> {
             </select>
           </div>
           <button class="button primary" id="enableMicrophone">Enable Microphone</button>
+          ${renderSettingsFeedback(feedback, "microphone")}
           <p class="hint">Choose the microphone JesSee should record, then enable it here before starting a capture.</p>
         </section>
         <section class="panel">
@@ -109,10 +119,10 @@ async function render(message = ""): Promise<void> {
             <input id="retentionDays" type="number" min="1" max="365" value="${settings.retentionDays ?? 30}" />
           </div>
           ${canChooseFolder ? `<button class="button primary" id="chooseFolder">${hasExportFolder() ? "Change Folder" : "Choose Folder"}</button>` : ""}
+          ${renderSettingsFeedback(feedback, "storage")}
           <p class="hint">${canChooseFolder ? "Each capture is saved in a dated subfolder with screen media, audio, screenshots, the visual story plan, and PDF." : "Capture history and screenshots stay in Safari's extension storage. Your completed PDF downloads through Safari."}</p>
         </section>
         ${renderUpdatePanel(updateState)}
-        ${message ? `<p class="success">${escapeHtml(message)}</p>` : ""}
       </div>
     </main>
   `;
@@ -123,23 +133,24 @@ async function render(message = ""): Promise<void> {
     const key = input?.value.trim();
     const email = emailInput?.value.trim() ?? "";
     const privateMode = document.querySelector<HTMLInputElement>("#privateMode")?.checked ?? false;
+    profileDraft = { email, apiKey: key ?? "" };
     if (!email || !email.includes("@")) {
-      await render("Enter a valid email address.");
+      await render(settingsFeedback("profile", "error", "Enter a valid email address."));
       return;
     }
     if (!key && !settings.openAiKey) {
-      await render("Enter a new key before saving.");
+      await render(settingsFeedback("profile", "error", "Enter a new key before saving."));
       return;
     }
     await saveSettings({ email, openAiKey: key && !key.includes("•") ? key : settings.openAiKey, privateMode });
     profileDraft = undefined;
     const updated = await getSettings();
     if (!hadProfile && updated.email && updated.openAiKey) await postWebhook(updated, "new_user", { email: updated.email });
-    await render("Saved.");
+    await render(settingsFeedback("profile", "ready", "Email and OpenAI API key saved."));
   });
   document.querySelector("#delete")?.addEventListener("click", async () => {
     await clearApiKey();
-    await render("Deleted.");
+    await render(settingsFeedback("profile", "ready", "OpenAI API key removed."));
   });
   document.querySelector("#testAiSetup")?.addEventListener("click", async () => {
     const input = document.querySelector<HTMLInputElement>("#apiKey");
@@ -169,9 +180,9 @@ async function render(message = ""): Promise<void> {
     try {
       preserveProfileDraft();
       await chooseExportFolder();
-      await render("Folder selected.");
+      await render(settingsFeedback("storage", "ready", "Output folder selected."));
     } catch (error) {
-      await render(error instanceof Error ? error.message : String(error));
+      await render(settingsFeedback("storage", "error", error instanceof Error ? error.message : String(error)));
     }
   });
   document.querySelector("#enableMicrophone")?.addEventListener("click", async () => {
@@ -182,14 +193,14 @@ async function render(message = ""): Promise<void> {
       await saveSettings({ microphoneEnabledAt: Date.now(), selectedMicrophoneId });
       const session = await getSession();
       if (session.error) await saveSession({ ...session, error: undefined, status: session.status === "error" ? "idle" : session.status });
-      await render("Microphone enabled.");
+      await render(settingsFeedback("microphone", "ready", "Microphone enabled and ready to record."));
     } catch (error) {
-      await render(microphoneErrorMessage(error));
+      await render(settingsFeedback("microphone", "error", microphoneErrorMessage(error)));
     }
   });
   document.querySelector("#microphoneSelect")?.addEventListener("change", async (event) => {
     await saveSettings({ selectedMicrophoneId: (event.target as HTMLSelectElement).value });
-    await render("Microphone selection saved. Click Enable Microphone to verify it.");
+    await render(settingsFeedback("microphone", "checking", "Microphone selected. Click Enable Microphone to verify it."));
   });
   document.querySelector("#retentionDays")?.addEventListener("change", async () => {
     const value = Number(document.querySelector<HTMLInputElement>("#retentionDays")?.value ?? 30);
@@ -203,9 +214,9 @@ async function render(message = ""): Promise<void> {
           pruneCaptureHistory(retentionDays, protection.captureId)
         ]);
       });
-      await render("Retention saved.");
+      await render(settingsFeedback("storage", "ready", "Capture retention saved."));
     } catch (error) {
-      await render(error instanceof Error ? error.message : String(error));
+      await render(settingsFeedback("storage", "error", error instanceof Error ? error.message : String(error)));
     }
   });
   bindUpdateControl();
@@ -253,6 +264,15 @@ function channelName(channel: string): string {
   if (channel === "sparkle") return "Signed Safari updates";
   if (channel === "app-store") return "Mac App Store updates";
   return "Developer preview";
+}
+
+function settingsFeedback(section: SettingsSection, state: SettingsFeedbackState, message: string): SettingsFeedback {
+  return { section, state, message };
+}
+
+function renderSettingsFeedback(feedback: SettingsFeedback | undefined, section: SettingsSection): string {
+  if (!feedback || feedback.section !== section) return "";
+  return `<div class="inline-feedback section-feedback ${feedback.state}" role="status" aria-live="polite">${escapeHtml(feedback.message)}</div>`;
 }
 
 async function getMicrophones(): Promise<MediaDeviceInfo[]> {

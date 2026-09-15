@@ -36,6 +36,7 @@ describe("createPlanPdf", () => {
     const mediaBox = text.match(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/);
     expect(text).toContain("/Count 1");
     expect(Number(mediaBox?.[2])).toBeGreaterThan(792);
+    expect(text.match(/ m\n[\d.]+ [\d.]+ l\nS/g)?.length).toBeGreaterThanOrEqual(4);
   });
 
   it("preserves editor emphasis in the PDF font runs", async () => {

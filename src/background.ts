@@ -37,7 +37,7 @@ function messageCanChangeCaptureState(type: RuntimeMessage["type"]): boolean {
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   const session = await getSession();
   if (session.status !== "recording" || session.activeTabId !== tabId) return;
-  if (changeInfo.status === "complete") await sendToTab(tabId, { type: "SET_OVERLAY_MODE", mode: "cursor" });
+  if (changeInfo.status === "complete") await sendToTab(tabId, { type: "SET_OVERLAY_MODE", mode: "cursor", startedAt: session.startedAt });
   if (!shouldRecordPageChange(session, tab.url, changeInfo.url, changeInfo.status)) return;
   await appendEvent("url-change", tabId, `Navigated to ${tab.url ?? changeInfo.url ?? ""}`);
 });
@@ -112,9 +112,10 @@ async function handleMessage(message: RuntimeMessage, sender: chrome.runtime.Mes
       await openRecorder(undefined, message.windowId);
       return { ok: true, session: await getSession() };
     case "STOP_CAPTURE":
+    case "CONTENT_STOP_CAPTURE":
       return { ok: true, session: await getSession() };
     case "SET_OVERLAY_MODE":
-      await sendToCaptureTab({ type: "SET_OVERLAY_MODE", mode: message.mode });
+      await sendToCaptureTab({ type: "SET_OVERLAY_MODE", mode: message.mode, startedAt: message.startedAt });
       return { ok: true };
     case "CONTENT_RECT_CREATED":
       if (!acceptsContentEvent(await getSession(), sender.tab?.id)) return { ok: true, session: await getSession() };

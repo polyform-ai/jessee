@@ -36,6 +36,24 @@ describe("JesSee updates", () => {
     });
   });
 
+  it("uses the Safari release channel in Safari", async () => {
+    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 Version/18.6 Safari/605.1.15" });
+    const state = await checkForJesseeUpdate(vi.fn(async () => new Response(JSON.stringify({
+      schemaVersion: 1,
+      version: "0.1.0-alpha.4",
+      browserVersion: "0.1.0.4",
+      publishedAt: "2026-09-13T00:00:00.000Z",
+      notes: "Walkthrough library and update readiness.",
+      chrome: { channel: "chrome-web-store", automaticUpdates: true, installUrl: "https://chromewebstore.google.com/detail/jessee/example" },
+      safari: { channel: "sparkle", automaticUpdates: true, installUrl: "https://jessee.ai/downloads/safari" }
+    }), { status: 200 })) as typeof fetch);
+
+    expect(state).toMatchObject({
+      status: "available",
+      channel: { channel: "sparkle", automaticUpdates: true }
+    });
+  });
+
   it("fails closed when release metadata is incomplete", async () => {
     const state = await checkForJesseeUpdate(vi.fn(async () => new Response(JSON.stringify({ version: "0.1.0-alpha.4" }), { status: 200 })) as typeof fetch);
     expect(state).toMatchObject({ status: "error", message: "Update service returned incomplete release metadata." });

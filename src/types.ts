@@ -127,11 +127,12 @@ export type RuntimeMessage =
   | { type: "GET_SESSION" }
   | { type: "OPEN_RECORDER"; windowId?: number }
   | { type: "STOP_CAPTURE" }
+  | { type: "CONTENT_STOP_CAPTURE" }
   | { type: "PREPARE_CAPTURE_PLAN" }
   | { type: "SAVE_CAPTURE_STORY"; session: RecordingSession }
   | { type: "GENERATE_PDF" }
   | { type: "TEST_AI_SETUP"; apiKey?: string }
-  | { type: "SET_OVERLAY_MODE"; mode: OverlayMode }
+  | { type: "SET_OVERLAY_MODE"; mode: OverlayMode; startedAt?: number }
   | { type: "CONTENT_RECT_CREATED"; rect: Rect }
   | { type: "CONTENT_CLEAR_ANNOTATIONS" }
   | { type: "CONTENT_CLICKED"; point: ScreenPoint }

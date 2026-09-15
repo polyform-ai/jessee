@@ -66,7 +66,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 });
 
 chrome.runtime.onMessage.addListener((message: RuntimeMessage) => {
-  if (message.type === "STOP_CAPTURE") void stopRecording();
+  if (message.type === "STOP_CAPTURE" || message.type === "CONTENT_STOP_CAPTURE") void stopRecording();
 });
 
 async function refresh(): Promise<void> {
@@ -557,8 +557,9 @@ async function startRecording(): Promise<void> {
       await refresh();
       return;
     }
-    await send({ type: "SET_OVERLAY_MODE", mode: "cursor" });
-    localStatus = "Capturing. Click Close Capture when finished.";
+    const activeSession = await getSession();
+    await send({ type: "SET_OVERLAY_MODE", mode: "cursor", startedAt: activeSession.startedAt });
+    localStatus = "Capturing. Hover over the recording control on your page to see guidance or finish.";
     await captureMoment("screenshot");
     screenshotInterval = window.setInterval(() => {
       void captureMoment("screenshot");

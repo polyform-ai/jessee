@@ -40,15 +40,59 @@ test("loads extension settings page", async () => {
     let [serviceWorker] = context.serviceWorkers();
     serviceWorker ??= await context.waitForEvent("serviceworker");
     const extensionId = new URL(serviceWorker.url()).host;
+    let updateCheckCount = 0;
+    await context.route("https://jessee.ai/releases/latest.json", (route) => {
+      updateCheckCount += 1;
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          schemaVersion: 1,
+          version: "0.1.0-alpha.5",
+          browserVersion: "0.1.0.5",
+          publishedAt: "2026-09-15T00:00:00.000Z",
+          notes: "A clearer recording and editing experience.",
+          chrome: {
+            channel: "developer-preview",
+            automaticUpdates: false,
+            installUrl: "https://jessee.ai/#download"
+          },
+          safari: {
+            channel: "developer-preview",
+            automaticUpdates: false,
+            installUrl: "https://jessee.ai/#download"
+          }
+        })
+      });
+    });
     let page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/options.html`);
-    await expect(page.getByRole("heading", { name: "JesSee" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "JesSee", exact: true })).toBeVisible();
     await expect(page.getByLabel("OpenAI API key")).toBeVisible();
     await expect(page.getByRole("button", { name: "Test AI setup" })).toBeVisible();
+    const updatePanel = page.locator("section.update-panel");
+    await expect(updatePanel.getByRole("heading", { name: "An update is ready" })).toBeVisible();
+    await expect(updatePanel.getByRole("link", { name: "Get the update" })).toHaveAttribute("href", "https://jessee.ai/#download");
+    const updateChecksBeforeRetry = updateCheckCount;
+    await updatePanel.getByRole("button", { name: "Check again" }).click();
+    await expect.poll(() => updateCheckCount).toBeGreaterThan(updateChecksBeforeRetry);
+    await expect(updatePanel.getByRole("heading", { name: "An update is ready" })).toBeVisible();
     await page.getByRole("button", { name: "Test AI setup" }).click();
     const openAiPanel = page.locator("section.panel").filter({ has: page.getByRole("heading", { name: "OpenAI" }) });
     await expect(openAiPanel.locator("#aiTestResult")).toBeVisible();
     await expect(openAiPanel.locator("#aiTestResult")).toContainText("OpenAI API key");
+    await page.evaluate(async () => {
+      await chrome.storage.local.set({
+        settings: { email: "demo@example.test", openAiKey: "demo-key", microphoneEnabledAt: Date.now(), retentionDays: 30 }
+      });
+    });
+    await page.reload();
+    await page.getByLabel("Email").fill("saved@example.test");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(openAiPanel.locator(".section-feedback")).toContainText("Email and OpenAI API key saved.");
+    await expect(page.locator("main.page > .stack > .success")).toHaveCount(0);
+    if (process.env.JESSEE_HUD_QA) {
+      await openAiPanel.screenshot({ path: resolve(__dirname, "../test-results/settings-feedback.png") });
+    }
 
     if (process.env.JESSEE_VISUAL_QA) {
       const coachPage = await context.newPage();
@@ -69,6 +113,46 @@ test("loads extension settings page", async () => {
 
     await page.goto(`chrome-extension://${extensionId}/popup.html`);
     await expect(page.getByRole("button", { name: "Open Settings" })).toBeVisible();
+
+    await context.route("http://jessee.test/**", (route) => route.fulfill({
+      contentType: "text/html",
+      body: "<!doctype html><html><body><main><h1>Product page</h1><button>Save changes</button></main></body></html>"
+    }));
+    const capturedPage = await context.newPage();
+    await capturedPage.goto("http://jessee.test/workflow");
+    const capturedTabId = await serviceWorker.evaluate(async () => {
+      const tabs = await chrome.tabs.query({ url: "http://jessee.test/*" });
+      return tabs[0]?.id;
+    });
+    expect(capturedTabId).toEqual(expect.any(Number));
+    const overlayStartedAt = Date.now() - 65_000;
+    await page.evaluate(async ({ capturedTabId, overlayStartedAt }) => {
+      await chrome.storage.local.set({
+        recordingSession: {
+          status: "recording",
+          startedAt: overlayStartedAt,
+          activeTabId: capturedTabId,
+          timeline: [],
+          screenshots: []
+        }
+      });
+    }, { capturedTabId, overlayStartedAt });
+    await serviceWorker.evaluate(async ({ capturedTabId, overlayStartedAt }) => {
+      await chrome.tabs.sendMessage(capturedTabId!, { type: "SET_OVERLAY_MODE", mode: "cursor", startedAt: overlayStartedAt });
+    }, { capturedTabId, overlayStartedAt });
+    const recordingHud = capturedPage.getByLabel("JesSee recording controls");
+    await expect(recordingHud).toBeVisible();
+    await expect(recordingHud.locator(".str-recording-time")).toHaveText(/01:0[5-9]/);
+    await recordingHud.getByRole("button", { name: /Recording/ }).hover();
+    await expect(recordingHud.getByText("Frame it")).toBeVisible();
+    await expect(recordingHud.getByText("Redact")).toBeVisible();
+    await expect(recordingHud.getByRole("button", { name: "Finish recording" })).toBeVisible();
+    if (process.env.JESSEE_HUD_QA) {
+      await capturedPage.screenshot({ path: resolve(__dirname, "../test-results/recording-hud.png") });
+    }
+    await recordingHud.getByRole("button", { name: "Finish recording" }).click();
+    await expect(recordingHud).toHaveCount(0);
+    await capturedPage.close();
 
     const controlsPage = await context.newPage();
     await controlsPage.goto(`chrome-extension://${extensionId}/controls.html`);
@@ -187,7 +271,27 @@ test("loads extension settings page", async () => {
     await expect(page.getByRole("img", { name: /Selected visual for step 2/ })).toBeVisible();
     await expect(page.getByText("What the user said", { exact: false })).toHaveCount(0);
     const firstStepBody = page.locator("[data-story-step]").first();
-    await firstStepBody.locator("p").first().click();
+    const firstStepParagraph = firstStepBody.locator("p").first();
+    await firstStepParagraph.evaluate((element) => {
+      const text = element.firstChild;
+      if (!text) return;
+      const range = document.createRange();
+      range.setStart(text, 0);
+      range.setEnd(text, Math.min(4, text.textContent?.length ?? 0));
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+    const selectedTextToolbar = page.getByRole("toolbar", { name: "Selected text formatting" });
+    await expect(selectedTextToolbar).toBeVisible();
+    if (process.env.JESSEE_HUD_QA) {
+      await page.screenshot({ path: resolve(__dirname, "../test-results/editor-selection-toolbar.png") });
+    }
+    await selectedTextToolbar.getByRole("button", { name: "Bold selected text", exact: true }).click();
+    await expect(firstStepParagraph.locator("strong")).toBeVisible();
+    await firstStepParagraph.click();
+    await expect(selectedTextToolbar).toBeHidden();
     await page.getByRole("button", { name: "Bullet list" }).click();
     await expect(firstStepBody.locator("ul")).toBeVisible();
     await expect(firstStepBody.locator("ul")).toHaveCSS("list-style-type", "disc");
@@ -238,7 +342,7 @@ test("loads extension settings page", async () => {
     await expect(firstStepBody.locator("ol")).toBeVisible();
     await page.getByRole("button", { name: "Undo" }).click();
     await firstStepBody.locator("p").first().click();
-    await page.getByRole("button", { name: "Callout" }).click();
+    await page.getByRole("button", { name: "Callout", exact: true }).click();
     await expect(firstStepBody.locator("blockquote")).toBeVisible();
     await page.getByRole("button", { name: "Undo" }).click();
     const sourceToggle = page.getByRole("switch", { name: "Hide source URL for step 1" });
