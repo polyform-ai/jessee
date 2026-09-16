@@ -20,6 +20,13 @@ cpSync(showcasePdf, resolve(websiteBuild, "assets/jessee-explains-jessee.pdf"));
 const version = packageMetadata.version;
 const releaseTag = `v${version}`;
 const releaseBaseUrl = `https://github.com/polyform-ai/jessee/releases/download/${releaseTag}`;
+const releaseTagToken = "__JESSEE_RELEASE_TAG__";
+const websiteIndex = resolve(websiteBuild, "index.html");
+const websiteIndexTemplate = readFileSync(websiteIndex, "utf8");
+if (!websiteIndexTemplate.includes(releaseTagToken)) {
+  throw new Error(`Missing ${releaseTagToken} from website/index.html.`);
+}
+writeFileSync(websiteIndex, websiteIndexTemplate.replaceAll(releaseTagToken, releaseTag));
 const chromeStoreUrl = process.env.JESSEE_CHROME_STORE_URL;
 const safariSignedAppUrl = process.env.JESSEE_SAFARI_SIGNED_APP_URL;
 const releaseMetadata = {
