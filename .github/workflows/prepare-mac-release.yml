@@ -58,7 +58,7 @@ jobs:
             gh release download "$latest_tag" --repo "$GITHUB_REPOSITORY" \
               --pattern appcast.xml --dir "$RUNNER_TEMP/latest-release"
             latest_build=$(/usr/bin/xmllint \
-              --xpath 'string(//*[local-name()="version"][1])' \
+              --xpath 'string(//*[local-name()="enclosure"][1]/@*[local-name()="version"])' \
               "$RUNNER_TEMP/latest-release/appcast.xml")
             if [[ ! "$latest_build" =~ ^[0-9]+$ ]]; then
               echo "The latest published appcast does not contain a numeric build version." >&2

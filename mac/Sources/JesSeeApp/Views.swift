@@ -339,6 +339,8 @@ private struct MicrophoneStep: View {
           } else if await store.requestMicrophone() {
             store.finishSetup()
             onFinished?()
+          } else {
+            store.openMicrophoneSettings()
           }
         }
       }.buttonStyle(.borderedProminent).tint(accent)
