@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "JesSee",
   "description": "Turn narrated screen walkthroughs into polished, evidence-backed PDF tickets and guides.",
-  "version": "0.1.0.4",
-  "version_name": "0.1.0 alpha 4",
+  "version": "0.1.0.5",
+  "version_name": "0.1.0 alpha 5",
   "update_url": "https://clients2.google.com/service/update2/crx",
   "action": {
     "default_title": "JesSee",

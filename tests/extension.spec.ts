@@ -20,11 +20,20 @@ async function replaceEditorText(locator: Locator, value: string): Promise<void>
   }, value);
 }
 
+function nextBrowserVersion(currentVersion: string): string {
+  const parts = currentVersion.split(".").map(Number);
+  parts[parts.length - 1] += 1;
+  return parts.join(".");
+}
+
 test("loads extension settings page", async () => {
   execFileSync("npm", ["run", "build"], { cwd: resolve(__dirname, ".."), stdio: "inherit" });
   const extensionPath = process.env.JESSEE_EXTENSION_PATH
     ? resolve(process.env.JESSEE_EXTENSION_PATH)
     : resolve(__dirname, "../dist");
+  const installedManifest = JSON.parse(readFileSync(resolve(extensionPath, "manifest.json"), "utf8")) as { version: string };
+  const availableBrowserVersion = nextBrowserVersion(installedManifest.version);
+  const availablePackageVersion = availableBrowserVersion.replace(/^(\d+\.\d+\.\d+)\.(\d+)$/, "$1-alpha.$2");
   const userDataDir = mkdtempSync(resolve(tmpdir(), "jessee-extension-"));
   const context = await chromium.launchPersistentContext(userDataDir, {
     headless: false,
@@ -47,8 +56,8 @@ test("loads extension settings page", async () => {
         contentType: "application/json",
         body: JSON.stringify({
           schemaVersion: 1,
-          version: "0.1.0-alpha.5",
-          browserVersion: "0.1.0.5",
+          version: availablePackageVersion,
+          browserVersion: availableBrowserVersion,
           publishedAt: "2026-09-15T00:00:00.000Z",
           notes: "A clearer recording and editing experience.",
           chrome: {

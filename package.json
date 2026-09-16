@@ -1,6 +1,6 @@
 {
   "name": "jessee-extension",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "description": "Chrome and Safari extension that turns screen walkthroughs into structured AI-ready documents.",
   "license": "MIT",
   "repository": {
