@@ -1,0 +1,129 @@
+import AVFoundation
+import AppKit
+import Foundation
+
+public struct MediaDetails: Sendable, Equatable {
+  public var duration: Double
+  public var hasAudio: Bool
+
+  public init(duration: Double, hasAudio: Bool) {
+    self.duration = duration
+    self.hasAudio = hasAudio
+  }
+}
+
+public struct CapturedFrame: Sendable, Equatable {
+  public var seconds: Double
+  public var filename: String
+
+  public init(seconds: Double, filename: String) {
+    self.seconds = seconds
+    self.filename = filename
+  }
+}
+
+public enum MediaTools {
+  public static func inspect(_ url: URL) async throws -> MediaDetails {
+    let asset = AVURLAsset(url: url)
+    let duration = try await asset.load(.duration).seconds
+    let tracks = try await asset.loadTracks(withMediaType: .audio)
+    return MediaDetails(duration: max(duration, 0), hasAudio: !tracks.isEmpty)
+  }
+
+  public static func extractAudio(from mediaURL: URL, to audioURL: URL) async throws {
+    let asset = AVURLAsset(url: mediaURL)
+    guard !(try await asset.loadTracks(withMediaType: .audio)).isEmpty else {
+      throw JesSeeError.mediaHasNoAudio
+    }
+    guard let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A)
+    else {
+      throw JesSeeError.invalidResponse("JesSee could not prepare the recording's audio.")
+    }
+    if FileManager.default.fileExists(atPath: audioURL.path) {
+      try FileManager.default.removeItem(at: audioURL)
+    }
+    try await exporter.export(to: audioURL, as: .m4a)
+  }
+
+  public static func frameTimes(duration: Double, segments: [TranscriptSegment], maximum: Int = 18)
+    -> [Double]
+  {
+    guard duration > 0, maximum > 0 else { return [] }
+    let candidates: [Double]
+    if segments.isEmpty {
+      let count = min(maximum, max(1, Int(ceil(duration / 8))))
+      candidates = (0..<count).map { index in
+        min(duration - 0.05, (Double(index) + 0.5) * duration / Double(count))
+      }
+    } else {
+      candidates = segments.map { max(0, min(duration - 0.05, ($0.start + $0.end) / 2)) }
+    }
+
+    let deduplicated = candidates.sorted().reduce(into: [Double]()) { result, time in
+      if result.last.map({ abs($0 - time) >= 1.0 }) ?? true { result.append(time) }
+    }
+    guard deduplicated.count > maximum else { return deduplicated }
+    return (0..<maximum).map { index in
+      let position = Double(index) * Double(deduplicated.count - 1) / Double(maximum - 1)
+      return deduplicated[Int(position.rounded())]
+    }
+  }
+
+  public static func extractFrames(
+    from mediaURL: URL,
+    times: [Double],
+    to directoryURL: URL,
+    maximumWidth: CGFloat = 1920
+  ) async throws -> [CapturedFrame] {
+    try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+    let asset = AVURLAsset(url: mediaURL)
+    let generator = AVAssetImageGenerator(asset: asset)
+    generator.appliesPreferredTrackTransform = true
+    generator.maximumSize = CGSize(width: maximumWidth, height: maximumWidth)
+    generator.requestedTimeToleranceBefore = CMTime(seconds: 0.35, preferredTimescale: 600)
+    generator.requestedTimeToleranceAfter = CMTime(seconds: 0.35, preferredTimescale: 600)
+
+    var frames: [CapturedFrame] = []
+    for (index, seconds) in times.enumerated() {
+      let image = try await generator.image(at: CMTime(seconds: seconds, preferredTimescale: 600))
+        .image
+      let bitmap = NSBitmapImageRep(cgImage: image)
+      guard let data = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.88])
+      else {
+        continue
+      }
+      let filename = String(format: "frame-%03d.jpg", index + 1)
+      try data.write(to: directoryURL.appendingPathComponent(filename), options: .atomic)
+      frames.append(CapturedFrame(seconds: seconds, filename: "screenshots/\(filename)"))
+    }
+    return frames
+  }
+
+  public static func srt(from transcript: TranscriptDocument) -> String {
+    transcript.segments.enumerated().map { index, segment in
+      "\(index + 1)\n\(captionTime(segment.start, decimal: ",")) --> \(captionTime(segment.end, decimal: ","))\n\(segment.text.trimmingCharacters(in: .whitespacesAndNewlines))\n"
+    }.joined(separator: "\n")
+  }
+
+  public static func vtt(from transcript: TranscriptDocument) -> String {
+    let body = transcript.segments.map { segment in
+      "\(captionTime(segment.start, decimal: ".")) --> \(captionTime(segment.end, decimal: "."))\n\(segment.text.trimmingCharacters(in: .whitespacesAndNewlines))"
+    }.joined(separator: "\n\n")
+    return "WEBVTT\n\n\(body)\n"
+  }
+
+  public static func nearestFrame(to seconds: Double, frames: [CapturedFrame]) -> CapturedFrame? {
+    frames.min { abs($0.seconds - seconds) < abs($1.seconds - seconds) }
+  }
+
+  private static func captionTime(_ value: Double, decimal: Character) -> String {
+    let totalMilliseconds = max(0, Int((value * 1000).rounded()))
+    let hours = totalMilliseconds / 3_600_000
+    let minutes = (totalMilliseconds / 60_000) % 60
+    let seconds = (totalMilliseconds / 1_000) % 60
+    let milliseconds = totalMilliseconds % 1_000
+    return String(
+      format: "%02d:%02d:%02d%c%03d", hours, minutes, seconds, String(decimal).utf8.first!,
+      milliseconds)
+  }
+}

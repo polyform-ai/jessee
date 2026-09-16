@@ -46,10 +46,9 @@
 
   for (const link of document.querySelectorAll("a.download-button")) {
     link.addEventListener("click", () => {
-      const browser = link.href.includes("Safari") ? "safari" : "chrome";
       track("download_click", {
-        browser,
-        file_type: "zip",
+        platform: "macos",
+        file_type: "dmg",
         product: "jessee",
       });
     });

@@ -18,32 +18,29 @@ mkdirSync(resolve(websiteBuild, "assets"), { recursive: true });
 cpSync(showcasePdf, resolve(websiteBuild, "assets/jessee-explains-jessee.pdf"));
 
 const version = packageMetadata.version;
-const releaseTag = `v${version}`;
-const releaseBaseUrl = `https://github.com/polyform-ai/jessee/releases/download/${releaseTag}`;
-const releaseTagToken = "__JESSEE_RELEASE_TAG__";
-const websiteIndex = resolve(websiteBuild, "index.html");
-const websiteIndexTemplate = readFileSync(websiteIndex, "utf8");
-if (!websiteIndexTemplate.includes(releaseTagToken)) {
-  throw new Error(`Missing ${releaseTagToken} from website/index.html.`);
-}
-writeFileSync(websiteIndex, websiteIndexTemplate.replaceAll(releaseTagToken, releaseTag));
-const chromeStoreUrl = process.env.JESSEE_CHROME_STORE_URL;
-const safariSignedAppUrl = process.env.JESSEE_SAFARI_SIGNED_APP_URL;
+const macInstallUrl = "https://github.com/polyform-ai/jessee/releases/latest/download/JesSee.dmg";
 const releaseMetadata = {
   schemaVersion: 1,
   version,
   browserVersion: extensionManifest.version,
   publishedAt: new Date().toISOString(),
-  notes: "On-page recording controls, a clearer click cursor, richer story editing, and a continuous PDF that mirrors the editor.",
+  notes: "JesSee is now a signed native Mac app with menu-bar recording, video import, a local library, and automatic updates.",
+  mac: {
+    channel: "sparkle",
+    automaticUpdates: true,
+    installUrl: macInstallUrl
+  },
+  // Keep the legacy fields so an installed browser preview can direct its user
+  // to the native replacement instead of silently becoming stranded.
   chrome: {
-    channel: chromeStoreUrl ? "chrome-web-store" : "developer-preview",
-    automaticUpdates: Boolean(chromeStoreUrl),
-    installUrl: chromeStoreUrl ?? `${releaseBaseUrl}/JesSee-Chrome-v${version}.zip`
+    channel: "sparkle",
+    automaticUpdates: true,
+    installUrl: macInstallUrl
   },
   safari: {
-    channel: safariSignedAppUrl ? "sparkle" : "developer-preview",
-    automaticUpdates: Boolean(safariSignedAppUrl),
-    installUrl: safariSignedAppUrl ?? `${releaseBaseUrl}/JesSee-Safari-v${version}.zip`
+    channel: "sparkle",
+    automaticUpdates: true,
+    installUrl: macInstallUrl
   }
 };
 mkdirSync(resolve(websiteBuild, "releases"), { recursive: true });

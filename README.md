@@ -123,7 +123,34 @@ Ultimately, I don't think we're building a better screen recorder.
 
 We're building a better way to communicate.
 
-## Current Browser Extension
+## Native Mac App
+
+JesSee is moving to a native, menu-bar Mac app. This avoids the fragile browser-extension handoff and keeps the recorder available from whatever app or browser you are explaining.
+
+The native app currently includes:
+
+- A four-step first-run guide for OpenAI, email, library folder, and microphone access
+- Native recording of a chosen window, app, or display from the menu bar
+- A compact recording surface with timer, Redo, and Stop & Process
+- Video import for existing walkthroughs
+- Background transcription and story creation using word- and segment-level timestamps
+- A local library with durable processing status and retryable failures
+- A visual story editor for titles, summaries, key points, step copy, and alternate screenshots
+- One continuous PDF plus an HTML copy, captions, transcript, screenshots, narration, and original video in a folder the user controls
+
+The app requires macOS 15 or newer. Build and test it locally:
+
+```bash
+npm run mac:test
+npm run mac:app
+open mac/build/JesSee.app
+```
+
+The local package is ad-hoc signed for development. Public distribution still requires Developer ID signing, notarization, and the native update feed described in [the automatic update path](docs/AUTOMATIC_UPDATES.md).
+
+## Legacy Browser Extension
+
+The Chrome and Safari extension source remains temporarily available while the native recording flow is tested on real permissions, long recordings, and production OpenAI requests. It is no longer the target architecture. Once the signed Mac build passes those release gates, the extension packages and installation path can be removed without leaving users with no working download.
 
 JesSee ships as a Chrome MV3 extension and a macOS Safari Web Extension that capture screen context, microphone narration, cursor movement, and timestamped screenshots. GPT-5.6 Sol creates the first draft of a reader-facing visual story. The Tiptap editor keeps the outcome, summary, key points, step copy, and selected images together in one continuous document: edit the words directly, click any image to step through alternatives, preview the finished handoff, then download that same composition as one continuous PDF page.
 

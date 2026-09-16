@@ -1,4 +1,5 @@
 node_modules/
+.build/
 dist/
 output/*
 !output/pdf/
@@ -11,6 +12,7 @@ playwright-report/
 release/
 release-dist/
 safari/build/
+mac/build/
 safari/JesSee Extension/Resources/
 .DS_Store
 .env
