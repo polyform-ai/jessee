@@ -62,9 +62,12 @@ mkdir -p "$scratch_dir/dmg"
 ditto "$app_dir" "$scratch_dir/dmg/JesSee.app"
 ln -s /Applications "$scratch_dir/dmg/Applications"
 hdiutil create -quiet -volname JesSee -srcfolder "$scratch_dir/dmg" -ov -format UDZO "$dmg_path"
+codesign --force --timestamp --sign "$JESSEE_SIGNING_IDENTITY" "$dmg_path"
+codesign --verify --verbose=2 "$dmg_path"
 notary_submit "$dmg_path"
 xcrun stapler staple "$dmg_path"
 xcrun stapler validate "$dmg_path"
+codesign --verify --verbose=2 "$dmg_path"
 
 ditto -c -k --sequesterRsrc --keepParent "$app_dir" "$archive_path"
 
