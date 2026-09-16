@@ -27,7 +27,7 @@ const releaseMetadata = {
   version,
   browserVersion: extensionManifest.version,
   publishedAt: new Date().toISOString(),
-  notes: "A searchable walkthrough library, historical recording playback, editable stories, and fresh PDF downloads.",
+  notes: "On-page recording controls, a clearer click cursor, richer story editing, and a continuous PDF that mirrors the editor.",
   chrome: {
     channel: chromeStoreUrl ? "chrome-web-store" : "developer-preview",
     automaticUpdates: Boolean(chromeStoreUrl),
