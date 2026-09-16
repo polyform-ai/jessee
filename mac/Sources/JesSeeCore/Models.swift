@@ -123,16 +123,44 @@ public struct StoryStep: Codable, Sendable, Equatable, Identifiable {
   }
 }
 
+public struct StoryKeyPoint: Codable, Sendable, Equatable, Identifiable {
+  public var id: String
+  public var text: String
+
+  public init(id: String = UUID().uuidString.lowercased(), text: String) {
+    self.id = id
+    self.text = text
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case id
+    case text
+  }
+
+  public init(from decoder: any Decoder) throws {
+    if let legacy = try? decoder.singleValueContainer().decode(String.self) {
+      self.init(text: legacy)
+      return
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      id: try container.decodeIfPresent(String.self, forKey: .id)
+        ?? UUID().uuidString.lowercased(),
+      text: try container.decode(String.self, forKey: .text)
+    )
+  }
+}
+
 public struct StoryDocument: Codable, Sendable, Equatable {
   public var title: String
   public var summary: String
-  public var keyPoints: [String]
+  public var keyPoints: [StoryKeyPoint]
   public var steps: [StoryStep]
 
   public init(title: String, summary: String, keyPoints: [String], steps: [StoryStep]) {
     self.title = title
     self.summary = summary
-    self.keyPoints = keyPoints
+    self.keyPoints = keyPoints.map { StoryKeyPoint(text: $0) }
     self.steps = steps
   }
 }

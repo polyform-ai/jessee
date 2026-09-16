@@ -43,9 +43,31 @@ jobs:
           set -euo pipefail
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.]+)?$ ]]
           [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]]
+          if (( 10#$BUILD_NUMBER < 1 )); then
+            echo "The Sparkle build number must be positive." >&2
+            exit 1
+          fi
           if [[ -z "$SPARKLE_PRIVATE_KEY" || -z "$DEVELOPER_ID_P12_BASE64" || -z "$DEVELOPER_ID_P12_PASSWORD" || -z "$APPLE_NOTARY_KEY" || -z "$APPLE_NOTARY_KEY_ID" || -z "$APPLE_NOTARY_ISSUER_ID" ]]; then
             echo "Configure the Sparkle, Developer ID, and Apple notarization release credentials." >&2
             exit 1
+          fi
+          latest_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq 'map(select(.draft == false and .prerelease == false)) | first | .tag_name // empty')
+          if [[ -n "$latest_tag" ]]; then
+            mkdir -p "$RUNNER_TEMP/latest-release"
+            gh release download "$latest_tag" --repo "$GITHUB_REPOSITORY" \
+              --pattern appcast.xml --dir "$RUNNER_TEMP/latest-release"
+            latest_build=$(/usr/bin/xmllint \
+              --xpath 'string(//*[local-name()="version"][1])' \
+              "$RUNNER_TEMP/latest-release/appcast.xml")
+            if [[ ! "$latest_build" =~ ^[0-9]+$ ]]; then
+              echo "The latest published appcast does not contain a numeric build version." >&2
+              exit 1
+            fi
+            if (( 10#$BUILD_NUMBER <= 10#$latest_build )); then
+              echo "Build $BUILD_NUMBER must be greater than published build $latest_build." >&2
+              exit 1
+            fi
           fi
 
       - name: Install the Developer ID certificate and notarization key

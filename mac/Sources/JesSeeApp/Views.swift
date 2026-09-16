@@ -497,8 +497,8 @@ private struct StoryReaderView: View {
     if !story.keyPoints.isEmpty {
       VStack(alignment: .leading, spacing: 6) {
         Text("Key points").font(.headline)
-        ForEach(story.keyPoints, id: \.self) {
-          Label($0, systemImage: "checkmark.circle.fill").foregroundStyle(.secondary)
+        ForEach(story.keyPoints) {
+          Label($0.text, systemImage: "checkmark.circle.fill").foregroundStyle(.secondary)
         }
       }
     }
@@ -533,14 +533,14 @@ private struct StoryEditorView: View {
         HStack {
           Text("Key points").font(.headline)
           Spacer()
-          Button("Add point") { story.keyPoints.append("New key point") }
+          Button("Add point") { story.keyPoints.append(StoryKeyPoint(text: "New key point")) }
         }
-        ForEach(story.keyPoints.indices, id: \.self) { index in
+        ForEach($story.keyPoints) { $point in
           HStack {
             Image(systemName: "line.3.horizontal").foregroundStyle(.tertiary)
-            TextField("Key point", text: $story.keyPoints[index]).textFieldStyle(.plain)
+            TextField("Key point", text: $point.text).textFieldStyle(.plain)
             Button(role: .destructive) {
-              story.keyPoints.remove(at: index)
+              story.keyPoints.removeAll { $0.id == point.id }
             } label: {
               Image(systemName: "xmark")
             }.buttonStyle(.borderless)

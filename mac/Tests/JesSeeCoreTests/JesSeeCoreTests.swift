@@ -30,6 +30,14 @@ import Testing
   #expect(MediaTools.vtt(from: transcript).contains("00:00:01.250 --> 00:00:03.500"))
 }
 
+@Test func storyKeyPointsDecodeLegacyStringsWithStableIdentities() throws {
+  let data = Data(
+    #"{"title":"Legacy","summary":"Summary","keyPoints":["First","Second"],"steps":[]}"#.utf8)
+  let story = try JesSeeJSON.decoder().decode(StoryDocument.self, from: data)
+  #expect(story.keyPoints.map(\.text) == ["First", "Second"])
+  #expect(Set(story.keyPoints.map(\.id)).count == 2)
+}
+
 @Test func workspaceKeepsImportedMediaAndHistory() async throws {
   let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
     UUID().uuidString, isDirectory: true)

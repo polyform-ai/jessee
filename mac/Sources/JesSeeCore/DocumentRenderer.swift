@@ -21,7 +21,7 @@ public enum DocumentRenderer {
   }
 
   private static func html(_ story: StoryDocument) -> String {
-    let keyPoints = story.keyPoints.map { "<li>\(escape($0))</li>" }.joined()
+    let keyPoints = story.keyPoints.map { "<li>\(escape($0.text))</li>" }.joined()
     let steps = story.steps.enumerated().map { index, step in
       let image =
         step.imageFilename.map {
@@ -97,7 +97,8 @@ private final class StoryPDFView: NSView {
       story.title, font: .systemFont(ofSize: 36, weight: .bold), width: contentWidth)
     summaryHeight = textHeight(story.summary, font: .systemFont(ofSize: 18), width: contentWidth)
     pointsHeight = story.keyPoints.reduce(CGFloat(44)) { partial, point in
-      partial + textHeight("•  \(point)", font: .systemFont(ofSize: 13), width: contentWidth - 40)
+      partial + textHeight(
+        "•  \(point.text)", font: .systemFont(ofSize: 13), width: contentWidth - 40)
         + 7
     }
     var y = pointsY + pointsHeight + 38
@@ -158,9 +159,10 @@ private final class StoryPDFView: NSView {
     var pointY = pointsY + 40
     for point in story.keyPoints {
       let height = textHeight(
-        "•  \(point)", font: .systemFont(ofSize: 13), width: contentWidth - 40)
+        "•  \(point.text)", font: .systemFont(ofSize: 13), width: contentWidth - 40)
       drawText(
-        "•  \(point)", in: NSRect(x: x + 20, y: pointY, width: contentWidth - 40, height: height),
+        "•  \(point.text)",
+        in: NSRect(x: x + 20, y: pointY, width: contentWidth - 40, height: height),
         font: .systemFont(ofSize: 13), color: ink)
       pointY += height + 7
     }
