@@ -1,38 +1,33 @@
-# Automatic update path
+# Signed Mac releases and automatic updates
 
-JesSee now checks `https://jessee.ai/releases/latest.json` from Settings and tells the user whether a newer release exists. That gives developer-preview installs a clear upgrade path today without pretending an unsigned ZIP can update itself safely.
+The native Mac app uses Sparkle for signed in-place updates. The first install is a signed, notarized `JesSee.dmg`; subsequent releases are delivered from the app's **Check for Updates…** button and automatic update checks.
 
-## Chrome
+## Retiring the browser extensions
 
-The trusted automatic-update channel is the Chrome Web Store.
+Chrome and Safari extension builds remain in the repository for history and migration support, but they are no longer the supported install path. The website offers only the native Mac app.
 
-1. Create the JesSee store item and upload the Chrome ZIP from `npm run release:package`.
-2. Complete the privacy, permissions, screenshots, support, and distribution sections using `docs/chrome-web-store-listing.md`.
-3. After the item is approved, set `JESSEE_CHROME_STORE_URL` when building the website. The public release metadata will switch from `developer-preview` to `chrome-web-store` and report automatic updates as available.
-4. Existing unpacked developer installs cannot be converted in place. Install the store version once; Chrome will update that installation after future store releases.
+`site-dist/releases/latest.json` retains the old `chrome` and `safari` fields as a migration bridge. Both point preview users to the signed Mac installer. They do not advertise or update an extension.
 
-`public/manifest.json` includes Google's standard update service URL. The Safari resource preparation script deliberately removes it from Safari's manifest.
+## Native Mac app
 
-## Safari
+The Mac app records Safari, Chrome, or any other selected app without requiring a browser extension.
 
-The trusted independent-distribution path is a signed and notarized macOS app containing the Safari Web Extension, with Sparkle providing the app update feed. App Store distribution is a valid alternative.
+1. Store the JesSee Sparkle EdDSA key in the release operator's Keychain under `polyform-jessee`.
+2. Store Apple notarization credentials with `notarytool`, or provide App Store Connect API-key variables in CI.
+3. Run `mac/Support/package-release.sh <version> <build-number>` with the Developer ID identity and Sparkle public key variables.
+4. Review the notarized DMG, signed update ZIP, appcast, and release notes.
+5. Publish `JesSee.dmg`, the versioned ZIP, and `appcast.xml` together in a non-prerelease GitHub Release.
 
-1. Add an Apple Developer team and a Developer ID Application certificate to both Xcode targets.
-2. Add Sparkle to the containing macOS app, configure the appcast URL, and generate the Sparkle EdDSA signing key outside the repository.
-3. Archive the Release scheme, sign it with Developer ID, notarize it, staple the ticket, and verify the signature before publication.
-4. Publish the signed app archive and signed Sparkle appcast on the JesSee release host.
-5. Set `JESSEE_SAFARI_SIGNED_APP_URL` when building the website. The public release metadata will switch from `developer-preview` to `sparkle` and report automatic updates as available.
-
-Do not enable the Sparkle channel for the current temporary-extension ZIP. Safari removes temporary extensions after Safari quits or after 24 hours, and an unsigned extension cannot safely replace itself.
+The appcast URL is `https://github.com/polyform-ai/jessee/releases/latest/download/appcast.xml`. GitHub's `latest` route ignores prereleases, so production Mac releases must be published as normal releases.
 
 ## Release metadata
 
-`npm run site:build` creates `site-dist/releases/latest.json` from the package and extension versions. The defaults remain honest developer-preview links. Production credentials or signing material are never written into this file.
+`npm run site:build` creates `site-dist/releases/latest.json`. It advertises the native Sparkle channel and keeps the legacy browser fields only so old preview installs can find the replacement. Production credentials or signing material are never written into this file.
 
 Before publishing a new release:
 
-1. Bump `package.json`, `public/manifest.json`, and the Xcode build number together.
-2. Run `npm run check`, `npm run build:safari:unsigned`, and `npm run release:package`.
-3. Inspect both ZIPs and `release-dist/SHA256SUMS.txt`.
-4. Publish the GitHub prerelease and then deploy the site so its download links never point to missing assets.
-5. For store or signed-app channels, publish the browser release first and only then enable its website environment variable.
+1. Choose a semantic version and a strictly increasing numeric build number.
+2. Run the **Prepare signed Mac release** GitHub Actions workflow.
+3. Inspect the draft release's notarized DMG, signed update ZIP, appcast, and release notes.
+4. Install the DMG on a clean Mac account, complete a short recording, and run **Check for Updates…**.
+5. Publish the reviewed GitHub release. The website download and Sparkle feed then move together through GitHub's `latest` release URL.

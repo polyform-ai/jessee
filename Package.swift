@@ -9,6 +9,9 @@ let package = Package(
     .library(name: "JesSeeCore", targets: ["JesSeeCore"]),
     .executable(name: "JesSeeApp", targets: ["JesSeeApp"]),
   ],
+  dependencies: [
+    .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.7.0"),
+  ],
   targets: [
     .target(
       name: "JesSeeCore",
@@ -21,7 +24,10 @@ let package = Package(
     ),
     .executableTarget(
       name: "JesSeeApp",
-      dependencies: ["JesSeeCore"],
+      dependencies: [
+        "JesSeeCore",
+        .product(name: "Sparkle", package: "Sparkle"),
+      ],
       path: "mac/Sources/JesSeeApp",
       linkerSettings: [
         .linkedFramework("ScreenCaptureKit"),

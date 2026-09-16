@@ -36,5 +36,13 @@
     <string>Copyright © 2026 Polyform. MIT License.</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <key>SUAutomaticallyUpdate</key>
+    <true/>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUFeedURL</key>
+    <string>https://github.com/polyform-ai/jessee/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>Sg8FinBMXhAkW5sJIaDOUWFBeF3reiYFDatZhzJ+uoI=</string>
 </dict>
 </plist>

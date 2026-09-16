@@ -1,0 +1,119 @@
+name: Prepare signed Mac release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semantic version, for example 0.2.0
+        required: true
+        type: string
+      build_number:
+        description: Strictly increasing Sparkle build number
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-release:
+    runs-on: macos-15
+    # Apple's first notarization for a new app can take materially longer than
+    # the usual few-minute path. Keep the runner alive long enough to receive
+    # and staple the ticket instead of leaving an unusable half-release.
+    timeout-minutes: 360
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate release inputs and secrets
+        env:
+          VERSION: ${{ inputs.version }}
+          BUILD_NUMBER: ${{ inputs.build_number }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.]+)?$ ]]
+          [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]]
+          if [[ -z "$SPARKLE_PRIVATE_KEY" || -z "$DEVELOPER_ID_P12_BASE64" || -z "$DEVELOPER_ID_P12_PASSWORD" || -z "$APPLE_NOTARY_KEY" || -z "$APPLE_NOTARY_KEY_ID" || -z "$APPLE_NOTARY_ISSUER_ID" ]]; then
+            echo "Configure the Sparkle, Developer ID, and Apple notarization release credentials." >&2
+            exit 1
+          fi
+
+      - name: Install the Developer ID certificate and notarization key
+        env:
+          DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/jessee-signing.keychain-db"
+          keychain_password=$(openssl rand -base64 32)
+          python3 - <<'PY'
+          import base64, os, pathlib
+          pathlib.Path(os.environ["RUNNER_TEMP"], "developer-id.p12").write_bytes(
+              base64.b64decode(os.environ["DEVELOPER_ID_P12_BASE64"])
+          )
+          PY
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/developer-id.p12" -k "$keychain" -P "$DEVELOPER_ID_P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          signing_identity=$(security find-identity -v -p codesigning "$keychain" | awk '/Developer ID Application: OPLEVEL AI LLC/ { print $2; exit }')
+          if [[ -z "$signing_identity" ]]; then
+            echo "The imported archive does not contain the OPLEVEL Developer ID Application identity." >&2
+            exit 1
+          fi
+          notary_key="$RUNNER_TEMP/AuthKey_${APPLE_NOTARY_KEY_ID}.p8"
+          printf '%s' "$APPLE_NOTARY_KEY" > "$notary_key"
+          chmod 600 "$notary_key"
+          echo "JESSEE_SIGNING_IDENTITY=$signing_identity" >> "$GITHUB_ENV"
+          echo "APPLE_NOTARY_KEY_PATH=$notary_key" >> "$GITHUB_ENV"
+          echo "APPLE_NOTARY_KEY_ID=$APPLE_NOTARY_KEY_ID" >> "$GITHUB_ENV"
+          echo "APPLE_NOTARY_ISSUER_ID=$APPLE_NOTARY_ISSUER_ID" >> "$GITHUB_ENV"
+
+      - name: Test the Mac app
+        run: swift test
+
+      - name: Package the signed and notarized release
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: mac/Support/package-release.sh "${{ inputs.version }}" "${{ inputs.build_number }}"
+
+      - name: Create the reviewable draft release
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ inputs.version }}"
+          tag="v$version"
+          assets=(
+            mac/build/installers/JesSee.dmg
+            "mac/build/releases/JesSee-$version.zip"
+            mac/build/releases/appcast.xml
+            "mac/build/releases/JesSee-$version.md"
+          )
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$tag" "${assets[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --draft \
+              --target "$GITHUB_SHA" \
+              --title "JesSee $version" \
+              --notes-file "mac/build/releases/JesSee-$version.md"
+          fi
+
+          echo "Prepared a signed and notarized JesSee $version draft. Publishing the draft activates the website installer and Sparkle feed." >> "$GITHUB_STEP_SUMMARY"

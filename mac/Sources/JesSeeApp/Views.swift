@@ -46,6 +46,9 @@ private struct HeaderView: View {
       Spacer()
       if store.isConfigured {
         Button(action: openLibrary) { Image(systemName: "books.vertical") }.help("Open Library")
+        Button(action: SoftwareUpdateController.shared.checkForUpdates) {
+          Image(systemName: "arrow.triangle.2.circlepath")
+        }.help("Check for Updates")
         Button(action: store.openSettings) { Image(systemName: "gearshape") }.help("Settings")
         Button {
           NSApp.terminate(nil)
@@ -693,6 +696,12 @@ struct SettingsView: View {
             ? "Improves visual understanding. Original videos and the full library stay in your folder."
             : "Only narration, timestamps, and screenshot timing are used to plan the story."
         ).font(.caption).foregroundStyle(.secondary)
+      }
+      Section("Software Updates") {
+        LabeledContent("Installed", value: SoftwareUpdateController.shared.displayVersion)
+        Button("Check for Updates…") { SoftwareUpdateController.shared.checkForUpdates() }
+        Text("JesSee checks for signed updates automatically and lets you install them in place.")
+          .font(.caption).foregroundStyle(.secondary)
       }
     }
     .formStyle(.grouped).padding().frame(width: 560, height: 580)
