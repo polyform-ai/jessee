@@ -15,9 +15,26 @@ public struct OpenAIClient: Sendable {
     for model in [Self.transcriptionModel, Self.storyModel] {
       var request = URLRequest(url: baseURL.appendingPathComponent("models/\(model)"))
       request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-      let (_, response) = try await session.data(for: request)
-      guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+      let data: Data
+      let response: URLResponse
+      do {
+        (data, response) = try await session.data(for: request)
+      } catch {
+        throw JesSeeError.openAIUnavailable(error.localizedDescription)
+      }
+      guard let http = response as? HTTPURLResponse else {
+        throw JesSeeError.openAIUnavailable("OpenAI returned an unreadable response.")
+      }
+      switch http.statusCode {
+      case 200:
+        continue
+      case 401:
         throw JesSeeError.invalidAPIKey
+      case 403, 404:
+        throw JesSeeError.openAIPermission("\(model): \(Self.serviceMessage(from: data))")
+      default:
+        throw JesSeeError.openAIUnavailable(
+          "OpenAI returned \(http.statusCode): \(Self.serviceMessage(from: data))")
       }
     }
   }
@@ -180,6 +197,19 @@ public struct OpenAIClient: Sendable {
       return nil
     }
     return String(value[start...end]).data(using: .utf8)
+  }
+
+  private static func serviceMessage(from data: Data) -> String {
+    struct ErrorEnvelope: Decodable {
+      struct ServiceError: Decodable { var message: String }
+      var error: ServiceError?
+    }
+    if let envelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: data),
+      let message = envelope.error?.message
+    {
+      return String(message.prefix(240))
+    }
+    return "Check this API key's project permissions and model access."
   }
 }
 

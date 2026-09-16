@@ -19,6 +19,7 @@ final class AppStore: ObservableObject {
   @Published var selectedCaptureID: String?
   @Published private(set) var microphoneAllowed =
     AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+  @Published private(set) var hasAPIKey: Bool
 
   let recorder = RecordingCoordinator()
 
@@ -28,6 +29,7 @@ final class AppStore: ObservableObject {
 
   init() {
     configuration = configurationStore.load()
+    hasAPIKey = (try? JesSeeKeychain.loadAPIKey()) != nil
     if !configuration.outputFolderPath.isEmpty {
       workspace = CaptureWorkspace(
         rootURL: URL(fileURLWithPath: configuration.outputFolderPath, isDirectory: true))
@@ -41,7 +43,7 @@ final class AppStore: ObservableObject {
   }
 
   var isConfigured: Bool {
-    configuration.setupCompleted && JesSeeKeychain.hasAPIKey && workspace != nil
+    configuration.setupCompleted && hasAPIKey && workspace != nil
   }
 
   var recentCaptures: [CaptureRecord] { Array(captures.prefix(4)) }
@@ -55,7 +57,12 @@ final class AppStore: ObservableObject {
         throw JesSeeError.invalidAPIKey
       }
       try await OpenAIClient().validate(apiKey: candidate)
-      try JesSeeKeychain.saveAPIKey(candidate)
+      do {
+        try JesSeeKeychain.saveAPIKey(candidate)
+      } catch {
+        throw JesSeeError.keychainUnavailable(error.localizedDescription)
+      }
+      hasAPIKey = true
       show(.success("OpenAI is connected."))
       return true
     } catch {

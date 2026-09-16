@@ -30,5 +30,9 @@ cp "$assets/mac-icon-512@1x.png" "$iconset/icon_512x512.png"
 cp "$assets/mac-icon-512@2x.png" "$iconset/icon_512x512@2x.png"
 iconutil -c icns "$iconset" -o "$app_dir/Contents/Resources/JesSee.icns"
 
-codesign --force --options runtime --identifier ai.polyform.jessee.mac --sign - "$app_dir"
+signing_identity=$(security find-identity -v -p codesigning | sed -n 's/.*"\(Apple Development:[^"]*\)".*/\1/p' | head -1)
+if [[ -z "$signing_identity" ]]; then
+  signing_identity="-"
+fi
+codesign --force --options runtime --identifier ai.polyform.jessee.mac --sign "$signing_identity" "$app_dir"
 echo "$app_dir"

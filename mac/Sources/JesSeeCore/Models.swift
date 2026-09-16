@@ -215,6 +215,9 @@ public struct JesSeeConfiguration: Codable, Sendable, Equatable {
 public enum JesSeeError: LocalizedError, Equatable {
   case missingAPIKey
   case invalidAPIKey
+  case keychainUnavailable(String)
+  case openAIPermission(String)
+  case openAIUnavailable(String)
   case outputFolderUnavailable
   case sourceUnavailable(String)
   case mediaHasNoAudio
@@ -226,6 +229,11 @@ public enum JesSeeError: LocalizedError, Equatable {
     switch self {
     case .missingAPIKey: "Add your OpenAI API key in Settings first."
     case .invalidAPIKey: "The OpenAI API key is not valid."
+    case .keychainUnavailable(let detail):
+      "OpenAI connected, but macOS could not save the key in Keychain. \(detail)"
+    case .openAIPermission(let detail):
+      "The key connected, but it cannot access a model JesSee needs. \(detail)"
+    case .openAIUnavailable(let detail): "JesSee could not reach OpenAI. \(detail)"
     case .outputFolderUnavailable: "Choose an output folder before recording or importing."
     case .sourceUnavailable(let path): "The source video is no longer available at \(path)."
     case .mediaHasNoAudio: "This video does not contain an audio track to transcribe."

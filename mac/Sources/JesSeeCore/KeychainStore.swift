@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 public enum JesSeeKeychain {
-  private static let service = "ai.polyform.jessee"
+  private static let service = "ai.polyform.jessee.mac"
   private static let account = "openai-api-key"
 
   public static var hasAPIKey: Bool {
@@ -19,6 +19,7 @@ public enum JesSeeKeychain {
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: service,
       kSecAttrAccount as String: account,
+      kSecUseDataProtectionKeychain as String: true,
     ]
     let attributes: [String: Any] = [
       kSecValueData as String: data,
@@ -44,6 +45,7 @@ public enum JesSeeKeychain {
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: service,
       kSecAttrAccount as String: account,
+      kSecUseDataProtectionKeychain as String: true,
       kSecReturnData as String: true,
       kSecMatchLimit as String: kSecMatchLimitOne,
     ]
@@ -64,6 +66,7 @@ public enum JesSeeKeychain {
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: service,
       kSecAttrAccount as String: account,
+      kSecUseDataProtectionKeychain as String: true,
     ]
     let status = SecItemDelete(query as CFDictionary)
     guard status == errSecSuccess || status == errSecItemNotFound else {
