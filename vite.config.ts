@@ -10,6 +10,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         popup: resolve(__dirname, "popup.html"),
+        hud: resolve(__dirname, "hud.html"),
         controls: resolve(__dirname, "controls.html"),
         history: resolve(__dirname, "history.html"),
         plan: resolve(__dirname, "plan.html"),

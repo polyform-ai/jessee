@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { acceptsContentEvent, shouldRecordPageChange } from "../src/captureState";
+import { acceptsContentEvent, ownsActiveCapture, shouldRecordPageChange } from "../src/captureState";
 import type { RecordingSession } from "../src/types";
 
 const session = (status: RecordingSession["status"], activeTabId = 7): RecordingSession => ({
@@ -33,5 +33,16 @@ describe("acceptsContentEvent", () => {
     expect(acceptsContentEvent(session("recording"), 7)).toBe(true);
     expect(acceptsContentEvent(session("recording"), 8)).toBe(false);
     expect(acceptsContentEvent(session("stopped"), 7)).toBe(false);
+  });
+});
+
+describe("ownsActiveCapture", () => {
+  it("lets only the live recorder that owns the capture respond to a stop broadcast", () => {
+    const current = { ...session("recording"), captureId: "capture-owner" };
+
+    expect(ownsActiveCapture(current, "capture-owner", "recording")).toBe(true);
+    expect(ownsActiveCapture(current, "another-capture", "recording")).toBe(false);
+    expect(ownsActiveCapture(current, "capture-owner", undefined)).toBe(false);
+    expect(ownsActiveCapture({ ...current, status: "stopped" }, "capture-owner", "recording")).toBe(false);
   });
 });

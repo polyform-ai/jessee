@@ -4,6 +4,20 @@ export function acceptsContentEvent(session: RecordingSession, tabId: number | u
   return session.status === "recording" && tabId !== undefined && session.activeTabId === tabId;
 }
 
+export function ownsActiveCapture(
+  session: RecordingSession,
+  localCaptureId: string | undefined,
+  recorderState: RecordingState | undefined
+): boolean {
+  return Boolean(
+    localCaptureId
+    && session.captureId === localCaptureId
+    && (session.status === "recording" || session.status === "paused")
+    && recorderState
+    && recorderState !== "inactive"
+  );
+}
+
 export function shouldRecordPageChange(
   session: RecordingSession,
   tabUrl: string | undefined,

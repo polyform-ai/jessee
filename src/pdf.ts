@@ -141,6 +141,16 @@ function drawPlan(
     y += boxHeight + 10 * scale;
   };
 
+  const addSectionDivider = () => {
+    y += 8 * scale;
+    if (shouldRender) {
+      pdf.setDrawColor(212, 212, 216);
+      pdf.setLineWidth(Math.max(0.5, scale));
+      pdf.line(MARGIN, y, PAGE_WIDTH - MARGIN, y);
+    }
+    y += 22 * scale;
+  };
+
   const addEvidenceImage = (step: CaptureStoryStep, screenshot: RecordingSession["screenshots"][number], index: number) => {
     const props = imageDimensions.get(screenshot.id);
     if (!props) throw new Error(`Could not read image dimensions for ${screenshot.id}.`);
@@ -194,8 +204,10 @@ function drawPlan(
     else keyPoints.forEach((point) => addParagraph([{ text: "- ", bold: false, italic: false }, ...plainRuns(point)]));
   }
 
+  addSectionDivider();
   addHeading(plainRuns("Walkthrough"));
   storySteps.forEach((step, index) => {
+    if (index > 0) addSectionDivider();
     const editorStep = editorSteps[index];
     const headingNode = childOfType(editorStep, "heading");
     const bodyNodes = editorStep?.content?.filter((child) => ["paragraph", "bulletList", "orderedList", "blockquote"].includes(child.type ?? "")) ?? [];

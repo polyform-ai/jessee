@@ -14,7 +14,15 @@ let draftRect: HTMLDivElement | undefined;
 let heldMode: "highlight" | "redact" | undefined;
 let interactionMode: "highlight" | "redact" | undefined;
 let cursorClickTimeout: number | undefined;
+let recordingHudFrame: HTMLIFrameElement | undefined;
+let recordingStartedAt: number | undefined;
 let suppressNextClick = false;
+
+type RecordingHudMessage =
+  | { source: "jessee-recording-hud"; type: "resize"; height: number }
+  | { source: "jessee-recording-hud"; type: "pointer"; x: number; y: number }
+  | { source: "jessee-recording-hud"; type: "pointer-down" }
+  | { source: "jessee-recording-hud"; type: "pointer-up" };
 
 if (!window.__screenTicketRecorderLoaded) {
   window.__screenTicketRecorderLoaded = true;
@@ -22,18 +30,19 @@ if (!window.__screenTicketRecorderLoaded) {
   chrome.runtime.onMessage.addListener((message: RuntimeMessage) => {
     if (message.type !== "SET_OVERLAY_MODE") return;
     mode = message.mode;
+    if (message.mode === "cursor") recordingStartedAt = message.startedAt ?? recordingStartedAt ?? Date.now();
     ensureOverlay();
     updateOverlayState();
   });
 
   window.addEventListener("mousemove", (event) => {
-    if (cursor) cursor.style.transform = `translate3d(${event.clientX - 4}px, ${event.clientY - 3}px, 0)`;
+    moveCursor(event.clientX, event.clientY);
     if (!startPoint || !draftRect) return;
     Object.assign(draftRect.style, toStyleRect(normalizeRect(startPoint.x, startPoint.y, event.clientX, event.clientY)));
   }, true);
 
   window.addEventListener("keydown", (event) => {
-    if (mode === "off" || event.repeat || isTypingTarget(event.target)) return;
+    if (mode === "off" || event.repeat || isTypingTarget(event.target) || isOverlayUiTarget(event.target)) return;
     const key = event.key.toLowerCase();
     if (key === "c") {
       clearAnnotations();
@@ -58,6 +67,7 @@ if (!window.__screenTicketRecorderLoaded) {
   }, true);
 
   window.addEventListener("mousedown", (event) => {
+    if (isOverlayUiTarget(event.target)) return;
     const drawingMode = heldMode ?? (mode === "highlight" || mode === "redact" ? mode : undefined);
     if (!drawingMode && mode === "cursor") setCursorPressed(true);
     if (!drawingMode) return;
@@ -71,6 +81,7 @@ if (!window.__screenTicketRecorderLoaded) {
   }, true);
 
   window.addEventListener("mouseup", (event) => {
+    if (isOverlayUiTarget(event.target) && !startPoint) return;
     if (mode === "cursor" && !heldMode) animateCursorClick();
     if (!startPoint || !draftRect || !interactionMode) return;
     const rect = normalizeRect(startPoint.x, startPoint.y, event.clientX, event.clientY);
@@ -89,7 +100,30 @@ if (!window.__screenTicketRecorderLoaded) {
 
   window.addEventListener("blur", () => setCursorPressed(false), true);
 
+  window.addEventListener("message", (event) => {
+    if (!recordingHudFrame || event.source !== recordingHudFrame.contentWindow) return;
+    const message = event.data as Partial<RecordingHudMessage> | undefined;
+    if (message?.source !== "jessee-recording-hud") return;
+    if (message.type === "resize" && typeof message.height === "number") {
+      recordingHudFrame.style.height = `${Math.min(420, Math.max(38, Math.ceil(message.height)))}px`;
+      return;
+    }
+    if (message.type === "pointer" && typeof message.x === "number" && typeof message.y === "number") {
+      const bounds = recordingHudFrame.getBoundingClientRect();
+      moveCursor(bounds.left + message.x, bounds.top + message.y);
+      return;
+    }
+    if (message.type === "pointer-down") {
+      setCursorPressed(true);
+      return;
+    }
+    if (message.type === "pointer-up") {
+      animateCursorClick();
+    }
+  });
+
   window.addEventListener("click", (event) => {
+    if (isOverlayUiTarget(event.target)) return;
     if (suppressNextClick) {
       suppressNextClick = false;
       event.preventDefault();
@@ -119,6 +153,7 @@ function ensureOverlay(): void {
     }
     #screen-ticket-recorder-overlay .str-cursor {
       position: fixed;
+      z-index: 2;
       width: 38px;
       height: 42px;
       pointer-events: none;
@@ -189,6 +224,18 @@ function ensureOverlay(): void {
         animation: none;
       }
     }
+    #screen-ticket-recorder-overlay .str-recording-hud-frame {
+      position: fixed;
+      z-index: 1;
+      top: 18px;
+      right: 18px;
+      width: 224px;
+      height: 38px;
+      border: 0;
+      background: transparent;
+      pointer-events: auto;
+      transition: height 140ms ease;
+    }
     #screen-ticket-recorder-overlay .str-draft,
     #screen-ticket-recorder-overlay .str-box {
       position: fixed;
@@ -218,6 +265,9 @@ function updateOverlayState(): void {
     draftRect = undefined;
     interactionMode = undefined;
     heldMode = undefined;
+    recordingStartedAt = undefined;
+    recordingHudFrame?.remove();
+    recordingHudFrame = undefined;
     document.documentElement.classList.remove("str-recording-cursor-active");
   }
   if (mode === "cursor" && !cursor) {
@@ -227,12 +277,33 @@ function updateOverlayState(): void {
     root.appendChild(cursor);
   }
   if (cursor) cursor.style.display = mode === "cursor" && !heldMode ? "block" : "none";
+  if (mode !== "off") ensureRecordingHud();
   document.documentElement.classList.toggle("str-recording-cursor-active", mode === "cursor" && !heldMode);
   root.style.pointerEvents = heldMode || mode === "highlight" || mode === "redact" ? "auto" : "none";
 }
 
+function ensureRecordingHud(): void {
+  if (!root || recordingHudFrame) return;
+  const frame = document.createElement("iframe");
+  frame.className = "str-recording-hud-frame";
+  frame.dataset.recordingHud = "";
+  frame.title = "JesSee recording controls";
+  frame.setAttribute("aria-label", "JesSee recording controls");
+  frame.src = chrome.runtime.getURL(`hud.html?startedAt=${recordingStartedAt ?? Date.now()}`);
+  recordingHudFrame = frame;
+  root.append(frame);
+}
+
+function isOverlayUiTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest("[data-recording-hud]"));
+}
+
 function setCursorPressed(pressed: boolean): void {
   cursor?.classList.toggle("is-pressing", pressed);
+}
+
+function moveCursor(x: number, y: number): void {
+  if (cursor) cursor.style.transform = `translate3d(${x - 4}px, ${y - 3}px, 0)`;
 }
 
 function animateCursorClick(): void {

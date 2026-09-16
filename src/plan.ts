@@ -33,6 +33,7 @@ let showAllScreenshots = false;
 void initialize();
 
 window.addEventListener("pagehide", flushPendingPlan);
+window.addEventListener("scroll", updateSelectionToolbar, true);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") flushPendingPlan();
 });
@@ -89,6 +90,7 @@ function render(): void {
         </div>
         ${planMode === "edit" ? renderEditorToolbar() : ""}
         <div class="story-paper" id="storyEditor"></div>
+        ${planMode === "edit" ? renderSelectionToolbar() : ""}
         ${planMode === "edit" ? `<div class="story-editor-footer"><button class="button secondary" id="addStory">+ Add another step</button><span>Changes save automatically</span></div>` : ""}
       </section>
       ${imageDialogStepIndex === undefined ? "" : renderImageDialog(storySteps[imageDialogStepIndex], imageDialogStepIndex)}
@@ -119,20 +121,39 @@ function render(): void {
 function renderEditorToolbar(): string {
   return `<div class="story-editor-toolbar" role="toolbar" aria-label="Story formatting">
     <div class="editor-format-group">
-      <button type="button" class="editor-tool editor-tool-list" data-editor-action="paragraph" aria-label="Paragraph" aria-pressed="false">Text</button>
-      <button type="button" class="editor-tool" data-editor-action="bold" aria-label="Bold" aria-pressed="false"><strong>B</strong></button>
-      <button type="button" class="editor-tool" data-editor-action="italic" aria-label="Italic" aria-pressed="false"><em>I</em></button>
-      <button type="button" class="editor-tool editor-tool-list" data-editor-action="bulletList" aria-label="Bullet list" aria-pressed="false">• Bullets</button>
-      <button type="button" class="editor-tool editor-tool-list" data-editor-action="orderedList" aria-label="Numbered list" aria-pressed="false">1. List</button>
-      <button type="button" class="editor-tool editor-tool-list" data-editor-action="callout" aria-label="Callout" aria-pressed="false">Callout</button>
+      ${renderEditorTools(["paragraph", "bold", "italic", "bulletList", "orderedList", "callout"])}
     </div>
     <span class="editor-toolbar-divider"></span>
     <div class="editor-format-group">
-      <button type="button" class="editor-tool" data-editor-action="undo" aria-label="Undo">↶</button>
-      <button type="button" class="editor-tool" data-editor-action="redo" aria-label="Redo">↷</button>
+      ${renderEditorTools(["undo", "redo"])}
     </div>
-    <span class="editor-toolbar-tip">Click directly into the story to edit</span>
+    <span class="editor-toolbar-tip">Click to write · select text for quick formatting</span>
   </div>`;
+}
+
+function renderSelectionToolbar(): string {
+  return `<div class="story-selection-toolbar" id="selectionToolbar" role="toolbar" aria-label="Selected text formatting" hidden>
+    ${renderEditorTools(["bold", "italic", "bulletList", "orderedList", "callout"], true)}
+  </div>`;
+}
+
+function renderEditorTools(actions: StoryEditorAction[], compact = false): string {
+  const tools: Record<StoryEditorAction, { label: string; content: string; wide?: boolean }> = {
+    paragraph: { label: "Paragraph", content: "Text", wide: true },
+    bold: { label: "Bold", content: "<strong>B</strong>" },
+    italic: { label: "Italic", content: "<em>I</em>" },
+    bulletList: { label: "Bullet list", content: compact ? "•" : "• Bullets", wide: true },
+    orderedList: { label: "Numbered list", content: compact ? "1." : "1. List", wide: true },
+    callout: { label: "Callout", content: compact ? "❞" : "Callout", wide: true },
+    undo: { label: "Undo", content: "↶" },
+    redo: { label: "Redo", content: "↷" }
+  };
+  return actions.map((action) => {
+    const tool = tools[action];
+    const pressed = action === "undo" || action === "redo" ? "" : ` aria-pressed="false"`;
+    const ariaLabel = compact ? `${tool.label} selected text` : tool.label;
+    return `<button type="button" class="editor-tool${tool.wide && !compact ? " editor-tool-list" : ""}" data-editor-action="${action}" aria-label="${ariaLabel}" title="${tool.label}"${pressed}>${tool.content}</button>`;
+  }).join("");
 }
 
 function renderImageDialog(step: CaptureStoryStep, stepIndex: number): string {
@@ -195,6 +216,7 @@ function bindEvents(): void {
   });
   document.querySelector("#generatePdf")?.addEventListener("click", () => void generatePdf());
   for (const button of document.querySelectorAll<HTMLButtonElement>("[data-editor-action]")) {
+    button.addEventListener("pointerdown", (event) => event.preventDefault());
     button.addEventListener("click", () => storyEditor?.run(button.dataset.editorAction as StoryEditorAction));
   }
 
@@ -401,6 +423,20 @@ function updateEditorToolbar(): void {
     button.disabled = !(storyEditor?.canRun(action) ?? false);
     if (action !== "undo" && action !== "redo") button.setAttribute("aria-pressed", String(storyEditor?.isActive(action) ?? false));
   }
+  updateSelectionToolbar();
+}
+
+function updateSelectionToolbar(): void {
+  const toolbar = document.querySelector<HTMLElement>("#selectionToolbar");
+  const coordinates = planMode === "edit" ? storyEditor?.selectionCoordinates() : undefined;
+  if (!toolbar || !coordinates) {
+    if (toolbar) toolbar.hidden = true;
+    return;
+  }
+  toolbar.hidden = false;
+  const halfWidth = Math.max(116, toolbar.offsetWidth / 2 + 12);
+  toolbar.style.left = `${clamp(coordinates.left, halfWidth, window.innerWidth - halfWidth)}px`;
+  toolbar.style.top = `${Math.max(58, coordinates.top - 10)}px`;
 }
 
 function updateSaveStatus(): void {

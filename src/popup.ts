@@ -3,6 +3,7 @@ import { artifactRef, putArtifact } from "./artifacts";
 import { createCompatibleMediaRecorder, mediaFileExtension, screenCaptureOptions, usesFullPageRecorder } from "./browserSupport";
 import { shouldStartWithFreshCapture } from "./captureHome";
 import { needsCaptureHistoryRecovery, saveCaptureHistory } from "./captureHistory";
+import { ownsActiveCapture } from "./captureState";
 import { blocksLibraryCaptureActions, getCaptureFlowView, type CaptureFlowButton } from "./captureFlow";
 import { dataUrlToBlob } from "./dataUrl";
 import {
@@ -34,6 +35,7 @@ const root = app;
 let session: RecordingSession | undefined;
 let mediaRecorder: MediaRecorder | undefined;
 let audioRecorder: MediaRecorder | undefined;
+let ownedCaptureId: string | undefined;
 let displayStream: MediaStream | undefined;
 let micStream: MediaStream | undefined;
 let mixedStream: MediaStream | undefined;
@@ -66,7 +68,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 });
 
 chrome.runtime.onMessage.addListener((message: RuntimeMessage) => {
-  if (message.type === "STOP_CAPTURE") void stopRecording();
+  if (message.type === "STOP_CAPTURE" || message.type === "CONTENT_STOP_CAPTURE") void stopOwnedRecording();
 });
 
 async function refresh(): Promise<void> {
@@ -495,6 +497,7 @@ async function startRecording(): Promise<void> {
       const startedAt = Date.now();
       const captureId = crypto.randomUUID();
       recordingClaimId = captureId;
+      ownedCaptureId = captureId;
       const exportFolderName = await recordingFolderPromise;
       const initialSession: RecordingSession = {
         ...(await resetSession()),
@@ -557,8 +560,9 @@ async function startRecording(): Promise<void> {
       await refresh();
       return;
     }
-    await send({ type: "SET_OVERLAY_MODE", mode: "cursor" });
-    localStatus = "Capturing. Click Close Capture when finished.";
+    const activeSession = await getSession();
+    await send({ type: "SET_OVERLAY_MODE", mode: "cursor", startedAt: activeSession.startedAt });
+    localStatus = "Capturing. Hover over the recording control on your page to see guidance or finish.";
     await captureMoment("screenshot");
     screenshotInterval = window.setInterval(() => {
       void captureMoment("screenshot");
@@ -626,6 +630,12 @@ async function stopRecording(): Promise<void> {
   } catch (error) {
     await hardCleanupInterruptedRecording(error instanceof Error ? error.message : String(error));
   }
+}
+
+async function stopOwnedRecording(): Promise<void> {
+  const current = await getSession();
+  if (!ownsActiveCapture(current, ownedCaptureId, mediaRecorder?.state)) return;
+  await stopRecording();
 }
 
 async function finishLocalRecording(): Promise<void> {
@@ -829,6 +839,7 @@ function cleanupRecorder(): void {
   previewVideo = undefined;
   mediaRecorder = undefined;
   audioRecorder = undefined;
+  ownedCaptureId = undefined;
 }
 
 function bind(selector: string, event: string, handler: EventListener): void {
