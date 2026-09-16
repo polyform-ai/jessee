@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>JesSee</string>
+    <key>CFBundleExecutable</key>
+    <string>JesSee</string>
+    <key>CFBundleIconFile</key>
+    <string>JesSee</string>
+    <key>CFBundleIdentifier</key>
+    <string>ai.polyform.jessee.mac</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>JesSee</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.2.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>15.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>JesSee records your narration so it can turn the walkthrough into a visual story.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>JesSee records only the window, app, or display you choose.</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2026 Polyform. MIT License.</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+</dict>
+</plist>

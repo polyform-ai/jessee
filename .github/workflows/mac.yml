@@ -1,0 +1,20 @@
+name: Mac app
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test native app
+        run: swift test
+      - name: Build app bundle
+        run: zsh mac/Support/build-app.sh
+      - name: Verify app bundle
+        run: |
+          codesign --verify --deep --strict --verbose=2 mac/build/JesSee.app
+          plutil -lint mac/build/JesSee.app/Contents/Info.plist
