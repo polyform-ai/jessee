@@ -19,6 +19,14 @@ mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources" "$app_dir/Conte
 cp "$bin_dir/JesSeeApp" "$app_dir/Contents/MacOS/JesSee"
 cp "$repo_dir/mac/Support/Info.plist" "$app_dir/Contents/Info.plist"
 
+editor_dir="$repo_dir/mac/build/editor"
+if [[ ! -f "$editor_dir/mac-editor.js" || ! -f "$editor_dir/mac-editor.css" ]]; then
+  echo "The Mac story editor is missing. Run npm run mac:editor first." >&2
+  exit 1
+fi
+cp "$editor_dir/mac-editor.js" "$app_dir/Contents/Resources/mac-editor.js"
+cp "$editor_dir/mac-editor.css" "$app_dir/Contents/Resources/mac-editor.css"
+
 sparkle_framework="$repo_dir/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
 if [[ ! -d "$sparkle_framework" ]]; then
   echo "Sparkle.framework was not found after the build." >&2

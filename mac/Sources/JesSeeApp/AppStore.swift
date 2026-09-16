@@ -60,10 +60,17 @@ final class AppStore: ObservableObject {
       try await OpenAIClient().validate(apiKey: candidate)
       do {
         try JesSeeKeychain.saveAPIKey(candidate)
+        guard try JesSeeKeychain.loadAPIKey() == candidate else {
+          throw JesSeeError.keychainUnavailable(
+            "JesSee saved the key but could not read it back from Keychain.")
+        }
       } catch {
         throw JesSeeError.keychainUnavailable(error.localizedDescription)
       }
       hasAPIKey = true
+      if !configuration.setupCompleted {
+        setupStep = max(setupStep, 1)
+      }
       show(.success("OpenAI is connected."))
       return true
     } catch {
@@ -150,6 +157,11 @@ final class AppStore: ObservableObject {
     NSWorkspace.shared.open(workspace.directoryURL(for: record).appendingPathComponent(filename))
   }
 
+  func openPDF(recordID: String) {
+    guard let record = captures.first(where: { $0.id == recordID }) else { return }
+    openPDF(record)
+  }
+
   func loadStory(for record: CaptureRecord) async -> StoryDocument? {
     guard let workspace, let filename = record.storyFilename else { return nil }
     return try? await workspace.read(StoryDocument.self, filename: filename, for: record)
@@ -179,6 +191,10 @@ final class AppStore: ObservableObject {
   func imageURL(filename: String, record: CaptureRecord) -> URL? {
     guard let workspace else { return nil }
     return workspace.directoryURL(for: record).appendingPathComponent(filename)
+  }
+
+  func captureDirectory(for record: CaptureRecord) -> URL? {
+    workspace?.directoryURL(for: record)
   }
 
   func openSettings() {

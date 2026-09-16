@@ -268,6 +268,7 @@ private struct SetupProgress: View {
 private struct APIKeyStep: View {
   @ObservedObject var store: AppStore
   @State private var key = ""
+  @State private var errorMessage: String?
   var body: some View {
     VStack(alignment: .leading, spacing: 11) {
       Label("Connect OpenAI", systemImage: "sparkles").font(.headline)
@@ -276,9 +277,20 @@ private struct APIKeyStep: View {
       ).font(.caption).foregroundStyle(.secondary)
       SecureField("sk-…", text: $key).textFieldStyle(.roundedBorder)
       Button(store.isTestingAPI ? "Checking…" : "Save and test") {
-        Task { if await store.saveAPIKey(key) { store.setupStep = 1 } }
+        Task {
+          errorMessage = nil
+          if await store.saveAPIKey(key) {
+            key = ""
+          } else if case .error(let message) = store.notice {
+            errorMessage = message
+          }
+        }
       }
       .buttonStyle(.borderedProminent).tint(accent).disabled(key.isEmpty || store.isTestingAPI)
+      if let errorMessage {
+        Label(errorMessage, systemImage: "exclamationmark.circle.fill")
+          .font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+      }
     }
   }
 }
@@ -427,54 +439,61 @@ private struct CaptureDetailView: View {
   @ObservedObject var store: AppStore
   let record: CaptureRecord
   @State private var story: StoryDocument?
-  @State private var isEditing = false
 
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 22) {
-        HStack(alignment: .top) {
-          VStack(alignment: .leading, spacing: 5) {
-            Text(record.title).font(.largeTitle.weight(.bold))
-            Label(record.stage.label, systemImage: stageIcon).foregroundStyle(stageColor)
-          }
-          Spacer()
-          if story != nil {
-            Button(isEditing ? "Save changes" : "Edit story") {
-              if isEditing, let story {
-                Task { if await store.saveStory(story, for: record) { isEditing = false } }
-              } else {
-                isEditing = true
-              }
+    VStack(spacing: 0) {
+      HStack(alignment: .center) {
+        VStack(alignment: .leading, spacing: 4) {
+          Text(record.title).font(.title2.weight(.bold)).lineLimit(1)
+          Label(record.stage.label, systemImage: stageIcon).foregroundStyle(stageColor).font(
+            .caption)
+        }
+        Spacer()
+        if record.pdfFilename != nil {
+          Button("Open PDF") { store.openPDF(record) }.buttonStyle(.borderedProminent).tint(accent)
+        }
+        Button("Show in Finder") { store.reveal(record) }
+        if record.stage == .failed {
+          Button("Try again") { store.retry(record) }.buttonStyle(.borderedProminent).tint(accent)
+        }
+      }
+      .padding(.horizontal, 22).padding(.vertical, 14)
+      Divider()
+
+      if let error = record.error {
+        Text(error).foregroundStyle(.red).padding(12).frame(
+          maxWidth: .infinity, alignment: .leading
+        )
+        .background(.red.opacity(0.08))
+      }
+
+      if let story, let directory = store.captureDirectory(for: record) {
+        StoryWebEditor(story: story, record: record, directoryURL: directory) {
+          updatedStory, shouldOpenPDF, completion in
+          Task {
+            let saved = await store.saveStory(updatedStory, for: record)
+            if saved {
+              self.story = updatedStory
+              if shouldOpenPDF { store.openPDF(recordID: record.id) }
             }
-          }
-          if record.pdfFilename != nil {
-            Button("Open PDF") { store.openPDF(record) }.buttonStyle(.borderedProminent).tint(
-              accent)
-          }
-          Button("Show in Finder") { store.reveal(record) }
-          if record.stage == .failed {
-            Button("Try again") { store.retry(record) }.buttonStyle(.borderedProminent).tint(accent)
+            completion(
+              saved,
+              saved
+                ? (shouldOpenPDF ? "PDF updated and opened" : "Saved")
+                : "JesSee could not save these changes.")
           }
         }
-        if let error = record.error {
-          Text(error).foregroundStyle(.red).padding(12).background(
-            .red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
-        }
-        if let story {
-          if isEditing {
-            StoryEditorView(
-              story: Binding(get: { self.story ?? story }, set: { self.story = $0 }), store: store,
-              record: record)
-          } else {
-            StoryReaderView(story: story, store: store, record: record)
-          }
-        } else if record.stage.isProcessing {
-          HStack {
-            ProgressView()
-            Text("JesSee is building the story in the background…")
-          }.foregroundStyle(.secondary)
-        }
-      }.padding(28).frame(maxWidth: 780, alignment: .leading)
+        .id(record.id)
+      } else if record.stage.isProcessing {
+        VStack(spacing: 14) {
+          ProgressView().controlSize(.large)
+          Text("JesSee is building the story in the background…").foregroundStyle(.secondary)
+        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else {
+        ContentUnavailableView(
+          "Story not ready", systemImage: "doc.badge.clock",
+          description: Text("Try processing this recording again."))
+      }
     }
     .task(id: record.updatedAt) { story = await store.loadStory(for: record) }
   }
@@ -486,125 +505,6 @@ private struct CaptureDetailView: View {
   }
   private var stageColor: Color {
     record.stage == .ready ? .green : record.stage == .failed ? .red : accent
-  }
-}
-
-private struct StoryReaderView: View {
-  let story: StoryDocument
-  @ObservedObject var store: AppStore
-  let record: CaptureRecord
-
-  var body: some View {
-    Text(story.summary).font(.title3).foregroundStyle(.secondary)
-    if !story.keyPoints.isEmpty {
-      VStack(alignment: .leading, spacing: 6) {
-        Text("Key points").font(.headline)
-        ForEach(story.keyPoints) {
-          Label($0.text, systemImage: "checkmark.circle.fill").foregroundStyle(.secondary)
-        }
-      }
-    }
-    ForEach(Array(story.steps.enumerated()), id: \.element.id) { index, step in
-      VStack(alignment: .leading, spacing: 10) {
-        Text("STEP \(index + 1)").font(.caption.weight(.bold)).foregroundStyle(accent)
-        Text(step.title).font(.title2.weight(.semibold))
-        Text(step.narrative).font(.body).textSelection(.enabled)
-        StepImage(filename: step.imageFilename, store: store, record: record)
-      }.padding(18).background(
-        Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
-    }
-  }
-}
-
-private struct StoryEditorView: View {
-  @Binding var story: StoryDocument
-  @ObservedObject var store: AppStore
-  let record: CaptureRecord
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 22) {
-      TextField("Story title", text: $story.title).font(.largeTitle.weight(.bold)).textFieldStyle(
-        .plain)
-      VStack(alignment: .leading, spacing: 6) {
-        Text("Summary").font(.caption.weight(.bold)).foregroundStyle(accent)
-        TextEditor(text: $story.summary).font(.title3).frame(minHeight: 72).scrollContentBackground(
-          .hidden)
-      }.padding(14).background(
-        Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-      VStack(alignment: .leading, spacing: 8) {
-        HStack {
-          Text("Key points").font(.headline)
-          Spacer()
-          Button("Add point") { story.keyPoints.append(StoryKeyPoint(text: "New key point")) }
-        }
-        ForEach($story.keyPoints) { $point in
-          HStack {
-            Image(systemName: "line.3.horizontal").foregroundStyle(.tertiary)
-            TextField("Key point", text: $point.text).textFieldStyle(.plain)
-            Button(role: .destructive) {
-              story.keyPoints.removeAll { $0.id == point.id }
-            } label: {
-              Image(systemName: "xmark")
-            }.buttonStyle(.borderless)
-          }.padding(10).background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 9))
-        }
-      }
-      ForEach(story.steps.indices, id: \.self) { index in
-        VStack(alignment: .leading, spacing: 10) {
-          Text("STEP \(index + 1)").font(.caption.weight(.bold)).foregroundStyle(accent)
-          TextField("Step title", text: $story.steps[index].title).font(.title2.weight(.semibold))
-            .textFieldStyle(.plain)
-          TextEditor(text: $story.steps[index].narrative).frame(minHeight: 84)
-            .scrollContentBackground(.hidden)
-          ImageChooser(filename: $story.steps[index].imageFilename, store: store, record: record)
-        }.padding(18).background(
-          Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
-      }
-    }
-  }
-}
-
-private struct StepImage: View {
-  let filename: String?
-  @ObservedObject var store: AppStore
-  let record: CaptureRecord
-  var body: some View {
-    if let filename, let url = store.imageURL(filename: filename, record: record),
-      let image = NSImage(contentsOf: url)
-    {
-      Image(nsImage: image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-  }
-}
-
-private struct ImageChooser: View {
-  @Binding var filename: String?
-  @ObservedObject var store: AppStore
-  let record: CaptureRecord
-
-  var body: some View {
-    VStack(spacing: 8) {
-      StepImage(filename: filename, store: store, record: record)
-      HStack {
-        Button(action: { move(-1) }) { Label("Previous", systemImage: "chevron.left") }
-        Spacer()
-        Text(positionLabel).font(.caption).foregroundStyle(.secondary)
-        Spacer()
-        Button(action: { move(1) }) { Label("Next", systemImage: "chevron.right") }
-      }.buttonStyle(.bordered)
-    }
-  }
-
-  private var position: Int { record.imageFilenames.firstIndex(of: filename ?? "") ?? 0 }
-  private var positionLabel: String {
-    record.imageFilenames.isEmpty
-      ? "No images" : "Image \(position + 1) of \(record.imageFilenames.count)"
-  }
-  private func move(_ change: Int) {
-    guard !record.imageFilenames.isEmpty else { return }
-    filename =
-      record.imageFilenames[
-        (position + change + record.imageFilenames.count) % record.imageFilenames.count]
   }
 }
 

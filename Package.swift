@@ -32,6 +32,7 @@ let package = Package(
       linkerSettings: [
         .linkedFramework("ScreenCaptureKit"),
         .linkedFramework("UserNotifications"),
+        .linkedFramework("WebKit"),
       ]
     ),
     .testTarget(

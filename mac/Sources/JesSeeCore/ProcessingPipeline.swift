@@ -47,6 +47,7 @@ public struct CaptureProcessor: Sendable {
         to: directory.appendingPathComponent("screenshots", isDirectory: true)
       )
       record.imageFilenames = frames.map(\.filename)
+      record.imageTimes = Dictionary(uniqueKeysWithValues: frames.map { ($0.filename, $0.seconds) })
       try await update(&record, stage: .creatingStory, onProgress: onProgress)
 
       let story = try await client.createStory(

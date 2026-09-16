@@ -20,7 +20,7 @@ struct JesSeeMacApp: App {
     .defaultSize(width: 500, height: 470)
     .defaultLaunchBehavior(store.isConfigured ? .suppressed : .presented)
 
-    WindowGroup("JesSee Library", id: "library") {
+    Window("JesSee Library", id: "library") {
       LibraryView(store: store)
     }
     .defaultSize(width: 1040, height: 720)
@@ -34,15 +34,27 @@ struct JesSeeMacApp: App {
 
 private struct RecorderMenuIcon: View {
   @ObservedObject var recorder: RecordingCoordinator
+  @Environment(\.openWindow) private var openWindow
+  @State private var openedRequestedLibrary = false
 
   var body: some View {
-    switch recorder.state {
-    case .recording, .stopping:
-      Label("JesSee is recording", systemImage: "record.circle.fill")
-    case .choosing:
-      Label("JesSee is choosing a screen", systemImage: "rectangle.dashed.badge.record")
-    default:
-      Label("JesSee", systemImage: "viewfinder.circle.fill")
+    Group {
+      switch recorder.state {
+      case .recording, .stopping:
+        Label("JesSee is recording", systemImage: "record.circle.fill")
+      case .choosing:
+        Label("JesSee is choosing a screen", systemImage: "rectangle.dashed.badge.record")
+      default:
+        Label("JesSee", systemImage: "viewfinder.circle.fill")
+      }
+    }
+    .task {
+      guard !openedRequestedLibrary,
+        ProcessInfo.processInfo.arguments.contains("--open-library")
+      else { return }
+      openedRequestedLibrary = true
+      openWindow(id: "library")
+      NSApp.activate(ignoringOtherApps: true)
     }
   }
 }

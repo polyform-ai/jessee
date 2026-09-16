@@ -14,6 +14,17 @@ import Testing
       .pendingSetupStep(hasAPIKey: true) == 3)
 }
 
+@Test func keychainRoundTripPersistsAcrossCalls() throws {
+  let service = "ai.polyform.jessee.tests.\(UUID().uuidString)"
+  let key = "sk-test-\(UUID().uuidString)"
+  defer { try? JesSeeKeychain.removeAPIKey(service: service) }
+
+  try JesSeeKeychain.saveAPIKey(key, service: service)
+  #expect(try JesSeeKeychain.loadAPIKey(service: service) == key)
+  try JesSeeKeychain.removeAPIKey(service: service)
+  #expect(try JesSeeKeychain.loadAPIKey(service: service) == nil)
+}
+
 @Test func captureDimensionsPreserveAspectRatioWithinEncoderBounds() {
   #expect(
     CaptureDimensions.fitted(pointWidth: 960, pointHeight: 540, pointPixelScale: 2)
@@ -58,6 +69,15 @@ import Testing
   let story = try JesSeeJSON.decoder().decode(StoryDocument.self, from: data)
   #expect(story.keyPoints.map(\.text) == ["First", "Second"])
   #expect(Set(story.keyPoints.map(\.id)).count == 2)
+}
+
+@Test func storyStepsDecodeWithoutRichEditorFields() throws {
+  let data = Data(
+    #"{"title":"Legacy","summary":"Summary","keyPoints":[],"steps":[{"id":"step-1","startSeconds":0,"endSeconds":2,"title":"Open settings","narrative":"Choose Settings.","transcript":"settings"}]}"#
+      .utf8)
+  let story = try JesSeeJSON.decoder().decode(StoryDocument.self, from: data)
+  #expect(story.steps.first?.narrativeHTML == nil)
+  #expect(story.steps.first?.imageAnnotations.isEmpty == true)
 }
 
 @Test func workspaceKeepsImportedMediaAndHistory() async throws {

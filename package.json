@@ -15,7 +15,8 @@
   "scripts": {
     "mac:build": "swift build",
     "mac:test": "swift test",
-    "mac:app": "zsh mac/Support/build-app.sh",
+    "mac:editor": "vite build --config vite.mac-editor.config.ts",
+    "mac:app": "npm run mac:editor && zsh mac/Support/build-app.sh",
     "build": "vite build",
     "safari:resources": "npm run build && node scripts/prepare-safari-resources.mjs",
     "build:safari": "npm run safari:resources && xcodebuild -project safari/JesSee.xcodeproj -scheme JesSee -configuration Debug -derivedDataPath safari/build build && node scripts/validate-safari-bundle.mjs",
