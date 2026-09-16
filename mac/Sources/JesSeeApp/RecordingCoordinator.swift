@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreVideo
 import Foundation
+import JesSeeCore
 @preconcurrency import ScreenCaptureKit
 
 @MainActor
@@ -67,8 +68,13 @@ final class RecordingCoordinator: NSObject, ObservableObject {
 
   private func startRecording(filter: SCContentFilter) async {
     let streamConfiguration = SCStreamConfiguration()
-    streamConfiguration.width = 2560
-    streamConfiguration.height = 1440
+    let dimensions = CaptureDimensions.fitted(
+      pointWidth: Double(filter.contentRect.width),
+      pointHeight: Double(filter.contentRect.height),
+      pointPixelScale: Double(filter.pointPixelScale)
+    )
+    streamConfiguration.width = dimensions.width
+    streamConfiguration.height = dimensions.height
     streamConfiguration.minimumFrameInterval = CMTime(value: 1, timescale: 30)
     streamConfiguration.queueDepth = 5
     streamConfiguration.pixelFormat = kCVPixelFormatType_32BGRA

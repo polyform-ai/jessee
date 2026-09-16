@@ -23,6 +23,7 @@ struct JesSeeMacApp: App {
       LibraryView(store: store)
     }
     .defaultSize(width: 1040, height: 720)
+    .defaultLaunchBehavior(.suppressed)
 
     Settings {
       SettingsView(store: store)

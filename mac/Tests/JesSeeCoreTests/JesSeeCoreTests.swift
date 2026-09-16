@@ -4,6 +4,18 @@ import Testing
 
 @testable import JesSeeCore
 
+@Test func captureDimensionsPreserveAspectRatioWithinEncoderBounds() {
+  #expect(
+    CaptureDimensions.fitted(pointWidth: 960, pointHeight: 540, pointPixelScale: 2)
+      == CaptureDimensions(width: 1920, height: 1080))
+  #expect(
+    CaptureDimensions.fitted(pointWidth: 1080, pointHeight: 1920, pointPixelScale: 1)
+      == CaptureDimensions(width: 810, height: 1440))
+  #expect(
+    CaptureDimensions.fitted(pointWidth: 3440, pointHeight: 1440, pointPixelScale: 1)
+      == CaptureDimensions(width: 2560, height: 1070))
+}
+
 @Test func frameTimesFollowTranscriptAndStayBounded() {
   let segments = (0..<30).map {
     TranscriptSegment(id: $0, start: Double($0 * 2), end: Double($0 * 2 + 1), text: "Step \($0)")

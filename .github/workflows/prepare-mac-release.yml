@@ -128,6 +128,11 @@ jobs:
             "mac/build/releases/JesSee-$version.md"
           )
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            is_draft="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
+            if [[ "$is_draft" != "true" ]]; then
+              echo "Refusing to replace assets on the published release $tag. Choose a new version." >&2
+              exit 1
+            fi
             gh release upload "$tag" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$tag" "${assets[@]}" \
