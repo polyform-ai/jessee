@@ -30,6 +30,7 @@ final class AppStore: ObservableObject {
   init() {
     configuration = configurationStore.load()
     hasAPIKey = (try? JesSeeKeychain.loadAPIKey()) != nil
+    setupStep = configuration.pendingSetupStep(hasAPIKey: hasAPIKey)
     if !configuration.outputFolderPath.isEmpty {
       workspace = CaptureWorkspace(
         rootURL: URL(fileURLWithPath: configuration.outputFolderPath, isDirectory: true))

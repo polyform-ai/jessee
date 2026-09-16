@@ -4,6 +4,7 @@ import SwiftUI
 @main
 struct JesSeeMacApp: App {
   @StateObject private var store = AppStore()
+  private let softwareUpdates = SoftwareUpdateController.shared
 
   var body: some Scene {
     MenuBarExtra {

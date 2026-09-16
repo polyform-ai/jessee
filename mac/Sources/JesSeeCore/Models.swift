@@ -238,6 +238,13 @@ public struct JesSeeConfiguration: Codable, Sendable, Equatable {
     shareScreenshotsWithOpenAI =
       try container.decodeIfPresent(Bool.self, forKey: .shareScreenshotsWithOpenAI) ?? true
   }
+
+  public func pendingSetupStep(hasAPIKey: Bool) -> Int {
+    if !hasAPIKey { return 0 }
+    if email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return 1 }
+    if outputFolderPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return 2 }
+    return 3
+  }
 }
 
 public enum JesSeeError: LocalizedError, Equatable {

@@ -4,6 +4,16 @@ import Testing
 
 @testable import JesSeeCore
 
+@Test func setupResumesAfterPersistedSteps() {
+  #expect(JesSeeConfiguration().pendingSetupStep(hasAPIKey: false) == 0)
+  #expect(JesSeeConfiguration().pendingSetupStep(hasAPIKey: true) == 1)
+  #expect(
+    JesSeeConfiguration(email: "person@example.com").pendingSetupStep(hasAPIKey: true) == 2)
+  #expect(
+    JesSeeConfiguration(email: "person@example.com", outputFolderPath: "/tmp/JesSee")
+      .pendingSetupStep(hasAPIKey: true) == 3)
+}
+
 @Test func captureDimensionsPreserveAspectRatioWithinEncoderBounds() {
   #expect(
     CaptureDimensions.fitted(pointWidth: 960, pointHeight: 540, pointPixelScale: 2)

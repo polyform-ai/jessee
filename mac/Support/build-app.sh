@@ -7,8 +7,12 @@ output_dir="$repo_dir/mac/build"
 app_dir="$output_dir/JesSee.app"
 
 cd "$repo_dir"
-swift build -c "$configuration"
-bin_dir=$(swift build -c "$configuration" --show-bin-path)
+build_arguments=(-c "$configuration")
+if [[ "${JESSEE_DISTRIBUTION:-0}" == "1" ]]; then
+  build_arguments+=(--arch arm64 --arch x86_64)
+fi
+swift build "${build_arguments[@]}"
+bin_dir=$(swift build "${build_arguments[@]}" --show-bin-path)
 
 rm -rf "$app_dir"
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources" "$app_dir/Contents/Frameworks"
@@ -66,8 +70,15 @@ fi
 codesign --deep "${sign_arguments[@]}" "$app_dir/Contents/Frameworks/Sparkle.framework"
 codesign "${sign_arguments[@]}" --entitlements "$repo_dir/mac/Support/JesSee.entitlements" --identifier ai.polyform.jessee.mac "$app_dir"
 codesign --verify --deep --strict "$app_dir"
-if ! otool -l "$app_dir/Contents/MacOS/JesSee" | grep -Fq '@executable_path/../Frameworks'; then
+if ! otool -l "$app_dir/Contents/MacOS/JesSee" | grep -F '@executable_path/../Frameworks' >/dev/null; then
   echo "The packaged app cannot locate its embedded frameworks." >&2
   exit 1
+fi
+if [[ "${JESSEE_DISTRIBUTION:-0}" == "1" ]]; then
+  architectures=$(lipo -archs "$app_dir/Contents/MacOS/JesSee")
+  if [[ "$architectures" != *arm64* || "$architectures" != *x86_64* ]]; then
+    echo "The distribution app must contain both arm64 and x86_64 executables." >&2
+    exit 1
+  fi
 fi
 echo "$app_dir"
