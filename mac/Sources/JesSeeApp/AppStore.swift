@@ -2,7 +2,7 @@ import AVFoundation
 import AppKit
 import JesSeeCore
 import SwiftUI
-import UserNotifications
+@preconcurrency import UserNotifications
 
 @MainActor
 final class AppStore: ObservableObject {
@@ -557,7 +557,7 @@ private final class JesSeeNotificationDelegate: NSObject, UNUserNotificationCent
   func userNotificationCenter(
     _ center: UNUserNotificationCenter, willPresent notification: UNNotification,
     withCompletionHandler completionHandler:
-      @escaping @Sendable (UNNotificationPresentationOptions)
+      @escaping (UNNotificationPresentationOptions)
       -> Void
   ) {
     completionHandler([.banner, .sound])
