@@ -94,7 +94,7 @@ private struct WorkflowTestValue: Decodable, Equatable {
     .init(
       status: 200,
       data: Data(
-        #"{"success":true,"result":{"result":"```json\n{\"title\":\"Story\",\"source_url\":\"example.com/page\",\"summary\":\"Summary\",\"key_points\":[\"Point\"],\"steps\":[{\"start_seconds\":0,\"end_seconds\":1,\"screenshot_time_seconds\":null,\"title\":\"Step\",\"narrative\":\"Do it.\",\"transcript\":\"Do it\"}]}\n```"}}"#.utf8)),
+        #"{"success":true,"result":{"result":"```json\n{\"title\":\"Story\",\"sourceURL\":\"example.com/page\",\"summary\":\"Summary\",\"key_points\":[\"Point\"],\"steps\":[{\"start_seconds\":0,\"end_seconds\":1,\"screenshot_time_seconds\":null,\"title\":\"Step\",\"narrative\":\"Do it.\",\"transcript\":\"Do it\"}]}\n```"}}"#.utf8)),
     .init(
       status: 200,
       data: Data(

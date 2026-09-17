@@ -628,10 +628,22 @@ private struct StoryDraft: Decodable {
 
   private enum CodingKeys: String, CodingKey {
     case title
-    case sourceURL = "sourceUrl"
+    case sourceURL
+    case sourceUrl
     case summary
     case keyPoints
     case steps
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    title = try container.decode(String.self, forKey: .title)
+    sourceURL =
+      try container.decodeIfPresent(String.self, forKey: .sourceURL)
+      ?? container.decodeIfPresent(String.self, forKey: .sourceUrl)
+    summary = try container.decode(String.self, forKey: .summary)
+    keyPoints = try container.decode([String].self, forKey: .keyPoints)
+    steps = try container.decode([Step].self, forKey: .steps)
   }
 }
 

@@ -160,6 +160,7 @@ final class AppStore: ObservableObject {
           do {
             let session = try await polyformClient.exchangeSignIn(
               attemptID: attempt.id, verifier: credentials.verifier)
+            guard !Task.isCancelled else { return }
             try JesSeeKeychain.saveWorkflowSession(session)
             workflowSession = session
             authenticationState = .signedIn(session.email)
