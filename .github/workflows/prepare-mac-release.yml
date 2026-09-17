@@ -78,6 +78,11 @@ jobs:
             fi
           fi
 
+      # Run Keychain integration coverage before replacing the runner's keychain search list
+      # with the temporary keychain that contains the Developer ID signing identity.
+      - name: Test the Mac app
+        run: swift test
+
       - name: Install the Developer ID certificate and notarization key
         env:
           DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
@@ -114,9 +119,6 @@ jobs:
           echo "APPLE_NOTARY_KEY_PATH=$notary_key" >> "$GITHUB_ENV"
           echo "APPLE_NOTARY_KEY_ID=$APPLE_NOTARY_KEY_ID" >> "$GITHUB_ENV"
           echo "APPLE_NOTARY_ISSUER_ID=$APPLE_NOTARY_ISSUER_ID" >> "$GITHUB_ENV"
-
-      - name: Test the Mac app
-        run: swift test
 
       - name: Package the signed and notarized release
         env:
