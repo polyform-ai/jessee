@@ -36,6 +36,12 @@
     <string>Copyright © 2026 Polyform. MIT License.</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <key>PFWorkflowAPIBase</key>
+    <string>https://api.us.polyform.ai</string>
+    <key>PFWorkflowAuthAppKey</key>
+    <string>wag_HJFFh5msU0QOIwWeVK7p1wa84hv27xHs</string>
+    <key>PFManagedAIEnabled</key>
+    <false/>
     <key>SUAutomaticallyUpdate</key>
     <true/>
     <key>SUEnableAutomaticChecks</key>

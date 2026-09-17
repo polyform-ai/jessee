@@ -15,7 +15,7 @@ Use it for:
 
 ## What the Mac app includes
 
-- A guided setup for OpenAI, email, output folder, and microphone access
+- A guided Bring Your Own Key setup, plus output folder and microphone access
 - Menu-bar recording for any selected window, app, or display
 - A live timer, microphone meter, drawing and highlighting controls
 - Global recording shortcuts, including `⌥S` to stop and process
@@ -24,11 +24,12 @@ Use it for:
 - A local library with processing state, retry, replay, and editable history
 - A Tiptap-based visual editor for headings, paragraphs, lists, callouts, image choice, and image markup
 - One continuous PDF plus an HTML copy, captions, transcript, screenshots, narration, and original video in a folder you control
+- Retained, feature-gated Polyform workflow and public-link integration for a later release
 - Signed updates through Sparkle
 
-JesSee requires macOS 15 or newer and your own OpenAI API key. Recordings and generated files remain in the output folder you choose. Creating a story sends the narration and selected screenshots to OpenAI through that key.
+JesSee requires macOS 15 or newer. The current release uses **Bring Your Own Key**: your OpenAI API key is stored in the Mac Keychain, and narration and selected screenshots are sent directly to OpenAI. Recordings, screenshots, generated files, and PDFs remain in the output folder you choose. The Polyform Covered and public-link implementation remains in the codebase but is disabled until the managed service is ready for a signed end-to-end release test.
 
-Anonymous feature-usage sharing is optional and off by default. When enabled, JesSee records only completed feature names, timestamps, app version, counts, and a random installation ID. It never includes media, narration, story text, filenames, email, or API keys. See [Feature usage events](docs/FEATURE_USAGE_EVENTS.md) for the exact contract.
+Anonymous feature-usage sharing is optional and off by default. When enabled, JesSee sends completed feature names, app version, counts, and a random installation ID directly to GA4. It never includes media, narration, story text, filenames, email, or API keys. See [Feature usage events](docs/FEATURE_USAGE_EVENTS.md) for the exact contract.
 
 ## Install
 
@@ -67,6 +68,8 @@ open mac/build/JesSee.app
 `npm run check` builds the embedded story editor, runs the Swift test suite, creates the local app bundle, and verifies its signature.
 
 The public release workflow creates a universal Developer ID-signed app, submits the app and DMG to Apple for notarization, and generates the signed Sparkle update feed. See [Signed Mac releases and automatic updates](docs/AUTOMATIC_UPDATES.md).
+
+Polyform Covered workflow contracts and release secrets are documented in [Polyform setup for JesSee](docs/POLYFORM_SETUP.md).
 
 ## Website
 

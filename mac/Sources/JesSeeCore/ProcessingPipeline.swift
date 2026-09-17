@@ -1,18 +1,48 @@
 import Foundation
 
+public enum StoryProcessingService: Sendable {
+  case polyform(client: PolyformClient, accessToken: String)
+  case openAI(client: DirectOpenAIClient, apiKey: String)
+
+  func transcribe(audioURL: URL) async throws -> TranscriptDocument {
+    switch self {
+    case .polyform(let client, let accessToken):
+      try await client.transcribe(audioURL: audioURL, accessToken: accessToken)
+    case .openAI(let client, let apiKey):
+      try await client.transcribe(audioURL: audioURL, apiKey: apiKey)
+    }
+  }
+
+  func createStory(
+    transcript: TranscriptDocument, frames: [CapturedFrame], captureDirectory: URL,
+    includeScreenshotPixels: Bool
+  ) async throws -> StoryDocument {
+    switch self {
+    case .polyform(let client, let accessToken):
+      try await client.createStory(
+        transcript: transcript, frames: frames, captureDirectory: captureDirectory,
+        accessToken: accessToken, includeScreenshotPixels: includeScreenshotPixels)
+    case .openAI(let client, let apiKey):
+      try await client.createStory(
+        transcript: transcript, frames: frames, captureDirectory: captureDirectory,
+        apiKey: apiKey, includeScreenshotPixels: includeScreenshotPixels)
+    }
+  }
+}
+
 public struct CaptureProcessor: Sendable {
   public typealias ProgressHandler = @Sendable (CaptureRecord) async -> Void
 
   private let workspace: CaptureWorkspace
-  private let client: OpenAIClient
+  private let service: StoryProcessingService
 
-  public init(workspace: CaptureWorkspace, client: OpenAIClient = OpenAIClient()) {
+  public init(workspace: CaptureWorkspace, service: StoryProcessingService) {
     self.workspace = workspace
-    self.client = client
+    self.service = service
   }
 
   public func process(
-    recordID: String, apiKey: String, includeScreenshotPixels: Bool = true,
+    recordID: String, includeScreenshotPixels: Bool = true,
     onProgress: ProgressHandler? = nil
   )
     async throws -> CaptureRecord
@@ -31,7 +61,7 @@ public struct CaptureProcessor: Sendable {
       try await MediaTools.extractAudio(from: mediaURL, to: audioURL)
       try await update(&record, stage: .transcribing, onProgress: onProgress)
 
-      let transcript = try await client.transcribe(audioURL: audioURL, apiKey: apiKey)
+      let transcript = try await service.transcribe(audioURL: audioURL)
       try await workspace.write(transcript, filename: "transcript.json", for: record)
       try MediaTools.srt(from: transcript).write(
         to: directory.appendingPathComponent("transcript.srt"), atomically: true, encoding: .utf8)
@@ -55,11 +85,10 @@ public struct CaptureProcessor: Sendable {
       record.imageTimes = Dictionary(uniqueKeysWithValues: frames.map { ($0.filename, $0.seconds) })
       try await update(&record, stage: .creatingStory, onProgress: onProgress)
 
-      let story = try await client.createStory(
+      let story = try await service.createStory(
         transcript: transcript,
         frames: frames,
         captureDirectory: directory,
-        apiKey: apiKey,
         includeScreenshotPixels: includeScreenshotPixels
       )
       try await workspace.write(story, filename: "story.json", for: record)

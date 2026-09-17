@@ -44,9 +44,20 @@ fi
 if [[ -n "${JESSEE_SPARKLE_PUBLIC_KEY:-}" ]]; then
   /usr/libexec/PlistBuddy -c "Set :SUPublicEDKey $JESSEE_SPARKLE_PUBLIC_KEY" "$app_dir/Contents/Info.plist"
 fi
-if [[ -n "${JESSEE_FEATURE_USAGE_ENDPOINT:-}" ]]; then
-  /usr/libexec/PlistBuddy -c "Add :PFFeatureUsageEndpoint string $JESSEE_FEATURE_USAGE_ENDPOINT" "$app_dir/Contents/Info.plist"
-fi
+runtime_settings=(
+  "PFTranscriptionWorkflowURL:JESSEE_TRANSCRIPTION_WORKFLOW_URL"
+  "PFStoryWorkflowURL:JESSEE_STORY_WORKFLOW_URL"
+  "PFGA4MeasurementID:JESSEE_GA4_MEASUREMENT_ID"
+  "PFGA4APISecret:JESSEE_GA4_API_SECRET"
+)
+for setting in "${runtime_settings[@]}"; do
+  plist_key=${setting%%:*}
+  environment_key=${setting##*:}
+  value=${(P)environment_key:-}
+  if [[ -n "$value" ]]; then
+    /usr/libexec/PlistBuddy -c "Add :$plist_key string $value" "$app_dir/Contents/Info.plist"
+  fi
+done
 
 iconset=$(mktemp -d)/JesSee.iconset
 mkdir -p "$iconset"

@@ -25,7 +25,7 @@ The demo should feel like one continuous transformation, not a tour of extension
 - Narrate the goal, the reason for each action, and the visible result.
 - Pause for one beat after an important state change so JesSee has a strong evidence frame.
 - Use draw or highlight once only when it makes the story clearer.
-- Preflight the microphone, API key, macOS screen-recording permission, and PDF output before presenting.
+- Preflight the microphone, your selected AI option (Polyform sign-in or OpenAI key), macOS screen-recording permission, and PDF output before presenting.
 - Keep one completed capture ready as a fallback, but begin with a fresh recording.
 
 ## UX bar

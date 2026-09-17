@@ -5,14 +5,250 @@ import Testing
 
 @testable import JesSeeCore
 
+private final class StubURLProtocol: URLProtocol, @unchecked Sendable {
+  struct Stub {
+    var status: Int
+    var data: Data
+  }
+
+  private static let lock = NSLock()
+  nonisolated(unsafe) private static var stubs: [Stub] = []
+  nonisolated(unsafe) private static var capturedRequests: [URLRequest] = []
+  nonisolated(unsafe) private static var capturedBodies: [Data?] = []
+
+  static func prepare(_ values: [Stub]) {
+    lock.lock()
+    stubs = values
+    capturedRequests = []
+    capturedBodies = []
+    lock.unlock()
+  }
+
+  static func requests() -> [URLRequest] {
+    lock.lock()
+    defer { lock.unlock() }
+    return capturedRequests
+  }
+
+  static func bodies() -> [Data?] {
+    lock.lock()
+    defer { lock.unlock() }
+    return capturedBodies
+  }
+
+  override class func canInit(with request: URLRequest) -> Bool { true }
+  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+  override func startLoading() {
+    let body = Self.readBody(from: request)
+    Self.lock.lock()
+    Self.capturedRequests.append(request)
+    Self.capturedBodies.append(body)
+    let stub = Self.stubs.removeFirst()
+    Self.lock.unlock()
+    let response = HTTPURLResponse(
+      url: request.url!, statusCode: stub.status, httpVersion: nil,
+      headerFields: ["Content-Type": "application/json"])!
+    client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+    client?.urlProtocol(self, didLoad: stub.data)
+    client?.urlProtocolDidFinishLoading(self)
+  }
+
+  override func stopLoading() {}
+
+  private static func readBody(from request: URLRequest) -> Data? {
+    if let body = request.httpBody { return body }
+    guard let stream = request.httpBodyStream else { return nil }
+    stream.open()
+    defer { stream.close() }
+    var data = Data()
+    var buffer = [UInt8](repeating: 0, count: 4096)
+    while stream.hasBytesAvailable {
+      let count = stream.read(&buffer, maxLength: buffer.count)
+      guard count > 0 else { break }
+      data.append(contentsOf: buffer.prefix(count))
+    }
+    return data
+  }
+}
+
+private struct WorkflowTestValue: Decodable, Equatable {
+  var text: String
+}
+
+@Suite(.serialized) struct PolyformClientTests {
+@Test func polyformClientUsesDocumentedSnakeCaseContracts() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [StubURLProtocol.self]
+  let client = PolyformClient(
+    configuration: PolyformServiceConfiguration(
+      apiBase: URL(string: "https://example.test")!, appKey: "app-key",
+      transcriptionWorkflowURL: URL(string: "https://example.test/transcribe")!,
+      storyWorkflowURL: URL(string: "https://example.test/story")!),
+    session: URLSession(configuration: configuration))
+  StubURLProtocol.prepare([
+    .init(status: 200, data: Data(#"{"attempt_id":"attempt-1","expires_in":600}"#.utf8)),
+    .init(
+      status: 200,
+      data: Data(
+        #"{"access_token":"token-1","expires_in":86400,"email":"person@example.com","grant_id":"grant-1"}"#.utf8)),
+    .init(
+      status: 200,
+      data: Data(
+        #"{"success":true,"result":{"result":"```json\n{\"title\":\"Story\",\"sourceURL\":\"example.com/page\",\"summary\":\"Summary\",\"key_points\":[\"Point\"],\"steps\":[{\"start_seconds\":0,\"end_seconds\":1,\"screenshot_time_seconds\":null,\"title\":\"Step\",\"narrative\":\"Do it.\",\"transcript\":\"Do it\"}]}\n```"}}"#.utf8)),
+    .init(
+      status: 200,
+      data: Data(
+        #"{"upload_id":"upload-1","upload_url":"https://example.test/upload-target"}"#.utf8)),
+    .init(status: 200, data: Data()),
+    .init(
+      status: 200,
+      data: Data(
+        #"{"upload_id":"upload-1","public_url":"https://files.example.test/story.pdf"}"#.utf8)),
+  ])
+
+  let attempt = try await client.requestSignIn(email: "person@example.com", challenge: "challenge")
+  #expect(attempt.id == "attempt-1")
+  let session = try await client.exchangeSignIn(attemptID: attempt.id, verifier: "verifier")
+  #expect(session.grantID == "grant-1")
+  let story = try await client.createStory(
+    transcript: TranscriptDocument(
+      text: "Do it", language: "en", duration: 1,
+      segments: [TranscriptSegment(id: 0, start: 0, end: 1, text: "Do it")], words: [],
+      provider: "Polyform", model: "whisper-1"),
+    frames: [], captureDirectory: FileManager.default.temporaryDirectory,
+    accessToken: session.accessToken, includeScreenshotPixels: false)
+  #expect(story.sourceURL == "https://example.com/page")
+
+  let temporaryPDF = FileManager.default.temporaryDirectory.appendingPathComponent(
+    "\(UUID().uuidString).pdf")
+  try Data("pdf".utf8).write(to: temporaryPDF)
+  defer { try? FileManager.default.removeItem(at: temporaryPDF) }
+  let upload = try await client.publishPDF(at: temporaryPDF, accessToken: session.accessToken)
+  #expect(upload.id == "upload-1")
+  #expect(upload.publicURL?.absoluteString == "https://files.example.test/story.pdf")
+
+  let requests = StubURLProtocol.requests()
+  #expect(requests.count == 6)
+  let bodies = StubURLProtocol.bodies()
+  let requestBody = try #require(bodies.first ?? nil)
+  let exchangeBody = try #require(bodies.dropFirst().first ?? nil)
+  let storyBody = try #require(bodies[2])
+  let uploadBody = try #require(bodies[3])
+  let requestJSON = try #require(
+    JSONSerialization.jsonObject(with: requestBody) as? [String: Any])
+  let exchangeJSON = try #require(
+    JSONSerialization.jsonObject(with: exchangeBody) as? [String: Any])
+  let storyJSON = try #require(JSONSerialization.jsonObject(with: storyBody) as? [String: Any])
+  let uploadJSON = try #require(JSONSerialization.jsonObject(with: uploadBody) as? [String: Any])
+  #expect(requestJSON["code_challenge"] as? String == "challenge")
+  #expect(exchangeJSON["attempt_id"] as? String == "attempt-1")
+  #expect(storyJSON["user_input"] != nil)
+  #expect(storyJSON["output_json"] != nil)
+  #expect(uploadJSON["content_type"] as? String == "application/pdf")
+}
+
+@Test func publicPDFWithoutUsableLinkIsDeleted() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [StubURLProtocol.self]
+  let client = PolyformClient(
+    configuration: PolyformServiceConfiguration(
+      apiBase: URL(string: "https://example.test")!, appKey: "app-key"),
+    session: URLSession(configuration: configuration))
+  StubURLProtocol.prepare([
+    .init(
+      status: 200,
+      data: Data(
+        #"{"upload_id":"upload-orphan","upload_url":"https://example.test/upload-target"}"#.utf8)),
+    .init(status: 200, data: Data()),
+    .init(status: 200, data: Data(#"{"upload_id":"upload-orphan"}"#.utf8)),
+    .init(status: 204, data: Data()),
+  ])
+
+  let temporaryPDF = FileManager.default.temporaryDirectory.appendingPathComponent(
+    "\(UUID().uuidString).pdf")
+  try Data("pdf".utf8).write(to: temporaryPDF)
+  defer { try? FileManager.default.removeItem(at: temporaryPDF) }
+
+  var failedAsExpected = false
+  do {
+    _ = try await client.publishPDF(at: temporaryPDF, accessToken: "token")
+  } catch {
+    failedAsExpected = true
+  }
+  #expect(failedAsExpected)
+  let requests = StubURLProtocol.requests()
+  #expect(requests.count == 4)
+  #expect(requests.last?.httpMethod == "DELETE")
+  #expect(requests.last?.url?.path.hasSuffix("/uploads/upload-orphan") == true)
+}
+
+@Test func successfulTranscriptionSurvivesTemporaryUploadCleanupFailure() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [StubURLProtocol.self]
+  let client = PolyformClient(
+    configuration: PolyformServiceConfiguration(
+      apiBase: URL(string: "https://example.test")!, appKey: "app-key",
+      transcriptionWorkflowURL: URL(string: "https://example.test/transcribe")!),
+    session: URLSession(configuration: configuration))
+  StubURLProtocol.prepare([
+    .init(
+      status: 200,
+      data: Data(
+        #"{"upload_id":"audio-1","upload_url":"https://example.test/upload-target"}"#.utf8)),
+    .init(status: 200, data: Data()),
+    .init(status: 200, data: Data(#"{"upload_id":"audio-1"}"#.utf8)),
+    .init(
+      status: 200,
+      data: Data(
+        #"{"success":true,"result":{"text":"Done","model":"whisper-1","language":"en","duration_seconds":1,"segments":[{"id":0,"start":0,"end":1,"text":"Done"}],"words":[]}}"#.utf8)),
+    .init(status: 503, data: Data(#"{"error":"try again"}"#.utf8)),
+  ])
+
+  let temporaryAudio = FileManager.default.temporaryDirectory.appendingPathComponent(
+    "\(UUID().uuidString).m4a")
+  try Data("audio".utf8).write(to: temporaryAudio)
+  defer { try? FileManager.default.removeItem(at: temporaryAudio) }
+
+  let transcript = try await client.transcribe(audioURL: temporaryAudio, accessToken: "token")
+  #expect(transcript.text == "Done")
+  #expect(StubURLProtocol.requests().last?.httpMethod == "DELETE")
+}
+}
+
+@Test func workflowResponsesAcceptDirectAndLightWrapperResults() throws {
+  let decoder = JSONDecoder()
+  let direct = try decoder.decode(
+    WorkflowResponse<WorkflowTestValue>.self,
+    from: Data(#"{"success":true,"result":{"text":"hello"}}"#.utf8))
+  let wrapped = try decoder.decode(
+    WorkflowResponse<WorkflowTestValue>.self,
+    from: Data(#"{"success":true,"result":{"result":{"text":"hello"}}}"#.utf8))
+  let wrappedJSONText = try decoder.decode(
+    WorkflowResponse<WorkflowTestValue>.self,
+    from: Data(
+      #"{"success":true,"result":{"result":"```json\n{\"text\":\"hello\"}\n```"}}"#.utf8))
+
+  #expect(direct.result == WorkflowTestValue(text: "hello"))
+  #expect(wrapped.result == direct.result)
+  #expect(wrappedJSONText.result == direct.result)
+}
+
 @Test func setupResumesAfterPersistedSteps() {
-  #expect(JesSeeConfiguration().pendingSetupStep(hasAPIKey: false) == 0)
-  #expect(JesSeeConfiguration().pendingSetupStep(hasAPIKey: true) == 1)
   #expect(
-    JesSeeConfiguration(email: "person@example.com").pendingSetupStep(hasAPIKey: true) == 2)
+    JesSeeConfiguration().pendingSetupStep(hasPolyformSession: false, hasAPIKey: false) == 0)
   #expect(
-    JesSeeConfiguration(email: "person@example.com", outputFolderPath: "/tmp/JesSee")
-      .pendingSetupStep(hasAPIKey: true) == 3)
+    JesSeeConfiguration(aiProviderMode: .bringYourOwnKey)
+      .pendingSetupStep(hasPolyformSession: false, hasAPIKey: false) == 1)
+  #expect(
+    JesSeeConfiguration(aiProviderMode: .bringYourOwnKey)
+      .pendingSetupStep(hasPolyformSession: false, hasAPIKey: true) == 2)
+  #expect(
+    JesSeeConfiguration(outputFolderPath: "/tmp/JesSee", aiProviderMode: .bringYourOwnKey)
+      .pendingSetupStep(hasPolyformSession: false, hasAPIKey: true) == 3)
+  #expect(
+    JesSeeConfiguration(aiProviderMode: .polyformCovered)
+      .pendingSetupStep(hasPolyformSession: true, hasAPIKey: false) == 2)
 }
 
 @Test func keychainRoundTripPersistsAcrossCalls() throws {
@@ -24,6 +260,23 @@ import Testing
   #expect(try JesSeeKeychain.loadAPIKey(service: service) == key)
   try JesSeeKeychain.removeAPIKey(service: service)
   #expect(try JesSeeKeychain.loadAPIKey(service: service) == nil)
+}
+
+@Test func workflowSessionRoundTripPersistsAcrossCalls() throws {
+  let service = "ai.polyform.jessee.workflow-tests.\(UUID().uuidString)"
+  let session = WorkflowAuthSession(
+    accessToken: "token", email: "person@example.com", grantID: "grant",
+    expiresAt: Date().addingTimeInterval(3_600))
+  defer { try? JesSeeKeychain.removeWorkflowSession(service: service) }
+
+  try JesSeeKeychain.saveWorkflowSession(session, service: service)
+  let reloaded = try #require(try JesSeeKeychain.loadWorkflowSession(service: service))
+  #expect(reloaded.accessToken == session.accessToken)
+  #expect(reloaded.email == session.email)
+  #expect(reloaded.grantID == session.grantID)
+  #expect(abs(reloaded.expiresAt.timeIntervalSince(session.expiresAt)) < 1)
+  try JesSeeKeychain.removeWorkflowSession(service: service)
+  #expect(try JesSeeKeychain.loadWorkflowSession(service: service) == nil)
 }
 
 @Test func captureDimensionsPreserveAspectRatioWithinEncoderBounds() {
@@ -92,9 +345,9 @@ import Testing
 @Test func configurationFromOlderBuildGetsSafePrivacyDefault() throws {
   let data = Data(#"{"email":"a@b.com","outputFolderPath":"/tmp","setupCompleted":true}"#.utf8)
   let configuration = try JesSeeJSON.decoder().decode(JesSeeConfiguration.self, from: data)
-  #expect(configuration.shareScreenshotsWithOpenAI)
+  #expect(configuration.shareScreenshotsForStory)
   #expect(!configuration.shareAnonymousFeatureUsage)
-  #expect(configuration.analyticsUserID == nil)
+  #expect(configuration.aiProviderMode == .bringYourOwnKey)
 }
 
 @Test func featureUsageWritesAGA4ReadyEventWithoutEmail() async throws {
@@ -117,7 +370,6 @@ import Testing
   let clientIDParts = event.clientID.split(separator: ".")
   #expect(clientIDParts.count == 2)
   #expect(clientIDParts.allSatisfy { UInt32($0) != nil })
-  #expect(event.userID == nil)
   #expect(line.contains(#""activity":"capture_added""#))
   #expect(!line.contains("email"))
   #expect(!line.contains("filename"))
@@ -126,26 +378,20 @@ import Testing
   #expect(!FileManager.default.fileExists(atPath: clientIDURL.path))
 }
 
-@Test func featureUsageSeparatesTrackAndIdentifyPayloads() async throws {
-  let userID = UUID().uuidString.lowercased()
+@Test func featureUsageBuildsDirectGA4PayloadWithoutIdentityData() throws {
   let event = FeatureUsageEvent(
     activityID: UUID().uuidString.lowercased(), occurredAt: Date(),
-    activity: FeatureUsageActivity.captureAdded.rawValue, clientID: "123.456", userID: userID,
+    activity: FeatureUsageActivity.captureAdded.rawValue, clientID: "123.456",
     product: "jessee", appVersion: "test", feature: "video_import", status: "completed",
     source: nil, mode: nil, itemCount: nil)
-  let identity = FeatureUsageIdentity(
-    occurredAt: Date(), product: "jessee", appVersion: "test", clientID: "123.456",
-    userID: userID, email: "person@example.com")
-  let trackData = try #require(FeatureUsageRecorder.encodeEnvelope(event, kind: "track"))
-  let identifyData = try #require(FeatureUsageRecorder.encodeEnvelope(identity, kind: "identify"))
-  let track = try #require(JSONSerialization.jsonObject(with: trackData) as? [String: Any])
-  let identify = try #require(JSONSerialization.jsonObject(with: identifyData) as? [String: Any])
+  let data = try #require(FeatureUsageRecorder.ga4Payload(event))
+  let payload = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+  let events = try #require(payload["events"] as? [[String: Any]])
 
-  #expect(track["kind"] as? String == "track")
-  #expect((track["payload"] as? [String: Any])?["email"] == nil)
-  #expect((track["payload"] as? [String: Any])?["user_id"] as? String == userID)
-  #expect(identify["kind"] as? String == "identify")
-  #expect((identify["payload"] as? [String: Any])?["email"] as? String == "person@example.com")
+  #expect(payload["client_id"] as? String == "123.456")
+  #expect(events.first?["name"] as? String == "capture_added")
+  #expect(String(decoding: data, as: UTF8.self).contains("email") == false)
+  #expect(String(decoding: data, as: UTF8.self).contains("user_id") == false)
 }
 
 @Test func captionsPreserveSegmentTiming() {
@@ -206,10 +452,10 @@ import Testing
     CapturedFrame(seconds: 30, filename: "third.jpg"),
   ]
   #expect(
-    OpenAIClient.selectedFrame(requestedSeconds: 10, stepEndSeconds: 30, frames: frames)?.filename
+    PolyformClient.selectedFrame(requestedSeconds: 10, stepEndSeconds: 30, frames: frames)?.filename
       == "first.jpg")
   #expect(
-    OpenAIClient.selectedFrame(requestedSeconds: 99, stepEndSeconds: 20, frames: frames)?.filename
+    PolyformClient.selectedFrame(requestedSeconds: 99, stepEndSeconds: 20, frames: frames)?.filename
       == "second.jpg")
 }
 
@@ -218,7 +464,7 @@ import Testing
     CapturedFrame(
       seconds: Double(index), filename: "frame-\(index).jpg", hasVisibleMarkup: index == 7)
   }
-  let selected = OpenAIClient.planningFrames(frames, maximum: 12)
+  let selected = PolyformClient.planningFrames(frames, maximum: 12)
   #expect(selected.count == 12)
   #expect(selected.contains(where: { $0.filename == "frame-7.jpg" }))
 }
@@ -228,7 +474,7 @@ import Testing
     CapturedFrame(
       seconds: Double(index), filename: "frame-\(index).jpg", hasVisibleMarkup: index >= 3)
   }
-  let selected = OpenAIClient.planningFrames(frames, maximum: 12)
+  let selected = PolyformClient.planningFrames(frames, maximum: 12)
   #expect(selected.count == 12)
   #expect(selected.contains(where: { $0.filename == "frame-0.jpg" }))
   #expect(selected.contains(where: { $0.hasVisibleMarkup }))
@@ -238,11 +484,11 @@ import Testing
   let frames = (0..<18).map { index in
     CapturedFrame(seconds: Double(index), filename: "frame-\(index).jpg")
   }
-  let attached = OpenAIClient.planningFrames(frames, maximum: 12)
+  let attached = PolyformClient.planningFrames(frames, maximum: 12)
   let metadataOnly = try #require(frames.first { frame in
     !attached.contains(where: { $0.filename == frame.filename })
   })
-  let selected = OpenAIClient.selectedFrame(
+  let selected = PolyformClient.selectedFrame(
     requestedSeconds: metadataOnly.seconds,
     stepEndSeconds: attached.last?.seconds ?? 0,
     frames: attached)
@@ -252,12 +498,22 @@ import Testing
 }
 
 @Test func webpageURLsAreNormalizedAndUnsafeValuesAreRejected() {
-  #expect(OpenAIClient.normalizedWebURL("example.com/path") == "https://example.com/path")
-  #expect(OpenAIClient.normalizedWebURL("https://example.com/path") == "https://example.com/path")
-  #expect(OpenAIClient.normalizedWebURL("http://localhost:3000/page") == "http://localhost:3000/page")
-  #expect(OpenAIClient.normalizedWebURL("https://jira/browse/ABC") == "https://jira/browse/ABC")
-  #expect(OpenAIClient.normalizedWebURL("file:///tmp/private") == nil)
-  #expect(OpenAIClient.normalizedWebURL("not a URL") == nil)
+  #expect(PolyformClient.normalizedWebURL("example.com/path") == "https://example.com/path")
+  #expect(
+    PolyformClient.normalizedWebURL("https://example.com/path") == "https://example.com/path")
+  #expect(
+    PolyformClient.normalizedWebURL("http://localhost:3000/page") == "http://localhost:3000/page")
+  #expect(PolyformClient.normalizedWebURL("https://jira/browse/ABC") == "https://jira/browse/ABC")
+  #expect(PolyformClient.normalizedWebURL("file:///tmp/private") == nil)
+  #expect(PolyformClient.normalizedWebURL("not a URL") == nil)
+}
+
+@Test func pkceCredentialsUseURLSafeVerifierAndS256Challenge() {
+  let credentials = PKCECredentials.generate()
+  #expect(credentials.verifier.count >= 43)
+  #expect(credentials.challenge.count == 43)
+  #expect(credentials.verifier.range(of: #"^[A-Za-z0-9_-]+$"#, options: .regularExpression) != nil)
+  #expect(credentials.challenge.range(of: #"^[A-Za-z0-9_-]+$"#, options: .regularExpression) != nil)
 }
 
 @Test func workspaceKeepsImportedMediaAndHistory() async throws {

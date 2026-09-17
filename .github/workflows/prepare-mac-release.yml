@@ -46,6 +46,8 @@ jobs:
           APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
           APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
           APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          GA4_MEASUREMENT_ID: ${{ secrets.GA4_MEASUREMENT_ID }}
+          GA4_API_SECRET: ${{ secrets.GA4_API_SECRET }}
         shell: bash
         run: |
           set -euo pipefail
@@ -57,6 +59,10 @@ jobs:
           fi
           if [[ -z "$SPARKLE_PRIVATE_KEY" || -z "$DEVELOPER_ID_P12_BASE64" || -z "$DEVELOPER_ID_P12_PASSWORD" || -z "$APPLE_NOTARY_KEY" || -z "$APPLE_NOTARY_KEY_ID" || -z "$APPLE_NOTARY_ISSUER_ID" ]]; then
             echo "Configure the Sparkle, Developer ID, and Apple notarization release credentials." >&2
+            exit 1
+          fi
+          if [[ -z "$GA4_MEASUREMENT_ID" || -z "$GA4_API_SECRET" ]]; then
+            echo "Configure both GA4 runtime values before preparing a release." >&2
             exit 1
           fi
           latest_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
@@ -123,7 +129,8 @@ jobs:
       - name: Package the signed and notarized release
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
-          JESSEE_FEATURE_USAGE_ENDPOINT: ${{ secrets.FEATURE_USAGE_ENDPOINT }}
+          JESSEE_GA4_MEASUREMENT_ID: ${{ secrets.GA4_MEASUREMENT_ID }}
+          JESSEE_GA4_API_SECRET: ${{ secrets.GA4_API_SECRET }}
         run: mac/Support/package-release.sh "${{ inputs.version }}" "${{ inputs.build_number }}"
 
       - name: Create the reviewable draft release

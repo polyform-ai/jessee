@@ -2,7 +2,8 @@ import AppKit
 import JesSeeCore
 import SwiftUI
 
-private let accent = Color(red: 0.35, green: 0.32, blue: 1.0)
+private let accent = Color(red: 0.337, green: 0.325, blue: 0.91)
+private let signal = Color(red: 1.0, green: 0.353, blue: 0.373)
 
 struct MenuPopoverView: View {
   @ObservedObject var store: AppStore
@@ -42,9 +43,9 @@ private struct HeaderView: View {
     VStack(spacing: 5) {
       HStack(spacing: 11) {
         ZStack {
-          RoundedRectangle(cornerRadius: 10).fill(accent.gradient)
-          Image(systemName: "viewfinder").font(.system(size: 19, weight: .bold)).foregroundStyle(
-            .white)
+          RoundedRectangle(cornerRadius: 10).fill(accent.opacity(0.12))
+          Image(nsImage: NSApplication.shared.applicationIconImage)
+            .resizable().scaledToFit()
         }
         .frame(width: 36, height: 36)
         VStack(alignment: .leading, spacing: 1) {
@@ -280,8 +281,13 @@ struct SetupView: View {
       SetupProgress(step: store.setupStep)
       Group {
         switch store.setupStep {
-        case 0: APIKeyStep(store: store)
-        case 1: EmailStep(store: store)
+        case 0: ProviderChoiceStep(store: store)
+        case 1:
+          if store.configuration.aiProviderMode == .polyformCovered {
+            PolyformCoveredStep(store: store)
+          } else {
+            APIKeyStep(store: store)
+          }
         case 2: FolderStep(store: store)
         default: MicrophoneStep(store: store, onFinished: onFinished)
         }
@@ -294,7 +300,7 @@ struct SetupView: View {
 
 private struct SetupProgress: View {
   let step: Int
-  private let labels = ["Key", "Email", "Folder", "Mic"]
+  private let labels = ["Plan", "Connect", "Folder", "Mic"]
   var body: some View {
     HStack(spacing: 5) {
       ForEach(labels.indices, id: \.self) { index in
@@ -304,6 +310,106 @@ private struct SetupProgress: View {
         }
       }
     }
+  }
+}
+
+private struct ProviderChoiceStep: View {
+  @ObservedObject var store: AppStore
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Label("Choose how AI is covered", systemImage: "sparkles").font(.headline)
+      Text(
+        store.isPolyformCoveredAvailable
+          ? "Both options create the same editable story and PDF."
+          : "Bring your own OpenAI key to create editable stories and PDFs."
+      )
+        .font(.caption).foregroundStyle(.secondary)
+      if store.isPolyformCoveredAvailable {
+        providerButton(
+          title: "Polyform Covered",
+          detail: "Sign in by email. Polyform covers transcription and AI costs.",
+          icon: "heart.fill", mode: .polyformCovered)
+      } else {
+        Label("Polyform Covered is temporarily unavailable", systemImage: "clock")
+          .font(.caption).foregroundStyle(.secondary)
+      }
+      providerButton(
+        title: "Bring Your Own Key",
+        detail: "Use your own OpenAI API key, saved securely in this Mac's Keychain.",
+        icon: "key.fill", mode: .bringYourOwnKey)
+    }
+  }
+
+  private func providerButton(
+    title: String, detail: String, icon: String, mode: AIProviderMode
+  ) -> some View {
+    Button {
+      store.selectProvider(mode)
+    } label: {
+      HStack(alignment: .top, spacing: 11) {
+        Image(systemName: icon).foregroundStyle(mode == .polyformCovered ? signal : accent)
+          .frame(width: 24)
+        VStack(alignment: .leading, spacing: 3) {
+          Text(title).font(.subheadline.weight(.semibold))
+          Text(detail).font(.caption).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        Spacer()
+        Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+      }
+      .padding(12).contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .background(accent.opacity(0.055), in: RoundedRectangle(cornerRadius: 11))
+    .overlay(RoundedRectangle(cornerRadius: 11).stroke(accent.opacity(0.16)))
+  }
+}
+
+private struct PolyformCoveredStep: View {
+  @ObservedObject var store: AppStore
+  @State private var email = ""
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 11) {
+      Label("Polyform Covered", systemImage: "heart.fill").font(.headline).foregroundStyle(signal)
+      Text("Polyform.AI is the company that built JesSee. We cover the AI cost.")
+        .font(.caption).foregroundStyle(.secondary)
+      Text("If JesSee helps you, we'd love either:").font(.caption.weight(.semibold))
+      Text(
+        "• Connect ahmed@polyform.ai with a Series A company hiring a data team or hitting the limits of AI for data.\n• Donate via Venmo @Ahmed-Elsamadisi to cover your own use or sponsor someone else's."
+      )
+      .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+      HStack {
+        Link("Email Ahmed", destination: URL(string: "mailto:ahmed@polyform.ai")!)
+        Link(
+          "Open Venmo", destination: URL(string: "https://account.venmo.com/u/Ahmed-Elsamadisi")!)
+      }.font(.caption)
+
+      switch store.authenticationState {
+      case .signedIn(let connectedEmail):
+        Label("Signed in as \(connectedEmail)", systemImage: "checkmark.circle.fill")
+          .font(.caption).foregroundStyle(.green)
+        Button("Continue") { store.setupStep = 2 }
+          .buttonStyle(.borderedProminent).tint(accent)
+      case .requesting:
+        ProgressView("Sending your approval email…").controlSize(.small)
+      case .waitingForApproval(let pendingEmail):
+        Label("Approve the link sent to \(pendingEmail)", systemImage: "envelope.badge")
+          .font(.caption).foregroundStyle(.secondary)
+        HStack {
+          ProgressView().controlSize(.small)
+          Text("JesSee will continue automatically.").font(.caption)
+          Spacer()
+          Button("Cancel") { store.cancelSignIn() }
+        }
+      case .signedOut:
+        TextField("you@company.com", text: $email).textFieldStyle(.roundedBorder)
+        Button("Email me a sign-in link") { store.beginSignIn(email) }
+          .buttonStyle(.borderedProminent).tint(accent).disabled(email.isEmpty)
+      }
+      Button("Choose a different option") { store.setupStep = 0 }.buttonStyle(.link)
+    }.onAppear { email = store.configuration.email }
   }
 }
 
@@ -317,8 +423,16 @@ private struct APIKeyStep: View {
       Text(
         "Your key stays in this Mac's Keychain. Narration and selected screenshots are sent directly to OpenAI for transcription and story creation."
       ).font(.caption).foregroundStyle(.secondary)
+      if store.hasAPIKey {
+        Label("An OpenAI key is already saved", systemImage: "checkmark.circle.fill")
+          .font(.caption).foregroundStyle(.green)
+        Button("Use saved key") { store.setupStep = 2 }
+          .buttonStyle(.borderedProminent).tint(accent)
+        Divider()
+        Text("Or replace it:").font(.caption.weight(.semibold))
+      }
       SecureField("sk-…", text: $key).textFieldStyle(.roundedBorder)
-      Button(store.isTestingAPI ? "Checking…" : "Save and test") {
+      Button(store.isTestingAPIKey ? "Checking…" : "Save and test") {
         Task {
           errorMessage = nil
           if await store.saveAPIKey(key) {
@@ -328,27 +442,13 @@ private struct APIKeyStep: View {
           }
         }
       }
-      .buttonStyle(.borderedProminent).tint(accent).disabled(key.isEmpty || store.isTestingAPI)
+      .buttonStyle(.borderedProminent).tint(accent).disabled(key.isEmpty || store.isTestingAPIKey)
       if let errorMessage {
         Label(errorMessage, systemImage: "exclamationmark.circle.fill")
           .font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
       }
+      Button("Choose a different option") { store.setupStep = 0 }.buttonStyle(.link)
     }
-  }
-}
-
-private struct EmailStep: View {
-  @ObservedObject var store: AppStore
-  @State private var email = ""
-  var body: some View {
-    VStack(alignment: .leading, spacing: 11) {
-      Label("Add your email", systemImage: "envelope").font(.headline)
-      Text("Saved in this app's settings to identify your local setup.").font(.caption)
-        .foregroundStyle(.secondary)
-      TextField("you@company.com", text: $email).textFieldStyle(.roundedBorder)
-      Button("Continue") { if store.saveEmail(email) { store.setupStep = 2 } }
-        .buttonStyle(.borderedProminent).tint(accent).disabled(email.isEmpty)
-    }.onAppear { email = store.configuration.email }
   }
 }
 
@@ -484,7 +584,9 @@ struct LibraryView: View {
   private func selectDefaultCapture() {
     if let selectedCaptureID = store.selectedCaptureID,
       store.captures.contains(where: { $0.id == selectedCaptureID })
-    { return }
+    {
+      return
+    }
     store.selectedCaptureID = store.captures.first?.id
   }
 }
@@ -509,6 +611,36 @@ private struct CaptureDetailView: View {
         }
         Spacer()
         if record.pdfFilename != nil {
+          if store.isPolyformCoveredAvailable,
+            store.configuration.aiProviderMode == .polyformCovered
+          {
+            if record.publicPDFURL != nil {
+              Button {
+                store.copyPublicPDFLink(record)
+              } label: {
+                Label("Copy public link", systemImage: "link")
+              }
+              .disabled(store.publishingCaptureID != nil)
+              Button {
+                store.publishPDF(record)
+              } label: {
+                Label("Update link", systemImage: "arrow.triangle.2.circlepath")
+              }
+              .disabled(store.publishingCaptureID != nil)
+            } else {
+              Button {
+                store.publishPDF(record)
+              } label: {
+                if store.publishingCaptureID == record.id {
+                  ProgressView().controlSize(.small)
+                  Text("Creating link…")
+                } else {
+                  Label("Create public link", systemImage: "link.badge.plus")
+                }
+              }
+              .disabled(store.publishingCaptureID != nil)
+            }
+          }
           Button("Open PDF") { store.openPDF(record) }.buttonStyle(.borderedProminent).tint(accent)
         }
         Button("Show in Finder") { store.reveal(record) }
@@ -579,7 +711,7 @@ struct WelcomeView: View {
   @Environment(\.dismissWindow) private var dismissWindow
   var body: some View {
     SetupView(store: store) { dismissWindow(id: "welcome") }
-      .padding(30).frame(width: 500, height: 470)
+      .padding(30).frame(width: 520, height: 600)
       .overlay(alignment: .top) { NoticeView(notice: store.notice).padding(.top, 16) }
   }
 }
@@ -589,47 +721,82 @@ struct SettingsView: View {
   @State private var email = ""
   @State private var key = ""
   @State private var apiSaved = false
-  @State private var emailSaved = false
   @State private var apiError: String?
-  @State private var emailError: String?
 
   var body: some View {
     Form {
-      Section("OpenAI") {
-        SecureField("Replace API key", text: $key)
-        Button(store.isTestingAPI ? "Checking…" : "Save and test key") {
-          Task {
-            apiSaved = await store.saveAPIKey(key)
-            if apiSaved {
-              key = ""
-              apiError = nil
-            } else if case .error(let message) = store.notice {
-              apiError = message
+      Section("AI processing") {
+        if store.isPolyformCoveredAvailable {
+          Picker(
+            "Plan",
+            selection: Binding(
+              get: { store.configuration.aiProviderMode ?? .polyformCovered },
+              set: { store.changeProviderFromSettings($0) }
+            )
+          ) {
+            Text("Polyform Covered").tag(AIProviderMode.polyformCovered)
+            Text("Bring Your Own Key").tag(AIProviderMode.bringYourOwnKey)
+          }
+          .pickerStyle(.segmented)
+        } else {
+          LabeledContent("Plan", value: "Bring Your Own Key")
+          Text("Polyform Covered is temporarily unavailable while its managed service is finalized.")
+            .font(.caption).foregroundStyle(.secondary)
+        }
+
+        if store.isPolyformCoveredAvailable,
+          store.configuration.aiProviderMode == .polyformCovered
+        {
+          Text(
+            "Polyform.AI built JesSee and covers its AI costs. You can support it by introducing ahmed@polyform.ai to a Series A company hiring a data team or hitting the limits of AI for data, or by donating via Venmo @Ahmed-Elsamadisi."
+          )
+          .font(.caption).foregroundStyle(.secondary)
+          HStack {
+            Link("Email Ahmed", destination: URL(string: "mailto:ahmed@polyform.ai")!)
+            Link(
+              "Open Venmo",
+              destination: URL(string: "https://account.venmo.com/u/Ahmed-Elsamadisi")!)
+          }
+          switch store.authenticationState {
+          case .signedIn(let connectedEmail):
+            Label("Signed in as \(connectedEmail)", systemImage: "checkmark.circle.fill")
+              .font(.caption).foregroundStyle(.green)
+            Button("Sign out") { store.signOut() }
+          case .requesting:
+            ProgressView("Sending your approval email…").controlSize(.small)
+          case .waitingForApproval(let pendingEmail):
+            HStack {
+              ProgressView().controlSize(.small)
+              Text("Approve the link sent to \(pendingEmail)").font(.caption)
+              Spacer()
+              Button("Cancel") { store.cancelSignIn() }
+            }
+          case .signedOut:
+            TextField("you@company.com", text: $email)
+            Button("Email me a sign-in link") { store.beginSignIn(email) }
+              .disabled(email.isEmpty)
+          }
+        } else {
+          SecureField(store.hasAPIKey ? "Replace OpenAI API key" : "OpenAI API key", text: $key)
+          Button(store.isTestingAPIKey ? "Checking…" : "Save and test key") {
+            Task {
+              apiSaved = await store.saveAPIKey(key)
+              if apiSaved {
+                key = ""
+                apiError = nil
+              } else if case .error(let message) = store.notice {
+                apiError = message
+              }
             }
           }
-        }
-        .disabled(key.isEmpty || store.isTestingAPI)
-        if apiSaved {
-          Label("Connected and saved in Keychain", systemImage: "checkmark.circle.fill")
-            .font(.caption).foregroundStyle(.green)
-        } else if let apiError {
-          Label(apiError, systemImage: "exclamationmark.circle.fill")
-            .font(.caption).foregroundStyle(.red)
-        }
-      }
-      Section("Account") {
-        TextField("Email", text: $email)
-        Button("Save email") {
-          emailSaved = store.saveEmail(email)
-          emailError = nil
-          if !emailSaved, case .error(let message) = store.notice { emailError = message }
-        }
-        if emailSaved {
-          Label("Email saved", systemImage: "checkmark.circle.fill")
-            .font(.caption).foregroundStyle(.green)
-        } else if let emailError {
-          Label(emailError, systemImage: "exclamationmark.circle.fill")
-            .font(.caption).foregroundStyle(.red)
+          .disabled(key.isEmpty || store.isTestingAPIKey)
+          if apiSaved || store.hasAPIKey {
+            Label("Saved securely in this Mac's Keychain", systemImage: "checkmark.circle.fill")
+              .font(.caption).foregroundStyle(.green)
+          } else if let apiError {
+            Label(apiError, systemImage: "exclamationmark.circle.fill")
+              .font(.caption).foregroundStyle(.red)
+          }
         }
       }
       Section("Library") {
@@ -653,15 +820,15 @@ struct SettingsView: View {
       }
       Section("Privacy") {
         Toggle(
-          "Share selected screenshots with OpenAI",
+          "Share selected screenshots for story creation",
           isOn: Binding(
-            get: { store.configuration.shareScreenshotsWithOpenAI },
+            get: { store.configuration.shareScreenshotsForStory },
             set: { store.setScreenshotSharing($0) }
           )
         )
         Text(
-          store.configuration.shareScreenshotsWithOpenAI
-            ? "Improves visual understanding. Original videos and the full library stay in your folder."
+          store.configuration.shareScreenshotsForStory
+            ? "Improves visual understanding. Selected evidence is sent through your chosen AI option. Original videos and the full library stay in your folder."
             : "Only narration, timestamps, and screenshot timing are used to plan the story."
         ).font(.caption).foregroundStyle(.secondary)
         Toggle(
@@ -672,7 +839,7 @@ struct SettingsView: View {
           )
         )
         Text(
-          "Shares completed feature names, times, app version, counts, and random analytics IDs. The Polyform collector may receive routine connection metadata such as your IP address. If you save an email, Polyform associates it with an opaque user ID; Google Analytics receives only that ID, never your email. Turning this off removes the local analytics ID. JesSee never includes recordings, screenshots, narration, story text, filenames, or API keys."
+          "Sends completed feature names, app version, counts, and a random installation ID directly to Google Analytics. It never sends your email, recordings, screenshots, narration, story text, filenames, or API keys. Turning this off removes the local analytics ID."
         ).font(.caption).foregroundStyle(.secondary)
       }
       Section("Software Updates") {
@@ -682,7 +849,7 @@ struct SettingsView: View {
           .font(.caption).foregroundStyle(.secondary)
       }
     }
-    .formStyle(.grouped).padding().frame(width: 560, height: 580)
+    .formStyle(.grouped).padding().frame(width: 620, height: 720)
     .onAppear { email = store.configuration.email }
   }
 }
