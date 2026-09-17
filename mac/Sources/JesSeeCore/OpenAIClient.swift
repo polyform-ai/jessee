@@ -91,22 +91,33 @@ public struct OpenAIClient: Sendable {
       Write in the speaker's direct, reader-facing voice. Never say "the user said", "the narrator", or "this recording shows".
       Preserve the speaker's goal, important decisions, concrete details, and chronological actions. Titles and narratives must make sense on their own.
       Return only valid JSON with this shape:
-      {"title":string,"summary":string,"keyPoints":string[],"steps":[{"startSeconds":number,"endSeconds":number,"title":string,"narrative":string,"transcript":string}]}
+      {"title":string,"sourceURL":string|null,"summary":string,"keyPoints":string[],"steps":[{"startSeconds":number,"endSeconds":number,"screenshotTimeSeconds":number,"title":string,"narrative":string,"transcript":string}]}
       Use the transcript timestamps. Keep each step focused and choose boundaries that make a useful screenshot possible.
+      For every step, choose screenshotTimeSeconds from the exact available screenshot times. When imageAttached is true for any screenshot, choose only among those attached images. Choose the image that best proves the point, not merely the image nearest the end of the step. Prefer a clearly marked-up image or a stable resulting state. Avoid loading skeletons, blank transitions, and incidental clicks unless the missing or empty state is itself the issue. If the narration contrasts two materially different states, make separate steps so each state has its own visual evidence.
+      Omit generic navigation steps when they do not help explain the requested outcome.
+      If a browser address is clearly visible, set sourceURL to the most specific readable HTTP or HTTPS URL. A clearly readable host may be normalized to https://host. Otherwise return null. Never infer a URL from unrelated page copy.
       """
 
+    let imageFrames = includeScreenshotPixels ? Self.planningFrames(frames) : []
+    let imageAttachments = imageFrames.compactMap { frame -> (CapturedFrame, Data)? in
+      let imageURL = captureDirectory.appendingPathComponent(frame.filename)
+      guard let data = try? Data(contentsOf: imageURL) else { return nil }
+      return (frame, data)
+    }
+    let attachedFrames = imageAttachments.map(\.0)
+    let includedImageFilenames = Set(attachedFrames.map(\.filename))
     var userContent: [[String: Any]] = [
       [
         "type": "input_text",
-        "text": try Self.transcriptContext(transcript: transcript, frames: frames),
+        "text": try Self.transcriptContext(
+          transcript: transcript, frames: frames,
+          includedImageFilenames: includedImageFilenames),
       ]
     ]
-    for frame in includeScreenshotPixels ? Self.planningFrames(frames) : [] {
-      let imageURL = captureDirectory.appendingPathComponent(frame.filename)
-      guard let data = try? Data(contentsOf: imageURL) else { continue }
+    for (frame, data) in imageAttachments {
       userContent.append([
         "type": "input_text",
-        "text": "Screenshot at \(String(format: "%.1f", frame.seconds)) seconds",
+        "text": "Screenshot option at exactly \(frame.seconds) seconds. Return this exact value as screenshotTimeSeconds when this image best proves a step.",
       ])
       userContent.append([
         "type": "input_image", "image_url": "data:image/jpeg;base64,\(data.base64EncodedString())",
@@ -134,12 +145,17 @@ public struct OpenAIClient: Sendable {
       throw JesSeeError.invalidResponse("JesSee received an incomplete story from OpenAI.")
     }
     let draft = try JSONDecoder().decode(StoryDraft.self, from: json)
+    let eligibleFrames = attachedFrames.isEmpty ? frames : attachedFrames
     return StoryDocument(
       title: draft.title,
+      sourceURL: Self.normalizedWebURL(draft.sourceURL),
       summary: draft.summary,
       keyPoints: draft.keyPoints,
       steps: draft.steps.map { step in
-        let frame = MediaTools.nearestFrame(to: step.endSeconds, frames: frames)
+        let frame = Self.selectedFrame(
+          requestedSeconds: step.screenshotTimeSeconds,
+          stepEndSeconds: step.endSeconds,
+          frames: eligibleFrames)
         return StoryStep(
           startSeconds: step.startSeconds,
           endSeconds: step.endSeconds,
@@ -152,6 +168,29 @@ public struct OpenAIClient: Sendable {
     )
   }
 
+  static func selectedFrame(
+    requestedSeconds: Double?, stepEndSeconds: Double, frames: [CapturedFrame]
+  ) -> CapturedFrame? {
+    guard let requestedSeconds, requestedSeconds.isFinite,
+      let requested = MediaTools.nearestFrame(to: requestedSeconds, frames: frames),
+      abs(requested.seconds - requestedSeconds) <= 0.6
+    else {
+      return MediaTools.nearestFrame(to: stepEndSeconds, frames: frames)
+    }
+    return requested
+  }
+
+  static func normalizedWebURL(_ candidate: String?) -> String? {
+    guard var value = candidate?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty
+    else { return nil }
+    if !value.contains("://") { value = "https://\(value)" }
+    guard let components = URLComponents(string: value),
+      let scheme = components.scheme?.lowercased(), ["http", "https"].contains(scheme),
+      let host = components.host, !host.isEmpty, !host.contains(" ")
+    else { return nil }
+    return components.url?.absoluteString
+  }
+
   private func checkedData(for request: URLRequest, operation: String) async throws -> Data {
     let (data, response) = try await session.data(for: request)
     guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
@@ -162,7 +201,9 @@ public struct OpenAIClient: Sendable {
     return data
   }
 
-  private static func transcriptContext(transcript: TranscriptDocument, frames: [CapturedFrame])
+  private static func transcriptContext(
+    transcript: TranscriptDocument, frames: [CapturedFrame], includedImageFilenames: Set<String>
+  )
     throws -> String
   {
     let context: [String: Any] = [
@@ -170,18 +211,40 @@ public struct OpenAIClient: Sendable {
       "transcriptSegments": transcript.segments.map {
         ["start": $0.start, "end": $0.end, "text": $0.text]
       },
-      "availableScreenshotTimes": frames.map(\.seconds),
+      "availableScreenshots": frames.map {
+        [
+          "timeSeconds": $0.seconds,
+          "filename": $0.filename,
+          "hasVisibleMarkup": $0.hasVisibleMarkup,
+          "imageAttached": includedImageFilenames.contains($0.filename),
+        ] as [String: Any]
+      },
     ]
     let data = try JSONSerialization.data(withJSONObject: context, options: [.prettyPrinted])
     return String(decoding: data, as: UTF8.self)
   }
 
-  private static func planningFrames(_ frames: [CapturedFrame], maximum: Int = 12)
+  static func planningFrames(_ frames: [CapturedFrame], maximum: Int = 12)
     -> [CapturedFrame]
   {
     guard frames.count > maximum, maximum > 1 else { return frames }
-    return (0..<maximum).map { index in
-      let position = Double(index) * Double(frames.count - 1) / Double(maximum - 1)
+    let marked = frames.filter(\.hasVisibleMarkup)
+    let markedLimit = max(1, maximum * 2 / 3)
+    let selectedMarked = evenlySampled(marked, count: min(marked.count, markedLimit))
+    let selectedFilenames = Set(selectedMarked.map(\.filename))
+    let timelineCandidates = frames.filter { !selectedFilenames.contains($0.filename) }
+    return (
+      selectedMarked
+        + evenlySampled(timelineCandidates, count: maximum - selectedMarked.count)
+    )
+      .sorted { $0.seconds < $1.seconds }
+  }
+
+  private static func evenlySampled(_ frames: [CapturedFrame], count: Int) -> [CapturedFrame] {
+    guard count > 0, frames.count > count else { return count > 0 ? frames : [] }
+    guard count > 1 else { return [frames[frames.count / 2]] }
+    return (0..<count).map { index in
+      let position = Double(index) * Double(frames.count - 1) / Double(count - 1)
       return frames[Int(position.rounded())]
     }
   }
@@ -236,11 +299,13 @@ private struct StoryDraft: Decodable {
   struct Step: Decodable {
     var startSeconds: Double
     var endSeconds: Double
+    var screenshotTimeSeconds: Double?
     var title: String
     var narrative: String
     var transcript: String
   }
   var title: String
+  var sourceURL: String?
   var summary: String
   var keyPoints: [String]
   var steps: [Step]

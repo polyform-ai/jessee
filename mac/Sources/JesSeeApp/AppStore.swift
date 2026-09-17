@@ -2,7 +2,7 @@ import AVFoundation
 import AppKit
 import JesSeeCore
 import SwiftUI
-import UserNotifications
+@preconcurrency import UserNotifications
 
 @MainActor
 final class AppStore: ObservableObject {
@@ -27,8 +27,11 @@ final class AppStore: ObservableObject {
   private let featureUsage = FeatureUsageRecorder(product: "jessee")
   private var workspace: CaptureWorkspace?
   private var processingTasks: [String: Task<Void, Never>] = [:]
+  private var processingNotificationTasks: [String: Task<Void, Never>] = [:]
 
   init() {
+    let notificationCenter = UNUserNotificationCenter.current()
+    notificationCenter.delegate = JesSeeNotificationDelegate.shared
     configuration = configurationStore.load()
     hasAPIKey = (try? JesSeeKeychain.loadAPIKey()) != nil
     setupStep = configuration.pendingSetupStep(hasAPIKey: hasAPIKey)
@@ -248,7 +251,7 @@ final class AppStore: ObservableObject {
         recordingMarkups: recordingMarkups)
       if deleteSourceAfterImport { try? FileManager.default.removeItem(at: url) }
       captures = await workspace.allRecords()
-      startProcessing(record)
+      startProcessing(record, notifyStarted: true)
       recordUsage(
         .captureAdded,
         feature: source == .recording ? "screen_recording" : "video_import",
@@ -259,11 +262,10 @@ final class AppStore: ObservableObject {
     }
   }
 
-  private func startProcessing(_ record: CaptureRecord) {
+  private func startProcessing(_ record: CaptureRecord, notifyStarted: Bool = false) {
     guard processingTasks[record.id] == nil, let workspace else { return }
     let appStore = self
     let task = Task {
-      defer { Task { @MainActor in appStore.processingTasks[record.id] = nil } }
       do {
         guard let key = try JesSeeKeychain.loadAPIKey() else { throw JesSeeError.missingAPIKey }
         let processor = CaptureProcessor(workspace: workspace)
@@ -278,8 +280,10 @@ final class AppStore: ObservableObject {
       } catch {
         appStore.show(.error(error.localizedDescription))
       }
+      appStore.finishProcessingLifecycle(record.id)
     }
     processingTasks[record.id] = task
+    if notifyStarted { notifyProcessingStarted(record) }
   }
 
   private func loadLibrary() async {
@@ -312,11 +316,43 @@ final class AppStore: ObservableObject {
     await loadLibrary()
     recordUsage(.storyCreated, feature: "story_creation")
     let center = UNUserNotificationCenter.current()
+    center.removeDeliveredNotifications(withIdentifiers: ["processing-\(id)"])
     _ = try? await center.requestAuthorization(options: [.alert, .sound])
     let content = UNMutableNotificationContent()
     content.title = "Your JesSee story is ready"
     content.body = captures.first(where: { $0.id == id })?.title ?? "Open the library to review it."
     try? await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+  }
+
+  private func notifyProcessingStarted(_ record: CaptureRecord) {
+    processingNotificationTasks[record.id]?.cancel()
+    processingNotificationTasks[record.id] = Task { [weak self] in
+      let center = UNUserNotificationCenter.current()
+      guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else {
+        return
+      }
+      guard !Task.isCancelled, self?.processingTasks[record.id] != nil else { return }
+      let content = UNMutableNotificationContent()
+      content.title = "JesSee is processing your recording"
+      content.body = "You can keep working. JesSee will notify you when the story is ready."
+      content.sound = .default
+      try? await center.add(
+        UNNotificationRequest(
+          identifier: "processing-\(record.id)", content: content, trigger: nil))
+      if Task.isCancelled || self?.processingTasks[record.id] == nil {
+        center.removePendingNotificationRequests(withIdentifiers: ["processing-\(record.id)"])
+        center.removeDeliveredNotifications(withIdentifiers: ["processing-\(record.id)"])
+      }
+    }
+  }
+
+  private func finishProcessingLifecycle(_ id: String) {
+    processingTasks[id] = nil
+    processingNotificationTasks[id]?.cancel()
+    processingNotificationTasks[id] = nil
+    let center = UNUserNotificationCenter.current()
+    center.removePendingNotificationRequests(withIdentifiers: ["processing-\(id)"])
+    center.removeDeliveredNotifications(withIdentifiers: ["processing-\(id)"])
   }
 
   private func persistConfiguration() {
@@ -355,5 +391,19 @@ final class AppStore: ObservableObject {
       try? await Task.sleep(for: .seconds(4))
       if self?.notice == value { self?.notice = nil }
     }
+  }
+}
+
+private final class JesSeeNotificationDelegate: NSObject, UNUserNotificationCenterDelegate,
+  @unchecked Sendable
+{
+  static let shared = JesSeeNotificationDelegate()
+
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions)
+      -> Void
+  ) {
+    completionHandler([.banner, .sound])
   }
 }

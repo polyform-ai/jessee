@@ -15,10 +15,12 @@ public struct MediaDetails: Sendable, Equatable {
 public struct CapturedFrame: Sendable, Equatable {
   public var seconds: Double
   public var filename: String
+  public var hasVisibleMarkup: Bool
 
-  public init(seconds: Double, filename: String) {
+  public init(seconds: Double, filename: String, hasVisibleMarkup: Bool = false) {
     self.seconds = seconds
     self.filename = filename
+    self.hasVisibleMarkup = hasVisibleMarkup
   }
 }
 
@@ -108,7 +110,13 @@ public enum MediaTools {
       }
       let filename = String(format: "frame-%03d.jpg", index + 1)
       try data.write(to: directoryURL.appendingPathComponent(filename), options: .atomic)
-      frames.append(CapturedFrame(seconds: seconds, filename: "screenshots/\(filename)"))
+      frames.append(
+        CapturedFrame(
+          seconds: seconds,
+          filename: "screenshots/\(filename)",
+          hasVisibleMarkup: recordingMarkups.contains {
+            $0.isVisible(at: seconds) && $0.points.count > 1
+          }))
     }
     return frames
   }
