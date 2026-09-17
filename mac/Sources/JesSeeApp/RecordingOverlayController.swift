@@ -310,7 +310,7 @@ private struct RecordingHUDView: View {
   let clear: () -> Void
   let redo: () -> Void
   let stop: () -> Void
-  @State private var isHovering = false
+  @State private var hoveredControl: String?
 
   var body: some View {
     VStack(spacing: 8) {
@@ -323,20 +323,31 @@ private struct RecordingHUDView: View {
         Divider().frame(height: 24)
         RecordingToolButton(
           title: "Draw", shortcut: "⌥D", systemImage: "pencil.tip",
-          isActive: model.tool == .pen
+          isActive: model.tool == .pen,
+          onHover: showControl
         ) { setTool(.pen) }
         RecordingToolButton(
           title: "Highlight", shortcut: "⌥H", systemImage: "highlighter",
-          isActive: model.tool == .highlight
+          isActive: model.tool == .highlight,
+          onHover: showControl
         ) { setTool(.highlight) }
-        RecordingToolButton(title: "Undo", shortcut: "⌥Z", systemImage: "arrow.uturn.backward") {
+        RecordingToolButton(
+          title: "Undo", shortcut: "⌥Z", systemImage: "arrow.uturn.backward",
+          onHover: showControl
+        ) {
           undo()
         }
-        RecordingToolButton(title: "Clear", shortcut: "⌥C", systemImage: "eraser") {
+        RecordingToolButton(
+          title: "Clear", shortcut: "⌥C", systemImage: "eraser",
+          onHover: showControl
+        ) {
           clear()
         }
         Spacer(minLength: 2)
-        RecordingToolButton(title: "Redo", shortcut: "⌥R", systemImage: "arrow.counterclockwise") {
+        RecordingToolButton(
+          title: "Redo take", shortcut: "⌥R", systemImage: "arrow.counterclockwise",
+          onHover: showControl
+        ) {
           redo()
         }
         Button(action: stop) {
@@ -344,14 +355,15 @@ private struct RecordingHUDView: View {
             .font(.system(size: 12, weight: .bold))
         }
         .buttonStyle(.borderedProminent).tint(.red).disabled(model.isStopping)
+        .help("Stop and process (⌥S)")
+        .onHover { hovering in showControl(hovering ? "Stop and process · ⌥S" : nil) }
       }
-      if isHovering {
-        Text(
-          "⌥D draw · ⌥H highlight · ⌥Z undo · ⌥C clear · press the active tool again to click the page"
-        )
-        .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
-        .transition(.opacity.combined(with: .move(edge: .top)))
-      }
+      Text(
+        hoveredControl
+          ?? "Hover a control for help · click the active tool again to return to the page"
+      )
+      .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+      .contentTransition(.opacity)
     }
     .padding(.horizontal, 13).padding(.vertical, 10)
     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
@@ -360,9 +372,11 @@ private struct RecordingHUDView: View {
         .stroke(.white.opacity(0.3), lineWidth: 1)
     )
     .padding(8)
-    .onHover { hovering in withAnimation(.easeOut(duration: 0.16)) { isHovering = hovering } }
   }
 
+  private func showControl(_ label: String?) {
+    withAnimation(.easeOut(duration: 0.12)) { hoveredControl = label }
+  }
 }
 
 struct RecordingElapsedTime: View {
@@ -399,6 +413,7 @@ private struct RecordingToolButton: View {
   let shortcut: String
   let systemImage: String
   var isActive = false
+  let onHover: (String?) -> Void
   let action: () -> Void
 
   var body: some View {
@@ -416,6 +431,7 @@ private struct RecordingToolButton: View {
     )
     .foregroundStyle(isActive ? Color.accentColor : Color.primary)
     .help("\(title) (\(shortcut))")
+    .onHover { hovering in onHover(hovering ? "\(title) · \(shortcut)" : nil) }
     .accessibilityLabel(title)
     .accessibilityHint("Shortcut \(shortcut)")
   }
@@ -470,7 +486,7 @@ private final class RecordingHotKeyController {
     register(.undo, keyCode: UInt32(kVK_ANSI_Z))
     register(.clear, keyCode: UInt32(kVK_ANSI_C))
     register(.redo, keyCode: UInt32(kVK_ANSI_R))
-    register(.stop, keyCode: UInt32(kVK_Return))
+    register(.stop, keyCode: UInt32(kVK_ANSI_S))
   }
 
   deinit {

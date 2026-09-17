@@ -245,7 +245,22 @@ function bindShellEvents(): void {
 }
 
 function tool(action: string, content: string, wide = false): string {
-  return `<button type="button" class="tool${wide ? " wide" : ""}" data-action="${action}" aria-label="${action}" aria-pressed="false">${content}</button>`;
+  const label = toolLabel(action);
+  return `<button type="button" class="tool${wide ? " wide" : ""}" data-action="${action}" aria-label="${label}" title="${label}" aria-pressed="false">${content}</button>`;
+}
+
+function toolLabel(action: string): string {
+  const labels: Record<string, string> = {
+    paragraph: "Paragraph",
+    bold: "Bold",
+    italic: "Italic",
+    bulletList: "Bulleted list",
+    orderedList: "Numbered list",
+    blockquote: "Callout",
+    undo: "Undo text edit",
+    redo: "Redo text edit"
+  };
+  return labels[action] || action;
 }
 
 function runAction(action: string): void {
@@ -402,15 +417,15 @@ function renderPicker(): void {
   const frame = candidates[candidateIndex];
   const card = mustFind<HTMLElement>("#pickerCard");
   card.innerHTML = `
-    <header><div><p class="kicker">Step ${activeStepIndex + 1} visual</p><h2>Choose it, then make the important part obvious</h2><p>${escapeHTML(step.title)}</p></div><button class="icon" id="closePicker" aria-label="Close">×</button></header>
+    <header><div><p class="kicker">Step ${activeStepIndex + 1} visual</p><h2>Choose it, then make the important part obvious</h2><p>${escapeHTML(step.title)}</p></div><button class="icon" id="closePicker" aria-label="Close image picker" title="Close image picker">×</button></header>
     <div class="picker-toolbar">
       <div class="segmented"><button id="bestFrames" class="${showAllFrames ? "" : "active"}">Best matches</button><button id="allFrames" class="${showAllFrames ? "active" : ""}">All images</button></div>
       <div class="markup-tools"><button id="highlightMode" class="${drawingMode === "highlight" ? "active" : ""}">Highlight</button><button id="redactMode" class="${drawingMode === "redaction" ? "active" : ""}">Redact</button><button id="undoMarkup" ${draftAnnotations.length ? "" : "disabled"}>Undo</button><button id="clearMarkup" ${draftAnnotations.length ? "" : "disabled"}>Clear</button></div>
       <span>${frame ? `${candidateIndex + 1} of ${candidates.length}` : "No images"}</span>
     </div>
-    ${frame ? `<div class="picker-stage-row"><button class="arrow" id="previousFrame" ${candidateIndex === 0 ? "disabled" : ""}>←</button><figure><div class="markup-stage ${drawingMode ? "drawing" : ""}" id="markupStage"><img src="${escapeAttribute(frame.filename)}" alt="Screenshot ${candidateIndex + 1}" />${draftAnnotations.map((annotation) => annotationElement(annotation).outerHTML).join("")}</div><figcaption><strong>${escapeHTML(frame.filename.split("/").at(-1) || frame.filename)}</strong><span>${formatSeconds(frame.seconds)} · ${Math.abs(frame.seconds - step.endSeconds) < 1 ? "Best timing" : "Nearby moment"}</span></figcaption></figure><button class="arrow" id="nextFrame" ${candidateIndex === candidates.length - 1 ? "disabled" : ""}>→</button></div>` : `<div class="empty-picker">No screenshots are available for this recording.</div>`}
+    ${frame ? `<div class="picker-stage-row"><button class="arrow" id="previousFrame" aria-label="Previous screenshot" title="Previous screenshot" ${candidateIndex === 0 ? "disabled" : ""}>←</button><figure><div class="markup-stage ${drawingMode ? "drawing" : ""}" id="markupStage"><img src="${escapeAttribute(frame.filename)}" alt="Screenshot ${candidateIndex + 1}" />${draftAnnotations.map((annotation) => annotationElement(annotation).outerHTML).join("")}</div><figcaption><strong>${escapeHTML(frame.filename.split("/").at(-1) || frame.filename)}</strong><span>${formatSeconds(frame.seconds)} · ${Math.abs(frame.seconds - step.endSeconds) < 1 ? "Best timing" : "Nearby moment"}</span></figcaption></figure><button class="arrow" id="nextFrame" aria-label="Next screenshot" title="Next screenshot" ${candidateIndex === candidates.length - 1 ? "disabled" : ""}>→</button></div>` : `<div class="empty-picker">No screenshots are available for this recording.</div>`}
     <div class="picker-actions"><button class="button secondary" id="textOnly">Use text only</button><span>${drawingMode ? "Drag on the screenshot to add markup." : "Select Highlight or Redact, then drag on the screenshot."}</span><button class="button primary" id="useFrame" ${frame ? "" : "disabled"}>Use this image</button></div>
-    <div class="filmstrip">${candidates.map((item, index) => `<button data-frame-index="${index}" class="${index === candidateIndex ? "active" : ""}"><img src="${escapeAttribute(item.filename)}" alt="" /><span>${String(index + 1).padStart(2, "0")}</span></button>`).join("")}</div>`;
+    <div class="filmstrip">${candidates.map((item, index) => `<button data-frame-index="${index}" class="${index === candidateIndex ? "active" : ""}" aria-label="Choose screenshot ${index + 1}" title="Choose screenshot ${index + 1}"><img src="${escapeAttribute(item.filename)}" alt="" /><span>${String(index + 1).padStart(2, "0")}</span></button>`).join("")}</div>`;
 
   mustFind<HTMLButtonElement>("#closePicker").onclick = closePicker;
   mustFind<HTMLButtonElement>("#bestFrames").onclick = () => changeFrameCollection(false);

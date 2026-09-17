@@ -47,7 +47,7 @@ fi
 
 iconset=$(mktemp -d)/JesSee.iconset
 mkdir -p "$iconset"
-assets="$repo_dir/safari/JesSee/Assets.xcassets/AppIcon.appiconset"
+assets="$repo_dir/mac/Support/AppIcon.appiconset"
 cp "$assets/mac-icon-16@1x.png" "$iconset/icon_16x16.png"
 cp "$assets/mac-icon-16@2x.png" "$iconset/icon_16x16@2x.png"
 cp "$assets/mac-icon-32@1x.png" "$iconset/icon_32x32.png"

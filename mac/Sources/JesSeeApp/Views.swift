@@ -142,9 +142,10 @@ private struct RecordingControls: View {
           Label("Stop & process", systemImage: "stop.fill").frame(maxWidth: .infinity)
         }
         .buttonStyle(.borderedProminent).tint(.red).disabled(recorder.state == .stopping)
-        .keyboardShortcut(.return, modifiers: .command)
+        .keyboardShortcut("s", modifiers: .option)
+        .help("Stop and process (⌥S)")
       }
-      Text("Floating controls: ⌥D draw · ⌥H highlight · ⌥Z undo · ⌥C clear")
+      Text("Floating controls: ⌥D draw · ⌥H highlight · ⌥Z undo · ⌥C clear · ⌥S stop")
         .font(.caption2).foregroundStyle(.secondary)
     }
     .padding(16)
@@ -424,7 +425,10 @@ struct LibraryView: View {
         }.padding(.vertical, 5).tag(record.id)
       }
       .navigationTitle("Library")
-      .toolbar { Button(action: store.importVideo) { Label("Import video", systemImage: "plus") } }
+      .toolbar {
+        Button(action: store.importVideo) { Label("Import video", systemImage: "plus") }
+          .help("Import a video")
+      }
     } detail: {
       if let id = selection, let record = store.captures.first(where: { $0.id == id }) {
         CaptureDetailView(store: store, record: record)
