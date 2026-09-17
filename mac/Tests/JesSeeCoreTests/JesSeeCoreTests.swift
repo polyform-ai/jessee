@@ -95,6 +95,15 @@ private struct WorkflowTestValue: Decodable, Equatable {
       status: 200,
       data: Data(
         #"{"success":true,"result":{"result":"```json\n{\"title\":\"Story\",\"source_url\":\"example.com/page\",\"summary\":\"Summary\",\"key_points\":[\"Point\"],\"steps\":[{\"start_seconds\":0,\"end_seconds\":1,\"screenshot_time_seconds\":null,\"title\":\"Step\",\"narrative\":\"Do it.\",\"transcript\":\"Do it\"}]}\n```"}}"#.utf8)),
+    .init(
+      status: 200,
+      data: Data(
+        #"{"upload_id":"upload-1","upload_url":"https://example.test/upload-target"}"#.utf8)),
+    .init(status: 200, data: Data()),
+    .init(
+      status: 200,
+      data: Data(
+        #"{"upload_id":"upload-1","public_url":"https://files.example.test/story.pdf"}"#.utf8)),
   ])
 
   let attempt = try await client.requestSignIn(email: "person@example.com", challenge: "challenge")
@@ -110,21 +119,32 @@ private struct WorkflowTestValue: Decodable, Equatable {
     accessToken: session.accessToken, includeScreenshotPixels: false)
   #expect(story.sourceURL == "https://example.com/page")
 
+  let temporaryPDF = FileManager.default.temporaryDirectory.appendingPathComponent(
+    "\(UUID().uuidString).pdf")
+  try Data("pdf".utf8).write(to: temporaryPDF)
+  defer { try? FileManager.default.removeItem(at: temporaryPDF) }
+  let upload = try await client.publishPDF(at: temporaryPDF, accessToken: session.accessToken)
+  #expect(upload.id == "upload-1")
+  #expect(upload.publicURL?.absoluteString == "https://files.example.test/story.pdf")
+
   let requests = StubURLProtocol.requests()
-  #expect(requests.count == 3)
+  #expect(requests.count == 6)
   let bodies = StubURLProtocol.bodies()
   let requestBody = try #require(bodies.first ?? nil)
   let exchangeBody = try #require(bodies.dropFirst().first ?? nil)
-  let storyBody = try #require(bodies.last ?? nil)
+  let storyBody = try #require(bodies[2])
+  let uploadBody = try #require(bodies[3])
   let requestJSON = try #require(
     JSONSerialization.jsonObject(with: requestBody) as? [String: Any])
   let exchangeJSON = try #require(
     JSONSerialization.jsonObject(with: exchangeBody) as? [String: Any])
   let storyJSON = try #require(JSONSerialization.jsonObject(with: storyBody) as? [String: Any])
+  let uploadJSON = try #require(JSONSerialization.jsonObject(with: uploadBody) as? [String: Any])
   #expect(requestJSON["code_challenge"] as? String == "challenge")
   #expect(exchangeJSON["attempt_id"] as? String == "attempt-1")
   #expect(storyJSON["user_input"] != nil)
   #expect(storyJSON["output_json"] != nil)
+  #expect(uploadJSON["content_type"] as? String == "application/pdf")
 }
 
 @Test func workflowResponsesAcceptDirectAndLightWrapperResults() throws {

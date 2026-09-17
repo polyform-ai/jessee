@@ -143,22 +143,27 @@ public struct PolyformClient: Sendable {
     let upload = try await upload(
       fileURL: audioURL, contentType: "audio/mp4", visibility: "private",
       accessToken: accessToken)
-    defer {
-      Task { try? await deleteUpload(id: upload.id, accessToken: accessToken) }
+    let transcript: TranscriptDocument
+    do {
+      let response: WorkflowResponse<TranscriptionResult> = try await post(
+        transcriptionWorkflowURL,
+        body: TranscriptionRequest(audio: UploadReference(uploadID: upload.id)),
+        accessToken: accessToken)
+      let value = response.result
+      transcript = TranscriptDocument(
+        text: value.text, language: value.language, duration: value.durationSeconds,
+        segments: value.segments.enumerated().map { index, segment in
+          TranscriptSegment(
+            id: segment.id ?? index, start: segment.start, end: segment.end, text: segment.text)
+        },
+        words: value.words.map { TranscriptWord(word: $0.word, start: $0.start, end: $0.end) },
+        provider: "Polyform", model: value.model)
+    } catch {
+      try? await deleteUpload(id: upload.id, accessToken: accessToken)
+      throw error
     }
-    let response: WorkflowResponse<TranscriptionResult> = try await post(
-      transcriptionWorkflowURL,
-      body: TranscriptionRequest(audio: UploadReference(uploadID: upload.id)),
-      accessToken: accessToken)
-    let value = response.result
-    return TranscriptDocument(
-      text: value.text, language: value.language, duration: value.durationSeconds,
-      segments: value.segments.enumerated().map { index, segment in
-        TranscriptSegment(
-          id: segment.id ?? index, start: segment.start, end: segment.end, text: segment.text)
-      },
-      words: value.words.map { TranscriptWord(word: $0.word, start: $0.start, end: $0.end) },
-      provider: "Polyform", model: value.model)
+    try await deleteUpload(id: upload.id, accessToken: accessToken)
+    return transcript
   }
 
   public func createStory(
