@@ -99,7 +99,13 @@ public struct OpenAIClient: Sendable {
       """
 
     let imageFrames = includeScreenshotPixels ? Self.planningFrames(frames) : []
-    let includedImageFilenames = Set(imageFrames.map(\.filename))
+    let imageAttachments = imageFrames.compactMap { frame -> (CapturedFrame, Data)? in
+      let imageURL = captureDirectory.appendingPathComponent(frame.filename)
+      guard let data = try? Data(contentsOf: imageURL) else { return nil }
+      return (frame, data)
+    }
+    let attachedFrames = imageAttachments.map(\.0)
+    let includedImageFilenames = Set(attachedFrames.map(\.filename))
     var userContent: [[String: Any]] = [
       [
         "type": "input_text",
@@ -108,9 +114,7 @@ public struct OpenAIClient: Sendable {
           includedImageFilenames: includedImageFilenames),
       ]
     ]
-    for frame in imageFrames {
-      let imageURL = captureDirectory.appendingPathComponent(frame.filename)
-      guard let data = try? Data(contentsOf: imageURL) else { continue }
+    for (frame, data) in imageAttachments {
       userContent.append([
         "type": "input_text",
         "text": "Screenshot option at exactly \(frame.seconds) seconds. Return this exact value as screenshotTimeSeconds when this image best proves a step.",
@@ -141,6 +145,7 @@ public struct OpenAIClient: Sendable {
       throw JesSeeError.invalidResponse("JesSee received an incomplete story from OpenAI.")
     }
     let draft = try JSONDecoder().decode(StoryDraft.self, from: json)
+    let eligibleFrames = attachedFrames.isEmpty ? frames : attachedFrames
     return StoryDocument(
       title: draft.title,
       sourceURL: Self.normalizedWebURL(draft.sourceURL),
@@ -150,7 +155,7 @@ public struct OpenAIClient: Sendable {
         let frame = Self.selectedFrame(
           requestedSeconds: step.screenshotTimeSeconds,
           stepEndSeconds: step.endSeconds,
-          frames: frames)
+          frames: eligibleFrames)
         return StoryStep(
           startSeconds: step.startSeconds,
           endSeconds: step.endSeconds,

@@ -3,6 +3,7 @@ import test from "node:test";
 import { parseHTML } from "linkedom";
 
 import { htmlBlocks, renderBlocks } from "../src/richTextHTML.ts";
+import { normalizeSourceURL } from "../src/storyURL.ts";
 
 function installDOM(): void {
   const window = parseHTML("<html><body></body></html").window;
@@ -34,4 +35,11 @@ test("lists inside callouts survive HTML rehydration", () => {
   installDOM();
   const html = "<blockquote><p>Remember:</p><ul><li><p>One thing</p></li></ul></blockquote>";
   assert.equal(renderBlocks(htmlBlocks(html)), html);
+});
+
+test("source URLs are normalized before the editor saves them", () => {
+  assert.equal(normalizeSourceURL("example.com/page"), "https://example.com/page");
+  assert.equal(normalizeSourceURL("https://example.com/page"), "https://example.com/page");
+  assert.equal(normalizeSourceURL("file:///tmp/private"), undefined);
+  assert.equal(normalizeSourceURL("not a URL"), undefined);
 });

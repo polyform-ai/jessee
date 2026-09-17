@@ -223,6 +223,23 @@ import Testing
   #expect(selected.contains(where: { $0.filename == "frame-7.jpg" }))
 }
 
+@Test func storySelectionCannotUseAMetadataOnlyScreenshot() throws {
+  let frames = (0..<18).map { index in
+    CapturedFrame(seconds: Double(index), filename: "frame-\(index).jpg")
+  }
+  let attached = OpenAIClient.planningFrames(frames, maximum: 12)
+  let metadataOnly = try #require(frames.first { frame in
+    !attached.contains(where: { $0.filename == frame.filename })
+  })
+  let selected = OpenAIClient.selectedFrame(
+    requestedSeconds: metadataOnly.seconds,
+    stepEndSeconds: attached.last?.seconds ?? 0,
+    frames: attached)
+
+  #expect(selected?.filename != metadataOnly.filename)
+  #expect(attached.contains(where: { $0.filename == selected?.filename }))
+}
+
 @Test func webpageURLsAreNormalizedAndUnsafeValuesAreRejected() {
   #expect(OpenAIClient.normalizedWebURL("example.com/path") == "https://example.com/path")
   #expect(OpenAIClient.normalizedWebURL("https://example.com/path") == "https://example.com/path")
