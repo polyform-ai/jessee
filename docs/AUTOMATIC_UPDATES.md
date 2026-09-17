@@ -2,7 +2,7 @@
 
 The native Mac app uses Sparkle for signed in-place updates. The first install is a signed, notarized `JesSee.dmg`; subsequent releases are delivered from the app's **Check for Updates…** button and automatic update checks.
 
-Version 0.2.1 is the first supported native Mac release. Credentials from the retired browser previews were never stored in the Mac Keychain. Local pre-release Mac builds used development-only signing and may ask their tester to connect OpenAI once in the signed app; all supported releases use the same login-keychain item from that point forward.
+Version 0.2.1 is the first supported native Mac release. Credentials from the retired browser previews were never stored in the Mac Keychain. Local pre-release Mac builds used development-only signing and may ask their tester to choose Polyform Covered or connect OpenAI once in the signed app; all supported releases use the same login-keychain items from that point forward.
 
 ## Native Mac app
 

@@ -12,7 +12,7 @@
     <meta property="og:image" content="https://jessee.ai/assets/playbook-review.png" />
     <link rel="canonical" href="https://jessee.ai/" />
     <title>JesSee — Help AI see what you see</title>
-    <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+    <link rel="icon" href="assets/jessee-icon.png" type="image/png" />
     <link rel="stylesheet" href="styles.css" />
     <script src="analytics.js" defer></script>
     <script src="site.js" defer></script>
@@ -22,7 +22,7 @@
 
     <header class="site-header" data-header>
       <a class="brand" href="#top" aria-label="JesSee home">
-        <img src="assets/icon.svg" alt="" width="36" height="36" />
+        <img src="assets/jessee-icon.png" alt="" width="36" height="36" />
         <span>JesSee</span>
       </a>
       <nav aria-label="Main navigation">
@@ -47,7 +47,7 @@
             <a class="button primary" href="#download">Download for Mac <span aria-hidden="true">↓</span></a>
             <a class="text-link" href="#how">See how it works <span aria-hidden="true">↓</span></a>
           </div>
-          <p class="hero-note"><span class="status-dot"></span> Native Mac app · Editable local history · Bring your own OpenAI key</p>
+          <p class="hero-note"><span class="status-dot"></span> Native Mac app · AI covered by Polyform or bring your own key</p>
         </div>
 
         <div class="hero-visual reveal" data-delay="1" aria-label="Disconnected inputs becoming one clear playbook">
@@ -67,7 +67,7 @@
           </div>
           <div class="transform-line"><span>JesSee</span><i></i></div>
           <article class="document-card">
-            <div class="document-top"><img src="assets/icon.svg" alt="" /><span>VISUAL PLAYBOOK</span><b>PDF</b></div>
+            <div class="document-top"><img src="assets/jessee-icon.png" alt="" /><span>VISUAL PLAYBOOK</span><b>PDF</b></div>
             <h2>Update the product image</h2>
             <p>A clear outcome, the exact steps, and the visual evidence that proves each one.</p>
             <div class="document-section">
@@ -204,7 +204,11 @@
           <article class="download-card mac-card reveal">
             <div class="download-card-head"><span class="platform-mark mac-mark" aria-hidden="true">⌘</span><div><small>SIGNED MAC APP</small><h3>JesSee for Mac</h3></div><b>macOS 15+</b></div>
             <p>Open the installer, drag JesSee to Applications, and launch it from your menu bar.</p>
-            <ol><li>Download and open <strong>JesSee.dmg</strong></li><li>Drag JesSee into <strong>Applications</strong></li><li>Follow the four-step setup for OpenAI, email, library folder, and microphone</li></ol>
+            <div class="plan-options" aria-label="AI processing options">
+              <div><strong>Polyform Covered</strong><span>Sign in by email. Polyform.AI covers the transcription and AI cost.</span></div>
+              <div><strong>Bring Your Own Key</strong><span>Use your own OpenAI API key, stored securely in your Mac's Keychain.</span></div>
+            </div>
+            <ol><li>Download and open <strong>JesSee.dmg</strong></li><li>Drag JesSee into <strong>Applications</strong></li><li>Choose an AI option, your library folder, and microphone access</li></ol>
             <a class="button mac-button download-button" href="https://github.com/polyform-ai/jessee/releases/latest/download/JesSee.dmg">Download JesSee for Mac <span aria-hidden="true">↓</span></a>
             <small class="preview-note">Signed by Polyform and notarized by Apple. JesSee checks for signed updates automatically after installation.</small>
           </article>
@@ -262,7 +266,7 @@
           <p class="eyebrow light"><span></span> Open source · MIT licensed</p>
           <h2>This is just the start.<br /><em>Please make it better.</em></h2>
           <p>JesSee is an experiment in a better way to give visual product context to AI—and a useful way to turn walkthroughs into tutorials, playbooks, and guidance for people. Try it on real work, report what breaks, or help build what should come next.</p>
-          <p class="data-note"><strong>How data moves:</strong> Recordings, screenshots, and PDFs remain stored in the folder you choose. Creating a story sends narration and selected visual evidence to OpenAI through the API key you provide. This website uses Google Analytics to measure page visits, downloads, and GitHub-link activity, but never sends recordings, screenshots, narration, API keys, email addresses, or unapproved URL parameters. Only standard campaign-attribution fields are retained, and values that resemble email addresses are discarded.</p>
+          <p class="data-note"><strong>How data moves:</strong> Recordings, screenshots, and PDFs remain stored in the folder you choose. With Polyform Covered, narration and selected evidence move through authenticated Polyform workflows; with Bring Your Own Key, they go directly to OpenAI. A PDF becomes public only when you choose Create public link. Optional product events go directly to Google Analytics without your email or media. This website measures page visits, downloads, and GitHub-link activity, but never sends recordings, screenshots, narration, API keys, email addresses, or unapproved URL parameters.</p>
           <div class="open-actions">
             <a class="button light-button" href="https://github.com/polyform-ai/jessee" target="_blank" rel="noreferrer">Explore JesSee on GitHub <span aria-hidden="true">↗</span></a>
             <a href="https://github.com/polyform-ai/jessee/issues" target="_blank" rel="noreferrer">Share an idea or issue</a>
@@ -278,7 +282,7 @@
     </main>
 
     <footer>
-      <a class="brand" href="#top"><img src="assets/icon.svg" alt="" width="32" height="32" /><span>JesSee</span></a>
+      <a class="brand" href="#top"><img src="assets/jessee-icon.png" alt="" width="32" height="32" /><span>JesSee</span></a>
       <a class="made-by" href="https://polyform.ai" target="_blank" rel="noreferrer">Created by Polyform <span aria-hidden="true">↗</span></a>
       <div><a href="https://github.com/polyform-ai/jessee" target="_blank" rel="noreferrer">GitHub</a><a href="https://github.com/polyform-ai/jessee/issues" target="_blank" rel="noreferrer">Issues</a><a href="mailto:ahmed@polyform.ai">Contact</a></div>
       <p class="legal-attribution">JesSee is a product of OpLevel AI LLC.</p>

@@ -5,6 +5,7 @@ public enum FeatureUsageActivity: String, Sendable {
   case storyCreated = "story_created"
   case storyEdited = "story_edited"
   case pdfOpened = "pdf_opened"
+  case pdfPublished = "pdf_published"
 }
 
 public struct FeatureUsageEvent: Codable, Equatable, Sendable {
@@ -12,7 +13,6 @@ public struct FeatureUsageEvent: Codable, Equatable, Sendable {
   public let occurredAt: Date
   public let activity: String
   public let clientID: String
-  public let userID: String?
   public let product: String
   public let appVersion: String
   public let feature: String
@@ -26,7 +26,6 @@ public struct FeatureUsageEvent: Codable, Equatable, Sendable {
     case occurredAt = "ts"
     case activity
     case clientID = "client_id"
-    case userID = "user_id"
     case product
     case appVersion = "app_version"
     case feature
@@ -37,26 +36,9 @@ public struct FeatureUsageEvent: Codable, Equatable, Sendable {
   }
 }
 
-public struct FeatureUsageIdentity: Codable, Equatable, Sendable {
-  public let occurredAt: Date
-  public let product: String
-  public let appVersion: String
-  public let clientID: String
-  public let userID: String
-  public let email: String
-
-  enum CodingKeys: String, CodingKey {
-    case occurredAt = "ts"
-    case product
-    case appVersion = "app_version"
-    case clientID = "client_id"
-    case userID = "user_id"
-    case email
-  }
-}
-
 public actor FeatureUsageRecorder {
-  public static let endpointInfoKey = "PFFeatureUsageEndpoint"
+  public static let measurementIDInfoKey = "PFGA4MeasurementID"
+  public static let apiSecretInfoKey = "PFGA4APISecret"
 
   private let product: String
   private let appVersion: String
@@ -73,10 +55,12 @@ public actor FeatureUsageRecorder {
     session: URLSession = .shared
   ) {
     self.product = product
-    self.appVersion = appVersion
+    self.appVersion =
+      appVersion
       ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
       ?? "development"
-    let supportRoot = applicationSupportURL
+    let supportRoot =
+      applicationSupportURL
       ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
     let directory = supportRoot.appendingPathComponent(product, isDirectory: true)
     eventFileURL = directory.appendingPathComponent("feature-usage.jsonl")
@@ -91,8 +75,7 @@ public actor FeatureUsageRecorder {
     feature: String,
     source: String? = nil,
     mode: String? = nil,
-    itemCount: Int? = nil,
-    userID: String? = nil
+    itemCount: Int? = nil
   ) async -> FeatureUsageEvent {
     let clientID = currentClientID()
     let event = FeatureUsageEvent(
@@ -100,7 +83,6 @@ public actor FeatureUsageRecorder {
       occurredAt: Date(),
       activity: activity.rawValue,
       clientID: clientID,
-      userID: userID,
       product: product,
       appVersion: appVersion,
       feature: feature,
@@ -110,18 +92,8 @@ public actor FeatureUsageRecorder {
       itemCount: itemCount)
     guard let data = Self.encode(event) else { return event }
     Self.append(data, to: eventFileURL)
-    await send(event, kind: "track")
+    await send(event)
     return event
-  }
-
-  public func identify(email: String, userID: String) async {
-    let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    guard normalizedEmail.contains("@"), UUID(uuidString: userID) != nil else { return }
-    let clientID = currentClientID()
-    let identity = FeatureUsageIdentity(
-      occurredAt: Date(), product: product, appVersion: appVersion, clientID: clientID,
-      userID: userID.lowercased(), email: normalizedEmail)
-    await send(identity, kind: "identify")
   }
 
   public func resetClientID() {
@@ -132,9 +104,9 @@ public actor FeatureUsageRecorder {
       at: directory.appendingPathComponent("feature-usage-installation-id"))
   }
 
-  private func send<T: Encodable>(_ payload: T, kind: String) async {
+  private func send(_ event: FeatureUsageEvent) async {
     guard let endpoint else { return }
-    guard let body = Self.encodeEnvelope(payload, kind: kind) else { return }
+    guard let body = Self.ga4Payload(event) else { return }
     var request = URLRequest(url: endpoint)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -145,16 +117,39 @@ public actor FeatureUsageRecorder {
     else { return }
   }
 
-  static func encodeEnvelope<T: Encodable>(_ payload: T, kind: String) -> Data? {
-    guard let payloadData = encode(payload) else { return nil }
-    return Data("{\"kind\":\"\(kind)\",\"payload\":".utf8) + payloadData + Data("}".utf8)
+  static func ga4Payload(_ event: FeatureUsageEvent) -> Data? {
+    var parameters: [String: Any] = [
+      "event_id": event.activityID,
+      "product": event.product,
+      "app_version": event.appVersion,
+      "feature": event.feature,
+      "status": event.status,
+      "engagement_time_msec": 1,
+    ]
+    if let source = event.source { parameters["source"] = source }
+    if let mode = event.mode { parameters["mode"] = mode }
+    if let itemCount = event.itemCount { parameters["item_count"] = itemCount }
+    let payload: [String: Any] = [
+      "client_id": event.clientID,
+      "consent": ["ad_user_data": "DENIED", "ad_personalization": "DENIED"],
+      "events": [["name": event.activity, "params": parameters]],
+    ]
+    return try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
   }
 
   private static func configuredEndpoint() -> URL? {
-    guard let value = Bundle.main.object(forInfoDictionaryKey: endpointInfoKey) as? String,
-      let url = URL(string: value), url.scheme == "https"
+    guard
+      let measurementID = Bundle.main.object(forInfoDictionaryKey: measurementIDInfoKey) as? String,
+      !measurementID.isEmpty,
+      let apiSecret = Bundle.main.object(forInfoDictionaryKey: apiSecretInfoKey) as? String,
+      !apiSecret.isEmpty
     else { return nil }
-    return url
+    var components = URLComponents(string: "https://www.google-analytics.com/mp/collect")
+    components?.queryItems = [
+      URLQueryItem(name: "measurement_id", value: measurementID),
+      URLQueryItem(name: "api_secret", value: apiSecret),
+    ]
+    return components?.url
   }
 
   private func currentClientID() -> String {

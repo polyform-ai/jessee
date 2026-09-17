@@ -288,6 +288,8 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
   public var storyFilename: String?
   public var htmlFilename: String?
   public var pdfFilename: String?
+  public var publicPDFUploadID: String?
+  public var publicPDFURL: String?
   public var imageFilenames: [String]
   public var imageTimes: [String: Double]?
   public var recordingMarkups: [RecordingMarkupStroke]?
@@ -306,6 +308,8 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     storyFilename: String? = nil,
     htmlFilename: String? = nil,
     pdfFilename: String? = nil,
+    publicPDFUploadID: String? = nil,
+    publicPDFURL: String? = nil,
     imageFilenames: [String] = [],
     imageTimes: [String: Double]? = nil,
     recordingMarkups: [RecordingMarkupStroke]? = nil,
@@ -323,6 +327,8 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     self.storyFilename = storyFilename
     self.htmlFilename = htmlFilename
     self.pdfFilename = pdfFilename
+    self.publicPDFUploadID = publicPDFUploadID
+    self.publicPDFURL = publicPDFURL
     self.imageFilenames = imageFilenames
     self.imageTimes = imageTimes
     self.recordingMarkups = recordingMarkups
@@ -330,26 +336,41 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
   }
 }
 
+public enum AIProviderMode: String, Codable, Sendable, Equatable, CaseIterable {
+  case polyformCovered = "polyform_covered"
+  case bringYourOwnKey = "bring_your_own_key"
+}
+
 public struct JesSeeConfiguration: Codable, Sendable, Equatable {
   public var email: String
   public var outputFolderPath: String
   public var setupCompleted: Bool
-  public var shareScreenshotsWithOpenAI: Bool
+  public var aiProviderMode: AIProviderMode?
+  public var shareScreenshotsForStory: Bool
   public var shareAnonymousFeatureUsage: Bool
-  public var analyticsUserID: String?
 
   public init(
     email: String = "", outputFolderPath: String = "", setupCompleted: Bool = false,
-    shareScreenshotsWithOpenAI: Bool = true,
-    shareAnonymousFeatureUsage: Bool = false,
-    analyticsUserID: String? = nil
+    aiProviderMode: AIProviderMode? = nil,
+    shareScreenshotsForStory: Bool = true,
+    shareAnonymousFeatureUsage: Bool = false
   ) {
     self.email = email
     self.outputFolderPath = outputFolderPath
     self.setupCompleted = setupCompleted
-    self.shareScreenshotsWithOpenAI = shareScreenshotsWithOpenAI
+    self.aiProviderMode = aiProviderMode
+    self.shareScreenshotsForStory = shareScreenshotsForStory
     self.shareAnonymousFeatureUsage = shareAnonymousFeatureUsage
-    self.analyticsUserID = analyticsUserID
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case email
+    case outputFolderPath
+    case setupCompleted
+    case aiProviderMode
+    case shareScreenshotsForStory
+    case shareScreenshotsWithOpenAI
+    case shareAnonymousFeatureUsage
   }
 
   public init(from decoder: any Decoder) throws {
@@ -357,18 +378,49 @@ public struct JesSeeConfiguration: Codable, Sendable, Equatable {
     email = try container.decodeIfPresent(String.self, forKey: .email) ?? ""
     outputFolderPath = try container.decodeIfPresent(String.self, forKey: .outputFolderPath) ?? ""
     setupCompleted = try container.decodeIfPresent(Bool.self, forKey: .setupCompleted) ?? false
-    shareScreenshotsWithOpenAI =
-      try container.decodeIfPresent(Bool.self, forKey: .shareScreenshotsWithOpenAI) ?? true
+    aiProviderMode = try container.decodeIfPresent(AIProviderMode.self, forKey: .aiProviderMode)
+    if aiProviderMode == nil, setupCompleted { aiProviderMode = .bringYourOwnKey }
+    shareScreenshotsForStory =
+      try container.decodeIfPresent(Bool.self, forKey: .shareScreenshotsForStory)
+      ?? container.decodeIfPresent(Bool.self, forKey: .shareScreenshotsWithOpenAI)
+      ?? true
     shareAnonymousFeatureUsage =
       try container.decodeIfPresent(Bool.self, forKey: .shareAnonymousFeatureUsage) ?? false
-    analyticsUserID = try container.decodeIfPresent(String.self, forKey: .analyticsUserID)
   }
 
-  public func pendingSetupStep(hasAPIKey: Bool) -> Int {
-    if !hasAPIKey { return 0 }
-    if email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return 1 }
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(email, forKey: .email)
+    try container.encode(outputFolderPath, forKey: .outputFolderPath)
+    try container.encode(setupCompleted, forKey: .setupCompleted)
+    try container.encodeIfPresent(aiProviderMode, forKey: .aiProviderMode)
+    try container.encode(shareScreenshotsForStory, forKey: .shareScreenshotsForStory)
+    try container.encode(shareAnonymousFeatureUsage, forKey: .shareAnonymousFeatureUsage)
+  }
+
+  public func pendingSetupStep(hasPolyformSession: Bool, hasAPIKey: Bool) -> Int {
+    guard let aiProviderMode else { return 0 }
+    switch aiProviderMode {
+    case .polyformCovered where !hasPolyformSession: return 1
+    case .bringYourOwnKey where !hasAPIKey: return 1
+    default: break
+    }
     if outputFolderPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return 2 }
     return 3
+  }
+}
+
+public struct WorkflowAuthSession: Codable, Sendable, Equatable {
+  public var accessToken: String
+  public var email: String
+  public var grantID: String
+  public var expiresAt: Date
+
+  public init(accessToken: String, email: String, grantID: String, expiresAt: Date) {
+    self.accessToken = accessToken
+    self.email = email
+    self.grantID = grantID
+    self.expiresAt = expiresAt
   }
 }
 
@@ -376,8 +428,10 @@ public enum JesSeeError: LocalizedError, Equatable {
   case missingAPIKey
   case invalidAPIKey
   case keychainUnavailable(String)
-  case openAIPermission(String)
-  case openAIUnavailable(String)
+  case signInRequired
+  case serviceNotConfigured
+  case authenticationFailed(String)
+  case serviceUnavailable(String)
   case outputFolderUnavailable
   case sourceUnavailable(String)
   case mediaHasNoAudio
@@ -390,10 +444,11 @@ public enum JesSeeError: LocalizedError, Equatable {
     case .missingAPIKey: "Add your OpenAI API key in Settings first."
     case .invalidAPIKey: "The OpenAI API key is not valid."
     case .keychainUnavailable(let detail):
-      "OpenAI connected, but macOS could not save the key in Keychain. \(detail)"
-    case .openAIPermission(let detail):
-      "The key connected, but it cannot access a model JesSee needs. \(detail)"
-    case .openAIUnavailable(let detail): "JesSee could not reach OpenAI. \(detail)"
+      "JesSee could not save your sign-in securely in Keychain. \(detail)"
+    case .signInRequired: "Sign in to JesSee before creating or publishing a story."
+    case .serviceNotConfigured: "This JesSee build is not connected to the Polyform service."
+    case .authenticationFailed(let detail): "JesSee could not sign you in. \(detail)"
+    case .serviceUnavailable(let detail): "JesSee could not reach the AI service. \(detail)"
     case .outputFolderUnavailable: "Choose an output folder before recording or importing."
     case .sourceUnavailable(let path): "The source video is no longer available at \(path)."
     case .mediaHasNoAudio: "This video does not contain an audio track to transcribe."

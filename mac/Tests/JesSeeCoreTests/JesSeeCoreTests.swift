@@ -6,13 +6,20 @@ import Testing
 @testable import JesSeeCore
 
 @Test func setupResumesAfterPersistedSteps() {
-  #expect(JesSeeConfiguration().pendingSetupStep(hasAPIKey: false) == 0)
-  #expect(JesSeeConfiguration().pendingSetupStep(hasAPIKey: true) == 1)
   #expect(
-    JesSeeConfiguration(email: "person@example.com").pendingSetupStep(hasAPIKey: true) == 2)
+    JesSeeConfiguration().pendingSetupStep(hasPolyformSession: false, hasAPIKey: false) == 0)
   #expect(
-    JesSeeConfiguration(email: "person@example.com", outputFolderPath: "/tmp/JesSee")
-      .pendingSetupStep(hasAPIKey: true) == 3)
+    JesSeeConfiguration(aiProviderMode: .bringYourOwnKey)
+      .pendingSetupStep(hasPolyformSession: false, hasAPIKey: false) == 1)
+  #expect(
+    JesSeeConfiguration(aiProviderMode: .bringYourOwnKey)
+      .pendingSetupStep(hasPolyformSession: false, hasAPIKey: true) == 2)
+  #expect(
+    JesSeeConfiguration(outputFolderPath: "/tmp/JesSee", aiProviderMode: .bringYourOwnKey)
+      .pendingSetupStep(hasPolyformSession: false, hasAPIKey: true) == 3)
+  #expect(
+    JesSeeConfiguration(aiProviderMode: .polyformCovered)
+      .pendingSetupStep(hasPolyformSession: true, hasAPIKey: false) == 2)
 }
 
 @Test func keychainRoundTripPersistsAcrossCalls() throws {
@@ -24,6 +31,23 @@ import Testing
   #expect(try JesSeeKeychain.loadAPIKey(service: service) == key)
   try JesSeeKeychain.removeAPIKey(service: service)
   #expect(try JesSeeKeychain.loadAPIKey(service: service) == nil)
+}
+
+@Test func workflowSessionRoundTripPersistsAcrossCalls() throws {
+  let service = "ai.polyform.jessee.workflow-tests.\(UUID().uuidString)"
+  let session = WorkflowAuthSession(
+    accessToken: "token", email: "person@example.com", grantID: "grant",
+    expiresAt: Date().addingTimeInterval(3_600))
+  defer { try? JesSeeKeychain.removeWorkflowSession(service: service) }
+
+  try JesSeeKeychain.saveWorkflowSession(session, service: service)
+  let reloaded = try #require(try JesSeeKeychain.loadWorkflowSession(service: service))
+  #expect(reloaded.accessToken == session.accessToken)
+  #expect(reloaded.email == session.email)
+  #expect(reloaded.grantID == session.grantID)
+  #expect(abs(reloaded.expiresAt.timeIntervalSince(session.expiresAt)) < 1)
+  try JesSeeKeychain.removeWorkflowSession(service: service)
+  #expect(try JesSeeKeychain.loadWorkflowSession(service: service) == nil)
 }
 
 @Test func captureDimensionsPreserveAspectRatioWithinEncoderBounds() {
@@ -92,9 +116,9 @@ import Testing
 @Test func configurationFromOlderBuildGetsSafePrivacyDefault() throws {
   let data = Data(#"{"email":"a@b.com","outputFolderPath":"/tmp","setupCompleted":true}"#.utf8)
   let configuration = try JesSeeJSON.decoder().decode(JesSeeConfiguration.self, from: data)
-  #expect(configuration.shareScreenshotsWithOpenAI)
+  #expect(configuration.shareScreenshotsForStory)
   #expect(!configuration.shareAnonymousFeatureUsage)
-  #expect(configuration.analyticsUserID == nil)
+  #expect(configuration.aiProviderMode == .bringYourOwnKey)
 }
 
 @Test func featureUsageWritesAGA4ReadyEventWithoutEmail() async throws {
@@ -117,7 +141,6 @@ import Testing
   let clientIDParts = event.clientID.split(separator: ".")
   #expect(clientIDParts.count == 2)
   #expect(clientIDParts.allSatisfy { UInt32($0) != nil })
-  #expect(event.userID == nil)
   #expect(line.contains(#""activity":"capture_added""#))
   #expect(!line.contains("email"))
   #expect(!line.contains("filename"))
@@ -126,26 +149,20 @@ import Testing
   #expect(!FileManager.default.fileExists(atPath: clientIDURL.path))
 }
 
-@Test func featureUsageSeparatesTrackAndIdentifyPayloads() async throws {
-  let userID = UUID().uuidString.lowercased()
+@Test func featureUsageBuildsDirectGA4PayloadWithoutIdentityData() throws {
   let event = FeatureUsageEvent(
     activityID: UUID().uuidString.lowercased(), occurredAt: Date(),
-    activity: FeatureUsageActivity.captureAdded.rawValue, clientID: "123.456", userID: userID,
+    activity: FeatureUsageActivity.captureAdded.rawValue, clientID: "123.456",
     product: "jessee", appVersion: "test", feature: "video_import", status: "completed",
     source: nil, mode: nil, itemCount: nil)
-  let identity = FeatureUsageIdentity(
-    occurredAt: Date(), product: "jessee", appVersion: "test", clientID: "123.456",
-    userID: userID, email: "person@example.com")
-  let trackData = try #require(FeatureUsageRecorder.encodeEnvelope(event, kind: "track"))
-  let identifyData = try #require(FeatureUsageRecorder.encodeEnvelope(identity, kind: "identify"))
-  let track = try #require(JSONSerialization.jsonObject(with: trackData) as? [String: Any])
-  let identify = try #require(JSONSerialization.jsonObject(with: identifyData) as? [String: Any])
+  let data = try #require(FeatureUsageRecorder.ga4Payload(event))
+  let payload = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+  let events = try #require(payload["events"] as? [[String: Any]])
 
-  #expect(track["kind"] as? String == "track")
-  #expect((track["payload"] as? [String: Any])?["email"] == nil)
-  #expect((track["payload"] as? [String: Any])?["user_id"] as? String == userID)
-  #expect(identify["kind"] as? String == "identify")
-  #expect((identify["payload"] as? [String: Any])?["email"] as? String == "person@example.com")
+  #expect(payload["client_id"] as? String == "123.456")
+  #expect(events.first?["name"] as? String == "capture_added")
+  #expect(String(decoding: data, as: UTF8.self).contains("email") == false)
+  #expect(String(decoding: data, as: UTF8.self).contains("user_id") == false)
 }
 
 @Test func captionsPreserveSegmentTiming() {
@@ -206,10 +223,10 @@ import Testing
     CapturedFrame(seconds: 30, filename: "third.jpg"),
   ]
   #expect(
-    OpenAIClient.selectedFrame(requestedSeconds: 10, stepEndSeconds: 30, frames: frames)?.filename
+    PolyformClient.selectedFrame(requestedSeconds: 10, stepEndSeconds: 30, frames: frames)?.filename
       == "first.jpg")
   #expect(
-    OpenAIClient.selectedFrame(requestedSeconds: 99, stepEndSeconds: 20, frames: frames)?.filename
+    PolyformClient.selectedFrame(requestedSeconds: 99, stepEndSeconds: 20, frames: frames)?.filename
       == "second.jpg")
 }
 
@@ -218,16 +235,25 @@ import Testing
     CapturedFrame(
       seconds: Double(index), filename: "frame-\(index).jpg", hasVisibleMarkup: index == 7)
   }
-  let selected = OpenAIClient.planningFrames(frames, maximum: 12)
+  let selected = PolyformClient.planningFrames(frames, maximum: 12)
   #expect(selected.count == 12)
   #expect(selected.contains(where: { $0.filename == "frame-7.jpg" }))
 }
 
 @Test func webpageURLsAreNormalizedAndUnsafeValuesAreRejected() {
-  #expect(OpenAIClient.normalizedWebURL("example.com/path") == "https://example.com/path")
-  #expect(OpenAIClient.normalizedWebURL("https://example.com/path") == "https://example.com/path")
-  #expect(OpenAIClient.normalizedWebURL("file:///tmp/private") == nil)
-  #expect(OpenAIClient.normalizedWebURL("not a URL") == nil)
+  #expect(PolyformClient.normalizedWebURL("example.com/path") == "https://example.com/path")
+  #expect(
+    PolyformClient.normalizedWebURL("https://example.com/path") == "https://example.com/path")
+  #expect(PolyformClient.normalizedWebURL("file:///tmp/private") == nil)
+  #expect(PolyformClient.normalizedWebURL("not a URL") == nil)
+}
+
+@Test func pkceCredentialsUseURLSafeVerifierAndS256Challenge() {
+  let credentials = PKCECredentials.generate()
+  #expect(credentials.verifier.count >= 43)
+  #expect(credentials.challenge.count == 43)
+  #expect(credentials.verifier.range(of: #"^[A-Za-z0-9_-]+$"#, options: .regularExpression) != nil)
+  #expect(credentials.challenge.range(of: #"^[A-Za-z0-9_-]+$"#, options: .regularExpression) != nil)
 }
 
 @Test func workspaceKeepsImportedMediaAndHistory() async throws {

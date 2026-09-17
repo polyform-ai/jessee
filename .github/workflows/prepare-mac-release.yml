@@ -123,7 +123,10 @@ jobs:
       - name: Package the signed and notarized release
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
-          JESSEE_FEATURE_USAGE_ENDPOINT: ${{ secrets.FEATURE_USAGE_ENDPOINT }}
+          JESSEE_TRANSCRIPTION_WORKFLOW_URL: ${{ secrets.TRANSCRIPTION_WORKFLOW_URL }}
+          JESSEE_STORY_WORKFLOW_URL: ${{ secrets.STORY_WORKFLOW_URL }}
+          JESSEE_GA4_MEASUREMENT_ID: ${{ secrets.GA4_MEASUREMENT_ID }}
+          JESSEE_GA4_API_SECRET: ${{ secrets.GA4_API_SECRET }}
         run: mac/Support/package-release.sh "${{ inputs.version }}" "${{ inputs.build_number }}"
 
       - name: Create the reviewable draft release
