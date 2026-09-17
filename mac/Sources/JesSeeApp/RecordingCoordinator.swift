@@ -1,4 +1,5 @@
 import AVFoundation
+import Accelerate
 import CoreVideo
 import Foundation
 import JesSeeCore
@@ -6,6 +7,11 @@ import JesSeeCore
 
 @MainActor
 final class RecordingCoordinator: NSObject, ObservableObject {
+  struct Result {
+    var url: URL
+    var markups: [RecordingMarkupStroke]
+  }
+
   enum State: Equatable {
     case idle
     case choosing
@@ -17,13 +23,19 @@ final class RecordingCoordinator: NSObject, ObservableObject {
   @Published private(set) var state: State = .idle
   @Published private(set) var startedAt: Date?
 
-  var onFinished: ((URL) -> Void)?
+  var overlayModel: RecordingOverlayModel { overlay.model }
+
+  var onFinished: ((Result) -> Void)?
 
   private let picker = SCContentSharingPicker.shared
   private var stream: SCStream?
   private var recordingOutput: SCRecordingOutput?
   private var outputURL: URL?
   private var discardCurrentRecording = false
+  private let overlay = RecordingOverlayController()
+  private let microphoneQueue = DispatchQueue(label: "ai.polyform.jessee.microphone-meter")
+  private var recordingContentRect: CGRect = .zero
+  private var recordingDisplayID: CGDirectDisplayID?
 
   override init() {
     super.init()
@@ -46,6 +58,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
   func stop() {
     guard state == .recording, let stream else { return }
     state = .stopping
+    overlay.setStopping()
     Task {
       do { try await stream.stopCapture() } catch { finishWithError(error.localizedDescription) }
     }
@@ -67,6 +80,12 @@ final class RecordingCoordinator: NSObject, ObservableObject {
   }
 
   private func startRecording(filter: SCContentFilter) async {
+    recordingContentRect = filter.contentRect
+    if #available(macOS 15.2, *) {
+      recordingDisplayID = filter.includedDisplays.first?.displayID
+    } else {
+      recordingDisplayID = nil
+    }
     let streamConfiguration = SCStreamConfiguration()
     let dimensions = CaptureDimensions.fitted(
       pointWidth: Double(filter.contentRect.width),
@@ -94,6 +113,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
     let output = SCRecordingOutput(configuration: outputConfiguration, delegate: self)
     do {
       try stream.addRecordingOutput(output)
+      try stream.addStreamOutput(self, type: .microphone, sampleHandlerQueue: microphoneQueue)
       self.stream = stream
       recordingOutput = output
       outputURL = tempURL
@@ -106,6 +126,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
 
   private func finishWithError(_ message: String) {
     if let outputURL { try? FileManager.default.removeItem(at: outputURL) }
+    overlay.cancel()
     state = .failed(message)
     startedAt = nil
     stream = nil
@@ -116,6 +137,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
   private func completeRecording() {
     let finishedURL = outputURL
     let shouldRedo = discardCurrentRecording
+    let markups = overlay.finish()
     state = .idle
     startedAt = nil
     stream = nil
@@ -127,7 +149,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
       if let finishedURL { try? FileManager.default.removeItem(at: finishedURL) }
       chooseWhatToRecord()
     } else if let finishedURL {
-      onFinished?(finishedURL)
+      onFinished?(Result(url: finishedURL, markups: markups))
     }
   }
 }
@@ -155,9 +177,16 @@ extension RecordingCoordinator: SCContentSharingPickerObserver {
 
 extension RecordingCoordinator: SCRecordingOutputDelegate {
   nonisolated func recordingOutputDidStartRecording(_ recordingOutput: SCRecordingOutput) {
-    Task { @MainActor in
-      self.startedAt = Date()
+    Task { @MainActor [self] in
+      let startedAt = Date()
+      self.startedAt = startedAt
       self.state = .recording
+      self.overlay.start(
+        contentRect: self.recordingContentRect,
+        displayID: self.recordingDisplayID,
+        startedAt: startedAt,
+        onStop: { [weak self] in self?.stop() },
+        onRedo: { [weak self] in self?.redo() })
     }
   }
 
@@ -177,5 +206,40 @@ extension RecordingCoordinator: SCStreamDelegate {
     Task { @MainActor in
       if self.state != .stopping { self.finishWithError(error.localizedDescription) }
     }
+  }
+}
+
+extension RecordingCoordinator: SCStreamOutput {
+  nonisolated func stream(
+    _ stream: SCStream,
+    didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
+    of outputType: SCStreamOutputType
+  ) {
+    guard outputType == .microphone, sampleBuffer.isValid,
+      let level = Self.microphoneLevel(in: sampleBuffer)
+    else { return }
+    Task { @MainActor in self.overlay.updateMicLevel(level) }
+  }
+
+  nonisolated private static func microphoneLevel(in sampleBuffer: CMSampleBuffer) -> Double? {
+    var result: Double?
+    try? sampleBuffer.withAudioBufferList { audioBufferList, _ in
+      guard
+        let description = sampleBuffer.formatDescription?.audioStreamBasicDescription,
+        let format = AVAudioFormat(
+          standardFormatWithSampleRate: description.mSampleRate,
+          channels: description.mChannelsPerFrame),
+        let samples = AVAudioPCMBuffer(
+          pcmFormat: format,
+          bufferListNoCopy: audioBufferList.unsafePointer),
+        let channel = samples.floatChannelData?.pointee,
+        samples.frameLength > 0
+      else { return }
+      var meanSquare: Float = 0
+      vDSP_measqv(channel, 1, &meanSquare, vDSP_Length(samples.frameLength))
+      let decibels = 20 * log10(max(sqrt(Double(meanSquare)), 0.000_01))
+      result = max(0, min(1, (decibels + 55) / 55))
+    }
+    return result
   }
 }

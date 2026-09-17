@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import PDFKit
 import Testing
@@ -45,6 +46,47 @@ import Testing
   #expect(times.count == 8)
   #expect(times == times.sorted())
   #expect(times.allSatisfy { $0 >= 0 && $0 < 60 })
+}
+
+@Test func frameTimesKeepRecordingMarkupMoments() {
+  let segments = (0..<30).map {
+    TranscriptSegment(id: $0, start: Double($0 * 2), end: Double($0 * 2 + 1), text: "Step \($0)")
+  }
+  let times = MediaTools.frameTimes(
+    duration: 60, segments: segments, notableTimes: [17.2], maximum: 8)
+  #expect(times.count == 8)
+  #expect(times.contains { abs($0 - 17.25) < 0.001 })
+}
+
+@Test func recordingMarkupsFollowTheirVisibleTimeline() {
+  let stroke = RecordingMarkupStroke(
+    kind: .pen,
+    points: [RecordingMarkupPoint(x: 0.1, y: 0.2), RecordingMarkupPoint(x: 0.8, y: 0.7)],
+    createdAtSeconds: 2,
+    removedAtSeconds: 5)
+  #expect(!stroke.isVisible(at: 1.9))
+  #expect(stroke.isVisible(at: 2))
+  #expect(stroke.isVisible(at: 4.9))
+  #expect(!stroke.isVisible(at: 5))
+}
+
+@Test func recordingMarkupIsBakedIntoExtractedVisuals() throws {
+  guard
+    let context = CGContext(
+      data: nil, width: 100, height: 100, bitsPerComponent: 8, bytesPerRow: 0,
+      space: CGColorSpaceCreateDeviceRGB(),
+      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+  else { return }
+  context.setFillColor(NSColor.white.cgColor)
+  context.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+  guard let image = context.makeImage() else { return }
+  let stroke = RecordingMarkupStroke(
+    kind: .pen,
+    points: [RecordingMarkupPoint(x: 0.2, y: 0.5), RecordingMarkupPoint(x: 0.8, y: 0.5)],
+    createdAtSeconds: 1)
+  let marked = MediaTools.applyMarkups([stroke], at: 2, to: image)
+  let color = NSBitmapImageRep(cgImage: marked).colorAt(x: 50, y: 50)
+  #expect((color?.redComponent ?? 0) > (color?.greenComponent ?? 1))
 }
 
 @Test func configurationFromOlderBuildGetsSafePrivacyDefault() throws {

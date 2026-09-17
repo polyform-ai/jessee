@@ -117,16 +117,22 @@ private struct StartCard: View {
 
 private struct RecordingControls: View {
   @ObservedObject var recorder: RecordingCoordinator
+  @ObservedObject private var overlayModel: RecordingOverlayModel
+
+  init(recorder: RecordingCoordinator) {
+    self.recorder = recorder
+    self.overlayModel = recorder.overlayModel
+  }
 
   var body: some View {
     VStack(spacing: 14) {
       HStack {
         Circle().fill(.red).frame(width: 10, height: 10)
         Text("Recording").font(.headline)
+        MicrophoneMeter(level: overlayModel.micLevel)
         Spacer()
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-          Text(elapsed(at: context.date)).monospacedDigit().font(.title3.weight(.semibold))
-        }
+        RecordingElapsedTime(startedAt: recorder.startedAt ?? .now)
+          .font(.title3.weight(.semibold))
       }
       HStack(spacing: 10) {
         Button(action: recorder.redo) { Label("Redo", systemImage: "arrow.counterclockwise") }
@@ -138,15 +144,13 @@ private struct RecordingControls: View {
         .buttonStyle(.borderedProminent).tint(.red).disabled(recorder.state == .stopping)
         .keyboardShortcut(.return, modifiers: .command)
       }
+      Text("Floating controls: ⌥D draw · ⌥H highlight · ⌥Z undo · ⌥C clear")
+        .font(.caption2).foregroundStyle(.secondary)
     }
     .padding(16)
     .background(.red.opacity(0.07), in: RoundedRectangle(cornerRadius: 16))
   }
 
-  private func elapsed(at date: Date) -> String {
-    let seconds = max(0, Int(date.timeIntervalSince(recorder.startedAt ?? date)))
-    return String(format: "%02d:%02d", seconds / 60, seconds % 60)
-  }
 }
 
 private struct GuideView: View {

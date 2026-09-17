@@ -45,7 +45,12 @@ public enum MediaTools {
     try await exporter.export(to: audioURL, as: .m4a)
   }
 
-  public static func frameTimes(duration: Double, segments: [TranscriptSegment], maximum: Int = 18)
+  public static func frameTimes(
+    duration: Double,
+    segments: [TranscriptSegment],
+    notableTimes: [Double] = [],
+    maximum: Int = 18
+  )
     -> [Double]
   {
     guard duration > 0, maximum > 0 else { return [] }
@@ -59,21 +64,29 @@ public enum MediaTools {
       candidates = segments.map { max(0, min(duration - 0.05, ($0.start + $0.end) / 2)) }
     }
 
-    let deduplicated = candidates.sorted().reduce(into: [Double]()) { result, time in
+    let notable = notableTimes.map { max(0, min(duration - 0.05, $0 + 0.05)) }
+      .sorted()
+      .reduce(into: [Double]()) { result, time in
+        if result.last.map({ abs($0 - time) >= 0.4 }) ?? true { result.append(time) }
+      }
+    if notable.count >= maximum { return evenlySampled(notable, count: maximum) }
+
+    let narrative = candidates.sorted().reduce(into: [Double]()) { result, time in
+      guard !notable.contains(where: { abs($0 - time) < 0.8 }) else { return }
       if result.last.map({ abs($0 - time) >= 1.0 }) ?? true { result.append(time) }
     }
-    guard deduplicated.count > maximum else { return deduplicated }
-    return (0..<maximum).map { index in
-      let position = Double(index) * Double(deduplicated.count - 1) / Double(maximum - 1)
-      return deduplicated[Int(position.rounded())]
-    }
+    let remaining = maximum - notable.count
+    let selectedNarrative =
+      narrative.count > remaining ? evenlySampled(narrative, count: remaining) : narrative
+    return (notable + selectedNarrative).sorted()
   }
 
   public static func extractFrames(
     from mediaURL: URL,
     times: [Double],
     to directoryURL: URL,
-    maximumWidth: CGFloat = 1920
+    maximumWidth: CGFloat = 1920,
+    recordingMarkups: [RecordingMarkupStroke] = []
   ) async throws -> [CapturedFrame] {
     try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
     let asset = AVURLAsset(url: mediaURL)
@@ -87,7 +100,8 @@ public enum MediaTools {
     for (index, seconds) in times.enumerated() {
       let image = try await generator.image(at: CMTime(seconds: seconds, preferredTimescale: 600))
         .image
-      let bitmap = NSBitmapImageRep(cgImage: image)
+      let markedImage = applyMarkups(recordingMarkups, at: seconds, to: image)
+      let bitmap = NSBitmapImageRep(cgImage: markedImage)
       guard let data = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.88])
       else {
         continue
@@ -114,6 +128,65 @@ public enum MediaTools {
 
   public static func nearestFrame(to seconds: Double, frames: [CapturedFrame]) -> CapturedFrame? {
     frames.min { abs($0.seconds - seconds) < abs($1.seconds - seconds) }
+  }
+
+  static func applyMarkups(
+    _ markups: [RecordingMarkupStroke], at seconds: Double, to image: CGImage
+  ) -> CGImage {
+    let visible = markups.filter { $0.isVisible(at: seconds) && $0.points.count > 1 }
+    guard !visible.isEmpty,
+      let context = CGContext(
+        data: nil,
+        width: image.width,
+        height: image.height,
+        bitsPerComponent: 8,
+        bytesPerRow: 0,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    else { return image }
+
+    let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+    context.draw(image, in: bounds)
+    context.setLineCap(.round)
+    context.setLineJoin(.round)
+    for markup in visible {
+      let path = CGMutablePath()
+      let first = markup.points[0]
+      path.move(
+        to: CGPoint(
+          x: clamped(first.x) * bounds.width,
+          y: (1 - clamped(first.y)) * bounds.height))
+      for point in markup.points.dropFirst() {
+        path.addLine(
+          to: CGPoint(
+            x: clamped(point.x) * bounds.width,
+            y: (1 - clamped(point.y)) * bounds.height))
+      }
+      switch markup.kind {
+      case .pen:
+        context.setStrokeColor(NSColor.systemRed.cgColor)
+        context.setLineWidth(max(5, bounds.width * 0.0045))
+      case .highlight:
+        context.setStrokeColor(NSColor.systemYellow.withAlphaComponent(0.48).cgColor)
+        context.setLineWidth(max(18, bounds.width * 0.018))
+      }
+      context.addPath(path)
+      context.strokePath()
+    }
+    return context.makeImage() ?? image
+  }
+
+  private static func clamped(_ value: Double) -> CGFloat {
+    CGFloat(max(0, min(1, value)))
+  }
+
+  private static func evenlySampled(_ values: [Double], count: Int) -> [Double] {
+    guard count > 0, values.count > count else { return count > 0 ? values : [] }
+    guard count > 1 else { return [values[values.count / 2]] }
+    return (0..<count).map { index in
+      let position = Double(index) * Double(values.count - 1) / Double(count - 1)
+      return values[Int(position.rounded())]
+    }
   }
 
   private static func captionTime(_ value: Double, decimal: Character) -> String {

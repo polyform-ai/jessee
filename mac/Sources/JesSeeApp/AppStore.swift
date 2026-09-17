@@ -35,9 +35,13 @@ final class AppStore: ObservableObject {
       workspace = CaptureWorkspace(
         rootURL: URL(fileURLWithPath: configuration.outputFolderPath, isDirectory: true))
     }
-    recorder.onFinished = { [weak self] url in
+    recorder.onFinished = { [weak self] result in
       Task { @MainActor in
-        await self?.addCapture(from: url, source: .recording, deleteSourceAfterImport: true)
+        await self?.addCapture(
+          from: result.url,
+          source: .recording,
+          deleteSourceAfterImport: true,
+          recordingMarkups: result.markups)
       }
     }
     Task { await loadLibrary() }
@@ -205,14 +209,20 @@ final class AppStore: ObservableObject {
   func clearNotice() { notice = nil }
 
   private func addCapture(
-    from url: URL, source: CaptureSource, deleteSourceAfterImport: Bool = false
+    from url: URL,
+    source: CaptureSource,
+    deleteSourceAfterImport: Bool = false,
+    recordingMarkups: [RecordingMarkupStroke]? = nil
   ) async {
     guard let workspace else {
       show(.error(JesSeeError.outputFolderUnavailable.localizedDescription))
       return
     }
     do {
-      let record = try await workspace.importMedia(from: url, source: source)
+      let record = try await workspace.importMedia(
+        from: url,
+        source: source,
+        recordingMarkups: recordingMarkups)
       if deleteSourceAfterImport { try? FileManager.default.removeItem(at: url) }
       captures = await workspace.allRecords()
       startProcessing(record)

@@ -184,6 +184,47 @@ public struct StoryAnnotation: Codable, Sendable, Equatable, Identifiable {
   }
 }
 
+public enum RecordingMarkupKind: String, Codable, Sendable, Equatable {
+  case pen
+  case highlight
+}
+
+public struct RecordingMarkupPoint: Codable, Sendable, Equatable {
+  public var x: Double
+  public var y: Double
+
+  public init(x: Double, y: Double) {
+    self.x = x
+    self.y = y
+  }
+}
+
+public struct RecordingMarkupStroke: Codable, Sendable, Equatable, Identifiable {
+  public var id: String
+  public var kind: RecordingMarkupKind
+  public var points: [RecordingMarkupPoint]
+  public var createdAtSeconds: Double
+  public var removedAtSeconds: Double?
+
+  public init(
+    id: String = UUID().uuidString.lowercased(),
+    kind: RecordingMarkupKind,
+    points: [RecordingMarkupPoint],
+    createdAtSeconds: Double,
+    removedAtSeconds: Double? = nil
+  ) {
+    self.id = id
+    self.kind = kind
+    self.points = points
+    self.createdAtSeconds = createdAtSeconds
+    self.removedAtSeconds = removedAtSeconds
+  }
+
+  public func isVisible(at seconds: Double) -> Bool {
+    createdAtSeconds <= seconds && (removedAtSeconds.map { seconds < $0 } ?? true)
+  }
+}
+
 public struct StoryKeyPoint: Codable, Sendable, Equatable, Identifiable {
   public var id: String
   public var text: String
@@ -241,6 +282,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
   public var pdfFilename: String?
   public var imageFilenames: [String]
   public var imageTimes: [String: Double]?
+  public var recordingMarkups: [RecordingMarkupStroke]?
   public var error: String?
 
   public init(
@@ -258,6 +300,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     pdfFilename: String? = nil,
     imageFilenames: [String] = [],
     imageTimes: [String: Double]? = nil,
+    recordingMarkups: [RecordingMarkupStroke]? = nil,
     error: String? = nil
   ) {
     self.id = id
@@ -274,6 +317,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     self.pdfFilename = pdfFilename
     self.imageFilenames = imageFilenames
     self.imageTimes = imageTimes
+    self.recordingMarkups = recordingMarkups
     self.error = error
   }
 }

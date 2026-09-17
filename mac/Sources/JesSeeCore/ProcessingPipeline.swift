@@ -40,11 +40,16 @@ public struct CaptureProcessor: Sendable {
       record.transcriptFilename = "transcript.json"
       try await update(&record, stage: .choosingImages, onProgress: onProgress)
 
-      let times = MediaTools.frameTimes(duration: details.duration, segments: transcript.segments)
+      let times = MediaTools.frameTimes(
+        duration: details.duration,
+        segments: transcript.segments,
+        notableTimes: record.recordingMarkups?.map(\.createdAtSeconds) ?? []
+      )
       let frames = try await MediaTools.extractFrames(
         from: mediaURL,
         times: times,
-        to: directory.appendingPathComponent("screenshots", isDirectory: true)
+        to: directory.appendingPathComponent("screenshots", isDirectory: true),
+        recordingMarkups: record.recordingMarkups ?? []
       )
       record.imageFilenames = frames.map(\.filename)
       record.imageTimes = Dictionary(uniqueKeysWithValues: frames.map { ($0.filename, $0.seconds) })
