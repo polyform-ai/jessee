@@ -5,6 +5,7 @@ output/*
 output/pdf/*
 !output/pdf/jessee-explains-jessee.pdf
 site-dist/
+.wrangler/
 tmp/
 test-results/
 release/
