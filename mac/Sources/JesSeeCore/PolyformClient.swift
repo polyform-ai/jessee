@@ -424,9 +424,28 @@ private struct EmptyBody: Encodable {}
 private struct UploadReference: Encodable { var uploadID: String }
 private struct TranscriptionRequest: Encodable { var audio: UploadReference }
 
-private struct WorkflowResponse<Result: Decodable>: Decodable {
+struct WorkflowResponse<Result: Decodable>: Decodable {
   var success: Bool
   var result: Result
+
+  private enum CodingKeys: String, CodingKey {
+    case success
+    case result
+  }
+
+  private struct NestedResult: Decodable {
+    var result: Result
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    success = try container.decode(Bool.self, forKey: .success)
+    if let direct = try? container.decode(Result.self, forKey: .result) {
+      result = direct
+    } else {
+      result = try container.decode(NestedResult.self, forKey: .result).result
+    }
+  }
 }
 
 private struct TranscriptionResult: Decodable {

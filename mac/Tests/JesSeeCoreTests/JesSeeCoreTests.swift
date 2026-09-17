@@ -5,6 +5,19 @@ import Testing
 
 @testable import JesSeeCore
 
+@Test func workflowResponsesAcceptDirectAndLightWrapperResults() throws {
+  let decoder = JSONDecoder()
+  let direct = try decoder.decode(
+    WorkflowResponse<[String: String]>.self,
+    from: Data(#"{"success":true,"result":{"text":"hello"}}"#.utf8))
+  let wrapped = try decoder.decode(
+    WorkflowResponse<[String: String]>.self,
+    from: Data(#"{"success":true,"result":{"result":{"text":"hello"}}}"#.utf8))
+
+  #expect(direct.result == ["text": "hello"])
+  #expect(wrapped.result == direct.result)
+}
+
 @Test func setupResumesAfterPersistedSteps() {
   #expect(
     JesSeeConfiguration().pendingSetupStep(hasPolyformSession: false, hasAPIKey: false) == 0)

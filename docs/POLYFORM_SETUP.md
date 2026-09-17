@@ -23,6 +23,8 @@ Configure the existing protected workflow to:
 
 Each segment must contain `start`, `end`, and `text`; an integer `id` is optional. Each word must contain `word`, `start`, and `end`.
 
+Keep this workflow light: set the Transcribe Audio node to `whisper-1`, turn on **Include timestamps**, and return the node output without reshaping it. JesSee accepts either the structured object directly under the API `result` or one ordinary workflow output-field layer such as `result.result`.
+
 ## Story workflow
 
 Create a light protected AI wrapper that accepts this JSON contract:
