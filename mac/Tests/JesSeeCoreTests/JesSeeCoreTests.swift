@@ -26,6 +26,23 @@ import Testing
   #expect(try JesSeeKeychain.loadAPIKey(service: service) == nil)
 }
 
+@Test func keychainLoadMigratesDataProtectionItemsWhenAvailable() throws {
+  let service = "ai.polyform.jessee.tests.migration.\(UUID().uuidString)"
+  let key = "sk-test-\(UUID().uuidString)"
+  defer {
+    try? JesSeeKeychain.removeAPIKey(service: service)
+    try? JesSeeKeychain.removeAPIKey(service: service, dataProtection: true)
+  }
+
+  do {
+    try JesSeeKeychain.saveAPIKey(key, service: service, dataProtection: true)
+  } catch let error as NSError where error.code == Int(errSecMissingEntitlement) {
+    return
+  }
+  #expect(try JesSeeKeychain.loadAPIKeyMigratingIfNeeded(service: service) == key)
+  #expect(try JesSeeKeychain.loadAPIKey(service: service) == key)
+}
+
 @Test func captureDimensionsPreserveAspectRatioWithinEncoderBounds() {
   #expect(
     CaptureDimensions.fitted(pointWidth: 960, pointHeight: 540, pointPixelScale: 2)
@@ -122,6 +139,18 @@ import Testing
   #expect(story.steps.first?.imageAnnotations.isEmpty == true)
 }
 
+@Test func storySummaryHTMLIsBackwardCompatibleAndRoundTrips() throws {
+  let legacy = Data(#"{"title":"Legacy","summary":"Summary","keyPoints":[],"steps":[]}"#.utf8)
+  #expect(try JesSeeJSON.decoder().decode(StoryDocument.self, from: legacy).summaryHTML == nil)
+
+  let story = StoryDocument(
+    title: "Rich summary", summary: "Read this first.",
+    summaryHTML: "<p>Read <strong>this</strong> first.</p>", keyPoints: [], steps: [])
+  let decoded = try JesSeeJSON.decoder().decode(
+    StoryDocument.self, from: JesSeeJSON.encoder().encode(story))
+  #expect(decoded.summaryHTML == story.summaryHTML)
+}
+
 @Test func workspaceKeepsImportedMediaAndHistory() async throws {
   let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
     UUID().uuidString, isDirectory: true)
@@ -149,6 +178,7 @@ import Testing
   let story = StoryDocument(
     title: "A clearer workflow",
     summary: "The finished explanation stands on its own.",
+    summaryHTML: "<p>The finished explanation <strong>stands</strong> on its own.</p>",
     keyPoints: ["Capture the intent", "Keep the evidence"],
     steps: [
       StoryStep(
@@ -161,7 +191,7 @@ import Testing
   #expect(document?.pageCount == 1)
   #expect(
     try String(contentsOf: temporary.appendingPathComponent(output.html), encoding: .utf8).contains(
-      "A clearer workflow"))
+      "<strong>stands</strong>"))
 }
 
 @Test func mediaToolsReadVideoExtractAudioAndCreateFrames() async throws {

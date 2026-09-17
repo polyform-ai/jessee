@@ -256,12 +256,17 @@ public struct StoryKeyPoint: Codable, Sendable, Equatable, Identifiable {
 public struct StoryDocument: Codable, Sendable, Equatable {
   public var title: String
   public var summary: String
+  public var summaryHTML: String?
   public var keyPoints: [StoryKeyPoint]
   public var steps: [StoryStep]
 
-  public init(title: String, summary: String, keyPoints: [String], steps: [StoryStep]) {
+  public init(
+    title: String, summary: String, summaryHTML: String? = nil, keyPoints: [String],
+    steps: [StoryStep]
+  ) {
     self.title = title
     self.summary = summary
+    self.summaryHTML = summaryHTML
     self.keyPoints = keyPoints.map { StoryKeyPoint(text: $0) }
     self.steps = steps
   }

@@ -1,4 +1,4 @@
-import { Editor, Node, mergeAttributes, type JSONContent } from "@tiptap/core";
+import { Editor, Node as TiptapNode, mergeAttributes, type JSONContent } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import "./macEditor.css";
 
@@ -28,6 +28,7 @@ interface StoryStep {
 interface Story {
   title: string;
   summary: string;
+  summaryHTML?: string;
   keyPoints: Array<{ id: string; text: string }>;
   steps: StoryStep[];
 }
@@ -63,13 +64,13 @@ const payload = window.__JESSEE_EDITOR__;
 const app = document.querySelector<HTMLElement>("#app")!;
 if (!app || !payload) throw new Error("JesSee editor payload is missing.");
 
-const StoryDocument = Node.create({
+const StoryDocument = TiptapNode.create({
   name: "doc",
   topNode: true,
   content: "storyOverview storyStep+"
 });
 
-const StoryOverview = Node.create({
+const StoryOverview = TiptapNode.create({
   name: "storyOverview",
   group: "block",
   content: "storyTitle storySummary bulletList?",
@@ -78,7 +79,7 @@ const StoryOverview = Node.create({
   renderHTML: ({ HTMLAttributes }) => ["section", mergeAttributes(HTMLAttributes, { "data-story-overview": "" }), 0]
 });
 
-const StoryTitle = Node.create({
+const StoryTitle = TiptapNode.create({
   name: "storyTitle",
   content: "inline*",
   marks: "bold italic",
@@ -86,14 +87,14 @@ const StoryTitle = Node.create({
   renderHTML: ({ HTMLAttributes }) => ["h1", mergeAttributes(HTMLAttributes, { "data-story-title": "" }), 0]
 });
 
-const StorySummary = Node.create({
+const StorySummary = TiptapNode.create({
   name: "storySummary",
   content: "(paragraph | bulletList | orderedList | blockquote)+",
   parseHTML: () => [{ tag: "div[data-story-summary]" }],
   renderHTML: ({ HTMLAttributes }) => ["div", mergeAttributes(HTMLAttributes, { "data-story-summary": "" }), 0]
 });
 
-const StoryStepNode = Node.create({
+const StoryStepNode = TiptapNode.create({
   name: "storyStep",
   group: "block",
   content: "heading (paragraph | bulletList | orderedList | blockquote)+ storyImage",
@@ -122,7 +123,7 @@ let drawingMode: AnnotationKind | undefined;
 let draftAnnotations: Annotation[] = [];
 let dragStart: { x: number; y: number } | undefined;
 
-const StoryImage = Node.create({
+const StoryImage = TiptapNode.create({
   name: "storyImage",
   group: "block",
   atom: true,
@@ -332,7 +333,7 @@ function initialDocument(story: Story): JSONContent {
         type: "storyOverview",
         content: [
           textNode("storyTitle", story.title),
-          { type: "storySummary", content: htmlBlocks(story.summary ? `<p>${escapeHTML(story.summary)}</p>` : "<p></p>") },
+          { type: "storySummary", content: htmlBlocks(story.summaryHTML || narrativeHTML(story.summary)) },
           ...(story.keyPoints.length ? [{
             type: "bulletList",
             content: story.keyPoints.map((point) => ({ type: "listItem", content: [textNode("paragraph", point.text)] }))
@@ -395,7 +396,7 @@ function serializeStory(): Story {
       imageAnnotations: parseAnnotations(image?.attrs?.annotations)
     } satisfies StoryStep;
   });
-  return { title: title || "Untitled story", summary, keyPoints, steps };
+  return { title: title || "Untitled story", summary, summaryHTML, keyPoints, steps };
 }
 
 function openImagePicker(stepIndex: number): void {
@@ -551,15 +552,50 @@ function htmlBlocks(html: string): JSONContent[] {
     if (child.tagName === "UL" || child.tagName === "OL") {
       blocks.push({
         type: child.tagName === "UL" ? "bulletList" : "orderedList",
-        content: [...child.children].map((item) => ({ type: "listItem", content: [textNode("paragraph", item.textContent || "")] }))
+        content: [...child.children].map((item) => ({
+          type: "listItem",
+          content: [...item.children].length
+            ? [...item.children].map(blockFromElement)
+            : [{ type: "paragraph", content: inlineContent(item) }]
+        }))
       });
     } else if (child.tagName === "BLOCKQUOTE") {
-      blocks.push({ type: "blockquote", content: [textNode("paragraph", child.textContent || "")] });
+      blocks.push({
+        type: "blockquote",
+        content: [...child.children].length
+          ? [...child.children].map(blockFromElement)
+          : [{ type: "paragraph", content: inlineContent(child) }]
+      });
     } else {
-      blocks.push(textNode("paragraph", child.textContent || ""));
+      blocks.push({ type: "paragraph", content: inlineContent(child) });
     }
   }
   return blocks.length ? blocks : [textNode("paragraph", "")];
+}
+
+function blockFromElement(element: Element): JSONContent {
+  return { type: "paragraph", content: inlineContent(element) };
+}
+
+function inlineContent(element: Element): JSONContent[] {
+  const content: JSONContent[] = [];
+  const visit = (node: Node, marks: JSONContent["marks"] = []) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (node.textContent) content.push({ type: "text", text: node.textContent, marks });
+      return;
+    }
+    if (!(node instanceof Element)) return;
+    if (node.tagName === "BR") {
+      content.push({ type: "hardBreak" });
+      return;
+    }
+    const nextMarks = [...(marks || [])];
+    if (["STRONG", "B"].includes(node.tagName)) nextMarks.push({ type: "bold" });
+    if (["EM", "I"].includes(node.tagName)) nextMarks.push({ type: "italic" });
+    node.childNodes.forEach((child) => visit(child, nextMarks));
+  };
+  element.childNodes.forEach((child) => visit(child));
+  return content;
 }
 
 function narrativeHTML(value: string): string {
@@ -584,6 +620,7 @@ function renderBlock(node: JSONContent): string {
 
 function renderInline(content: JSONContent[]): string {
   return content.map((node) => {
+    if (node.type === "hardBreak") return "<br>";
     let text = escapeHTML(node.text || "");
     for (const mark of node.marks || []) {
       if (mark.type === "bold") text = `<strong>${text}</strong>`;

@@ -41,11 +41,12 @@ public enum DocumentRenderer {
         </section>
         """
     }.joined(separator: "\n")
+    let summary = story.summaryHTML ?? "<p>\(escape(story.summary))</p>"
     return """
       <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
       <title>\(escape(story.title))</title><style>
-      :root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#17171b;background:#fff}body{max-width:900px;margin:0 auto;padding:64px 40px;line-height:1.55}h1{font-size:46px;line-height:1.05;letter-spacing:-.03em;margin:0 0 20px}h2{font-size:28px;line-height:1.15;margin:6px 0 10px}.summary{font-size:21px;color:#5b5b68}.points{padding:22px 28px;background:#f3f2ff;border-radius:18px;margin:32px 0}.points li{margin:8px 0}.step{border-top:1px solid #dedde8;padding:38px 0}.eyebrow{font-size:12px;font-weight:750;letter-spacing:.12em;color:#5a52ff;margin:0}.narrative{font-size:17px}.narrative p,.narrative ul,.narrative ol,.narrative blockquote{margin:10px 0}.narrative blockquote{border-left:4px solid #655cff;background:#f3f2ff;padding:12px 16px;border-radius:0 10px 10px 0}.step-image{margin:20px 0 0}.image-frame{position:relative;overflow:hidden;border-radius:14px;border:1px solid #dedde8}.step img{display:block;width:100%;height:auto}.annotation{position:absolute;box-sizing:border-box}.annotation.highlight{border:4px solid #ffae00;background:rgba(255,192,0,.18);border-radius:8px}.annotation.redaction{background:#111;border-radius:4px}.footer{border-top:1px solid #dedde8;padding-top:20px;color:#777;font-size:13px}
-      </style></head><body><header><p class="eyebrow">JESSEE VISUAL STORY</p><h1>\(escape(story.title))</h1><p class="summary">\(escape(story.summary))</p></header><div class="points"><strong>Key points</strong><ul>\(keyPoints)</ul></div>\(steps)<p class="footer">Created with JesSee · Turn a walkthrough into a story AI can use.</p></body></html>
+      :root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#17171b;background:#fff}body{max-width:900px;margin:0 auto;padding:64px 40px;line-height:1.55}h1{font-size:46px;line-height:1.05;letter-spacing:-.03em;margin:0 0 20px}h2{font-size:28px;line-height:1.15;margin:6px 0 10px}.summary{font-size:21px;color:#5b5b68}.summary p,.summary ul,.summary ol,.summary blockquote{margin:10px 0}.summary blockquote{border-left:4px solid #655cff;background:#f3f2ff;padding:12px 16px}.points{padding:22px 28px;background:#f3f2ff;border-radius:18px;margin:32px 0}.points li{margin:8px 0}.step{border-top:1px solid #dedde8;padding:38px 0}.eyebrow{font-size:12px;font-weight:750;letter-spacing:.12em;color:#5a52ff;margin:0}.narrative{font-size:17px}.narrative p,.narrative ul,.narrative ol,.narrative blockquote{margin:10px 0}.narrative blockquote{border-left:4px solid #655cff;background:#f3f2ff;padding:12px 16px;border-radius:0 10px 10px 0}.step-image{margin:20px 0 0}.image-frame{position:relative;overflow:hidden;border-radius:14px;border:1px solid #dedde8}.step img{display:block;width:100%;height:auto}.annotation{position:absolute;box-sizing:border-box}.annotation.highlight{border:4px solid #ffae00;background:rgba(255,192,0,.18);border-radius:8px}.annotation.redaction{background:#111;border-radius:4px}.footer{border-top:1px solid #dedde8;padding-top:20px;color:#777;font-size:13px}
+      </style></head><body><header><p class="eyebrow">JESSEE VISUAL STORY</p><h1>\(escape(story.title))</h1><div class="summary">\(summary)</div></header><div class="points"><strong>Key points</strong><ul>\(keyPoints)</ul></div>\(steps)<p class="footer">Created with JesSee · Turn a walkthrough into a story AI can use.</p></body></html>
       """
   }
 
@@ -85,6 +86,7 @@ private final class StoryPDFView: NSView {
   private let pageWidth: CGFloat = 792
   private let margin: CGFloat = 64
   private var layouts: [StepLayout] = []
+  private var summaryText = NSAttributedString(string: "")
   private var titleHeight: CGFloat = 0
   private var summaryHeight: CGFloat = 0
   private var pointsHeight: CGFloat = 0
@@ -105,7 +107,10 @@ private final class StoryPDFView: NSView {
   private func buildLayout() {
     titleHeight = textHeight(
       story.title, font: .systemFont(ofSize: 36, weight: .bold), width: contentWidth)
-    summaryHeight = textHeight(story.summary, font: .systemFont(ofSize: 18), width: contentWidth)
+    summaryText = richText(
+      body: story.summaryHTML ?? "<p>\(Self.escapeHTML(story.summary))</p>",
+      fallback: story.summary, fontSize: 18)
+    summaryHeight = attributedTextHeight(summaryText, width: contentWidth)
     pointsHeight = story.keyPoints.reduce(CGFloat(44)) { partial, point in
       partial
         + textHeight(
@@ -156,9 +161,9 @@ private final class StoryPDFView: NSView {
     drawText(
       story.title, in: NSRect(x: x, y: margin + 30, width: contentWidth, height: titleHeight),
       font: .systemFont(ofSize: 36, weight: .bold), color: ink)
-    drawText(
-      story.summary, in: NSRect(x: x, y: summaryY, width: contentWidth, height: summaryHeight),
-      font: .systemFont(ofSize: 18), color: secondaryInk)
+    summaryText.draw(
+      with: NSRect(x: x, y: summaryY, width: contentWidth, height: summaryHeight),
+      options: [.usesLineFragmentOrigin, .usesFontLeading])
 
     NSColor(red: 0.96, green: 0.95, blue: 1, alpha: 1).setFill()
     NSBezierPath(
@@ -212,7 +217,6 @@ private final class StoryPDFView: NSView {
   }
 
   private var ink: NSColor { NSColor(calibratedWhite: 0.09, alpha: 1) }
-  private var secondaryInk: NSColor { NSColor(calibratedWhite: 0.36, alpha: 1) }
   private var lineColor: NSColor { NSColor(calibratedWhite: 0.86, alpha: 1) }
   private var summaryY: CGFloat { margin + 30 + titleHeight + 16 }
   private var pointsY: CGFloat { summaryY + summaryHeight + 30 }
@@ -236,9 +240,13 @@ private final class StoryPDFView: NSView {
 
   private func richText(for step: StoryStep) -> NSAttributedString {
     let body = step.narrativeHTML ?? "<p>\(Self.escapeHTML(step.narrative))</p>"
+    return richText(body: body, fallback: step.narrative, fontSize: 14)
+  }
+
+  private func richText(body: String, fallback: String, fontSize: CGFloat) -> NSAttributedString {
     let html = """
       <style>
-      body{font-family:-apple-system;font-size:14px;color:#17171b;line-height:1.48;margin:0}
+      body{font-family:-apple-system;font-size:\(fontSize)px;color:#17171b;line-height:1.48;margin:0}
       p,ul,ol,blockquote{margin:0 0 9px}ul,ol{padding-left:22px}
       blockquote{margin-left:0;border-left:4px solid #655cff;background:#f3f2ff;padding:10px 13px}
       </style><body>\(body)</body>
@@ -252,8 +260,8 @@ private final class StoryPDFView: NSView {
         ], documentAttributes: nil)
     else {
       return NSAttributedString(
-        string: step.narrative,
-        attributes: [.font: NSFont.systemFont(ofSize: 14), .foregroundColor: ink])
+        string: fallback,
+        attributes: [.font: NSFont.systemFont(ofSize: fontSize), .foregroundColor: ink])
     }
     return attributed
   }
