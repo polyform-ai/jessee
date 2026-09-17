@@ -4,9 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f6f3ec" />
-    <meta name="description" content="AI is bad at processing video. JesSee turns a narrated screen walkthrough into an editable, screenshot-backed PDF that AI can understand and act on." />
+    <meta name="description" content="Stop sending giant screen recordings. JesSee turns a narrated, annotated walkthrough into an editable visual story and PDF that AI and people can actually use." />
     <meta property="og:title" content="JesSee — Turn video into context AI can use." />
-    <meta property="og:description" content="An open-source screen explainer that extracts the useful screenshots and spoken context from a walkthrough into an AI-friendly PDF." />
+    <meta property="og:description" content="Narrate and annotate once. JesSee finds the evidence, separates the ideas, and creates an editable visual story instead of another video someone has to scrub." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://jessee.ai/" />
     <meta property="og:image" content="https://jessee.ai/assets/playbook-review.png" />
@@ -42,12 +42,12 @@
         <div class="hero-copy reveal">
           <p class="eyebrow"><span></span> Open source by Polyform</p>
           <h1>AI is bad at video.<br /><em>Give it the parts that matter.</em></h1>
-          <p class="hero-lede">Record a screen walkthrough the natural way. JesSee pulls out the key screenshots and your spoken explanation, then turns them into an editable PDF that AI can understand, debug from, and act on.</p>
+          <p class="hero-lede">Record a screen walkthrough the natural way. Narrate it, mark what matters, and let JesSee turn the useful moments into an editable visual story—without sending a giant video or explaining the same thing twice.</p>
           <div class="hero-actions">
             <a class="button primary" href="#download">Download for Mac <span aria-hidden="true">↓</span></a>
             <a class="text-link" href="#how">See how it works <span aria-hidden="true">↓</span></a>
           </div>
-          <p class="hero-note"><span class="status-dot"></span> Native Mac app · AI covered by Polyform or bring your own key</p>
+          <p class="hero-note"><span class="status-dot"></span> Native Mac app · Bring your own OpenAI key · Your recordings stay local</p>
         </div>
 
         <div class="hero-visual reveal" data-delay="1" aria-label="Disconnected inputs becoming one clear playbook">
@@ -89,37 +89,65 @@
         </div>
       </section>
 
+      <section class="product-proof section" aria-labelledby="product-proof-title">
+        <div class="product-proof-copy reveal">
+          <p class="eyebrow"><span></span> The actual product</p>
+          <h2 id="product-proof-title">One walkthrough.<br /><em>A story you can shape.</em></h2>
+          <p>JesSee does more than transcribe. It connects narration to screen evidence, uses your marks as a signal, keeps the source page, and gives you a real editor before anything becomes a PDF.</p>
+          <div class="proof-points" aria-label="JesSee product capabilities">
+            <span>Annotate while recording</span>
+            <span>Choose alternate screenshots</span>
+            <span>Edit text and source links</span>
+            <span>Return from the local Library</span>
+          </div>
+        </div>
+        <div class="product-proof-visual reveal" data-delay="1">
+          <button class="proof-main" type="button" data-lightbox="assets/playbook-review.png" aria-label="Enlarge the JesSee visual editor screenshot">
+            <img src="assets/playbook-review.png" alt="The real JesSee visual editor with editable text, retained source URL, and selected visual evidence" loading="eager" decoding="async" />
+            <span>EDIT THE STORY</span>
+          </button>
+          <button class="proof-small proof-capture" type="button" data-lightbox="assets/capture-coach.png" aria-label="Enlarge the JesSee capture screen screenshot">
+            <img src="assets/capture-coach.png" alt="The real JesSee capture screen with guidance for framing, showing, and landing a walkthrough" loading="lazy" decoding="async" />
+            <span>CAPTURE</span>
+          </button>
+          <button class="proof-small proof-library" type="button" data-lightbox="assets/history-library.png" aria-label="Enlarge the JesSee Library screenshot">
+            <img src="assets/history-library.png" alt="The real JesSee Library with saved walkthroughs and direct editing actions" loading="lazy" decoding="async" />
+            <span>RETURN LATER</span>
+          </button>
+        </div>
+      </section>
+
       <section class="problem section" id="problem">
         <div class="section-label reveal"><span>01</span> The communication gap</div>
         <div class="problem-heading reveal">
-          <h2>Video is natural for people.<br /><em>It is a terrible input for AI.</em></h2>
-          <p>A walkthrough contains the full story, but most AI tools struggle to process it accurately or efficiently. Uploading every frame consumes enormous context. Uploading a few screenshots loses the sequence and the explanation. Rewriting the whole thing as a prompt means doing the work twice.</p>
+          <h2>Video is natural to make.<br /><em>It is painful to send and use.</em></h2>
+          <p>A walkthrough may be the fastest way to explain five connected ideas, but it becomes a large file, an unstructured timeline, and another thing someone—or an AI—has to scrub. Design tools see frames. Transcription tools hear words. The meaning lives in how your narration, actions, and emphasis fit together.</p>
         </div>
         <div class="problem-grid">
           <article class="problem-card reveal">
             <span class="card-number">01</span>
             <svg aria-hidden="true" viewBox="0 0 32 32"><path d="M6 7h20v14H13l-7 5V7Z"/><path d="M11 12h10M11 16h7"/></svg>
-            <h3>Video overwhelms the context</h3>
-            <p>Every pause, repeated frame, and detour competes with the moments the AI actually needs.</p>
+            <h3>Large files are hard to move</h3>
+            <p>Screen recordings are slow to attach, awkward to send around, and expensive for an AI to process frame by frame.</p>
           </article>
           <article class="problem-card reveal" data-delay="1">
             <span class="card-number">02</span>
             <svg aria-hidden="true" viewBox="0 0 32 32"><rect x="5" y="7" width="22" height="18" rx="2"/><circle cx="12" cy="13" r="2"/><path d="m7 22 6-6 4 4 3-3 5 5"/></svg>
-            <h3>Screenshots lose the story</h3>
-            <p>A folder of images cannot explain their order, the action between them, or why each state matters.</p>
+            <h3>One timeline hides many ideas</h3>
+            <p>A bug, a desired behavior, and three product decisions can share one recording with no structure between them.</p>
           </article>
           <article class="problem-card reveal" data-delay="2">
             <span class="card-number">03</span>
             <svg aria-hidden="true" viewBox="0 0 32 32"><circle cx="16" cy="16" r="11"/><path d="m13 11 8 5-8 5V11Z"/></svg>
-            <h3>Text loses the screen</h3>
-            <p>A long prompt can describe the product, but the AI still cannot see the exact state you are pointing at.</p>
+            <h3>Pixels alone miss your intent</h3>
+            <p>A design summary sees the screen but not why you paused, circled a control, or said that this state was wrong.</p>
           </article>
         </div>
       </section>
 
       <section class="bridge section reveal">
         <p class="eyebrow"><span></span> The idea</p>
-        <blockquote>A useful video is a sequence of important images plus the explanation around them. What if we kept those—and removed everything the AI does not need?</blockquote>
+        <blockquote>Your voice explains the idea. Your marks show what matters. JesSee keeps both—and removes the timeline an AI or teammate should not have to scrub.</blockquote>
       </section>
 
       <section class="how section" id="how">
@@ -134,7 +162,7 @@
             <div class="step-copy">
               <span>STEP 01</span>
               <h3>Show and explain</h3>
-              <p>Choose a window, app, or display from the Mac menu bar. Talk naturally while you work, watch the live microphone level, and use shortcuts to draw or highlight what matters.</p>
+              <p>Choose a window, app, or display from the Mac menu bar. Talk naturally while you work, watch the live microphone level, and draw or highlight what matters. Those marks become evidence signals, helping JesSee favor the right moments without losing the wider sequence.</p>
               <ul><li>The timer stays visible without covering the work</li><li>Hover any control to see what it does</li><li>Press ⌥S anywhere to stop and process</li></ul>
             </div>
             <button class="product-shot compact-shot" type="button" data-lightbox="assets/capture-coach.png" aria-label="Enlarge the JesSee capture coach screenshot">
