@@ -189,16 +189,11 @@ public struct PolyformClient: Sendable {
     }
     let contextJSON = String(
       decoding: try encoder.encode(context), as: UTF8.self)
-    let userInput = """
-      \(DirectOpenAIClient.storyPrompt)
-
-      Recording context:
-      \(contextJSON)
-      """
     let response: WorkflowResponse<StoryDraft> = try await post(
       storyWorkflowURL,
       body: StoryRequest(
-        attachments: attachments, userInput: userInput,
+        attachments: attachments, userInput: contextJSON,
+        prompt: DirectOpenAIClient.storyPrompt,
         outputJSON: DirectOpenAIClient.storyOutputJSON),
       accessToken: accessToken)
     let draft = response.result
@@ -510,6 +505,7 @@ private struct WorkflowAttachment: Encodable {
 private struct StoryRequest: Encodable {
   var attachments: [WorkflowAttachment]
   var userInput: String
+  var prompt: String
   var outputJSON: String
 }
 

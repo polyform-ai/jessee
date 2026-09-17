@@ -30,10 +30,11 @@ Keep this workflow light: set the Transcribe Audio node to `whisper-1`, turn on 
 Create a light protected AI wrapper that accepts this JSON contract:
 
 - `attachments`: the selected screenshot attachments, with the AI block's attachment source set to `attachments`;
-- `user_input`: JesSee's complete story instructions followed by the transcript and every available screenshot time;
+- `user_input`: the transcript and every available screenshot time as JSON;
+- `prompt`: JesSee's complete story and image-selection instructions;
 - `output_json`: a JSON example describing the exact structured result JesSee expects.
 
-The wrapper owns the provider and model choice. Use the current quality model with medium reasoning, pass `user_input`, `attachments`, and `output_json` into the AI call, and return the parsed structured value under `result`:
+The wrapper owns the provider and model choice. Use the current quality model with medium reasoning, pass `user_input`, `prompt`, `attachments`, and `output_json` into the AI call, and return the parsed structured value under `result`:
 
 JesSee also accepts a JSON string, including a Markdown-fenced JSON response, inside the wrapper's ordinary `result.result` output. The Polyform workflow does not need a parsing or transformation node.
 
