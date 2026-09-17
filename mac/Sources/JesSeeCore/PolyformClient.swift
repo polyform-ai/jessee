@@ -437,14 +437,34 @@ struct WorkflowResponse<Result: Decodable>: Decodable {
     var result: Result
   }
 
+  private struct NestedTextResult: Decodable {
+    var result: String
+  }
+
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     success = try container.decode(Bool.self, forKey: .success)
     if let direct = try? container.decode(Result.self, forKey: .result) {
       result = direct
+    } else if let nested = try? container.decode(NestedResult.self, forKey: .result) {
+      result = nested.result
+    } else if let text = try? container.decode(String.self, forKey: .result) {
+      result = try Self.decodeJSONText(text, codingPath: container.codingPath)
+    } else if let nested = try? container.decode(NestedTextResult.self, forKey: .result) {
+      result = try Self.decodeJSONText(nested.result, codingPath: container.codingPath)
     } else {
       result = try container.decode(NestedResult.self, forKey: .result).result
     }
+  }
+
+  private static func decodeJSONText(_ text: String, codingPath: [CodingKey]) throws -> Result {
+    guard let data = DirectOpenAIClient.jsonData(from: text) else {
+      throw DecodingError.dataCorrupted(
+        .init(codingPath: codingPath, debugDescription: "Workflow result did not contain JSON."))
+    }
+    let decoder = JSONDecoder()
+    decoder.keyDecodingStrategy = .convertFromSnakeCase
+    return try decoder.decode(Result.self, from: data)
   }
 }
 

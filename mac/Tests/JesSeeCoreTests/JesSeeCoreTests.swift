@@ -5,17 +5,26 @@ import Testing
 
 @testable import JesSeeCore
 
+private struct WorkflowTestValue: Decodable, Equatable {
+  var text: String
+}
+
 @Test func workflowResponsesAcceptDirectAndLightWrapperResults() throws {
   let decoder = JSONDecoder()
   let direct = try decoder.decode(
-    WorkflowResponse<[String: String]>.self,
+    WorkflowResponse<WorkflowTestValue>.self,
     from: Data(#"{"success":true,"result":{"text":"hello"}}"#.utf8))
   let wrapped = try decoder.decode(
-    WorkflowResponse<[String: String]>.self,
+    WorkflowResponse<WorkflowTestValue>.self,
     from: Data(#"{"success":true,"result":{"result":{"text":"hello"}}}"#.utf8))
+  let wrappedJSONText = try decoder.decode(
+    WorkflowResponse<WorkflowTestValue>.self,
+    from: Data(
+      #"{"success":true,"result":{"result":"```json\n{\"text\":\"hello\"}\n```"}}"#.utf8))
 
-  #expect(direct.result == ["text": "hello"])
+  #expect(direct.result == WorkflowTestValue(text: "hello"))
   #expect(wrapped.result == direct.result)
+  #expect(wrappedJSONText.result == direct.result)
 }
 
 @Test func setupResumesAfterPersistedSteps() {

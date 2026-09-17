@@ -174,7 +174,7 @@ public struct DirectOpenAIClient: Sendable {
       as: UTF8.self)
   }
 
-  private static func jsonData(from text: String) -> Data? {
+  static func jsonData(from text: String) -> Data? {
     var value = text.trimmingCharacters(in: .whitespacesAndNewlines)
     if value.hasPrefix("```") {
       value = value.replacingOccurrences(
