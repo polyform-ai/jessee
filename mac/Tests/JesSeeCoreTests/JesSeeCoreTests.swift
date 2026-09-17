@@ -93,6 +93,59 @@ import Testing
   let data = Data(#"{"email":"a@b.com","outputFolderPath":"/tmp","setupCompleted":true}"#.utf8)
   let configuration = try JesSeeJSON.decoder().decode(JesSeeConfiguration.self, from: data)
   #expect(configuration.shareScreenshotsWithOpenAI)
+  #expect(!configuration.shareAnonymousFeatureUsage)
+  #expect(configuration.analyticsUserID == nil)
+}
+
+@Test func featureUsageWritesAGA4ReadyEventWithoutEmail() async throws {
+  let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+    UUID().uuidString, isDirectory: true)
+  try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: temporary) }
+
+  let recorder = FeatureUsageRecorder(
+    product: "jessee", appVersion: "test", applicationSupportURL: temporary)
+  let clientIDURL = temporary.appendingPathComponent("jessee/ga4-client-id")
+  #expect(!FileManager.default.fileExists(atPath: clientIDURL.path))
+  let event = await recorder.record(
+    .captureAdded, feature: "video_import", source: "imported_video", itemCount: 1)
+  let fileURL = temporary.appendingPathComponent("jessee/feature-usage.jsonl")
+  let line = try String(contentsOf: fileURL, encoding: .utf8)
+
+  #expect(event.product == "jessee")
+  #expect(event.feature == "video_import")
+  let clientIDParts = event.clientID.split(separator: ".")
+  #expect(clientIDParts.count == 2)
+  #expect(clientIDParts.allSatisfy { UInt32($0) != nil })
+  #expect(event.userID == nil)
+  #expect(line.contains(#""activity":"capture_added""#))
+  #expect(!line.contains("email"))
+  #expect(!line.contains("filename"))
+  #expect(FileManager.default.fileExists(atPath: clientIDURL.path))
+  await recorder.resetClientID()
+  #expect(!FileManager.default.fileExists(atPath: clientIDURL.path))
+}
+
+@Test func featureUsageSeparatesTrackAndIdentifyPayloads() async throws {
+  let userID = UUID().uuidString.lowercased()
+  let event = FeatureUsageEvent(
+    activityID: UUID().uuidString.lowercased(), occurredAt: Date(),
+    activity: FeatureUsageActivity.captureAdded.rawValue, clientID: "123.456", userID: userID,
+    product: "jessee", appVersion: "test", feature: "video_import", status: "completed",
+    source: nil, mode: nil, itemCount: nil)
+  let identity = FeatureUsageIdentity(
+    occurredAt: Date(), product: "jessee", appVersion: "test", clientID: "123.456",
+    userID: userID, email: "person@example.com")
+  let trackData = try #require(FeatureUsageRecorder.encodeEnvelope(event, kind: "track"))
+  let identifyData = try #require(FeatureUsageRecorder.encodeEnvelope(identity, kind: "identify"))
+  let track = try #require(JSONSerialization.jsonObject(with: trackData) as? [String: Any])
+  let identify = try #require(JSONSerialization.jsonObject(with: identifyData) as? [String: Any])
+
+  #expect(track["kind"] as? String == "track")
+  #expect((track["payload"] as? [String: Any])?["email"] == nil)
+  #expect((track["payload"] as? [String: Any])?["user_id"] as? String == userID)
+  #expect(identify["kind"] as? String == "identify")
+  #expect((identify["payload"] as? [String: Any])?["email"] as? String == "person@example.com")
 }
 
 @Test func captionsPreserveSegmentTiming() {

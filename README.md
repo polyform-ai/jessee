@@ -28,6 +28,8 @@ Use it for:
 
 JesSee requires macOS 15 or newer and your own OpenAI API key. Recordings and generated files remain in the output folder you choose. Creating a story sends the narration and selected screenshots to OpenAI through that key.
 
+Anonymous feature-usage sharing is optional and off by default. When enabled, JesSee records only completed feature names, timestamps, app version, counts, and a random installation ID. It never includes media, narration, story text, filenames, email, or API keys. See [Feature usage events](docs/FEATURE_USAGE_EVENTS.md) for the exact contract.
+
 ## Install
 
 Download the latest signed and notarized installer from [jessee.ai](https://jessee.ai) or the [latest GitHub release](https://github.com/polyform-ai/jessee/releases/latest).

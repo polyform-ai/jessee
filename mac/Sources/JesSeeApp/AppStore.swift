@@ -24,6 +24,7 @@ final class AppStore: ObservableObject {
   let recorder = RecordingCoordinator()
 
   private let configurationStore = ConfigurationStore()
+  private let featureUsage = FeatureUsageRecorder(product: "jessee")
   private var workspace: CaptureWorkspace?
   private var processingTasks: [String: Task<Void, Never>] = [:]
 
@@ -90,7 +91,11 @@ final class AppStore: ObservableObject {
       return false
     }
     configuration.email = value
+    if configuration.analyticsUserID == nil {
+      configuration.analyticsUserID = UUID().uuidString.lowercased()
+    }
     persistConfiguration()
+    identifyForAnalyticsIfEnabled()
     return true
   }
 
@@ -119,6 +124,21 @@ final class AppStore: ObservableObject {
   func setScreenshotSharing(_ enabled: Bool) {
     configuration.shareScreenshotsWithOpenAI = enabled
     persistConfiguration()
+  }
+
+  func setAnonymousFeatureUsageSharing(_ enabled: Bool) {
+    configuration.shareAnonymousFeatureUsage = enabled
+    if enabled, !configuration.email.isEmpty, configuration.analyticsUserID == nil {
+      configuration.analyticsUserID = UUID().uuidString.lowercased()
+    } else if !enabled {
+      configuration.analyticsUserID = nil
+    }
+    persistConfiguration()
+    if enabled {
+      identifyForAnalyticsIfEnabled()
+    } else {
+      Task { await featureUsage.resetClientID() }
+    }
   }
 
   func requestMicrophone() async -> Bool {
@@ -158,7 +178,9 @@ final class AppStore: ObservableObject {
 
   func openPDF(_ record: CaptureRecord) {
     guard let workspace, let filename = record.pdfFilename else { return }
-    NSWorkspace.shared.open(workspace.directoryURL(for: record).appendingPathComponent(filename))
+    if NSWorkspace.shared.open(workspace.directoryURL(for: record).appendingPathComponent(filename)) {
+      recordUsage(.pdfOpened, feature: "pdf_review")
+    }
   }
 
   func openPDF(recordID: String) {
@@ -185,6 +207,7 @@ final class AppStore: ObservableObject {
       try await workspace.save(updated)
       replace(updated)
       show(.success("Story and PDF updated."))
+      recordUsage(.storyEdited, feature: "story_editor")
       return true
     } catch {
       show(.error("JesSee could not save this story: \(error.localizedDescription)"))
@@ -226,6 +249,10 @@ final class AppStore: ObservableObject {
       if deleteSourceAfterImport { try? FileManager.default.removeItem(at: url) }
       captures = await workspace.allRecords()
       startProcessing(record)
+      recordUsage(
+        .captureAdded,
+        feature: source == .recording ? "screen_recording" : "video_import",
+        source: source.rawValue)
       show(.success("Saved to your library. Processing will continue in the background."))
     } catch {
       show(.error(error.localizedDescription))
@@ -283,6 +310,7 @@ final class AppStore: ObservableObject {
 
   private func captureFinished(_ id: String) async {
     await loadLibrary()
+    recordUsage(.storyCreated, feature: "story_creation")
     let center = UNUserNotificationCenter.current()
     _ = try? await center.requestAuthorization(options: [.alert, .sound])
     let content = UNMutableNotificationContent()
@@ -295,6 +323,30 @@ final class AppStore: ObservableObject {
     do { try configurationStore.save(configuration) } catch {
       show(.error("JesSee could not save that setting."))
     }
+  }
+
+  private func recordUsage(
+    _ activity: FeatureUsageActivity,
+    feature: String,
+    source: String? = nil,
+    mode: String? = nil,
+    itemCount: Int? = nil
+  ) {
+    guard configuration.shareAnonymousFeatureUsage else { return }
+    Task {
+      await featureUsage.record(
+        activity, feature: feature, source: source, mode: mode, itemCount: itemCount,
+        userID: configuration.analyticsUserID)
+    }
+  }
+
+  private func identifyForAnalyticsIfEnabled() {
+    guard configuration.shareAnonymousFeatureUsage,
+      !configuration.email.isEmpty,
+      let userID = configuration.analyticsUserID
+    else { return }
+    let email = configuration.email
+    Task { await featureUsage.identify(email: email, userID: userID) }
   }
 
   private func show(_ value: Notice) {

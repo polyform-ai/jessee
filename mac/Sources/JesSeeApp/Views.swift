@@ -634,6 +634,16 @@ struct SettingsView: View {
             ? "Improves visual understanding. Original videos and the full library stay in your folder."
             : "Only narration, timestamps, and screenshot timing are used to plan the story."
         ).font(.caption).foregroundStyle(.secondary)
+        Toggle(
+          "Share product analytics",
+          isOn: Binding(
+            get: { store.configuration.shareAnonymousFeatureUsage },
+            set: { store.setAnonymousFeatureUsageSharing($0) }
+          )
+        )
+        Text(
+          "Shares completed feature names, times, app version, counts, and random analytics IDs. The Polyform collector may receive routine connection metadata such as your IP address. If you save an email, Polyform associates it with an opaque user ID; Google Analytics receives only that ID, never your email. Turning this off removes the local analytics ID. JesSee never includes recordings, screenshots, narration, story text, filenames, or API keys."
+        ).font(.caption).foregroundStyle(.secondary)
       }
       Section("Software Updates") {
         LabeledContent("Installed", value: SoftwareUpdateController.shared.displayVersion)
