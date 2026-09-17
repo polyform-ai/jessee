@@ -29,6 +29,8 @@ final class AppStore: ObservableObject {
   private var processingTasks: [String: Task<Void, Never>] = [:]
 
   init() {
+    let notificationCenter = UNUserNotificationCenter.current()
+    notificationCenter.delegate = JesSeeNotificationDelegate.shared
     configuration = configurationStore.load()
     hasAPIKey = (try? JesSeeKeychain.loadAPIKey()) != nil
     setupStep = configuration.pendingSetupStep(hasAPIKey: hasAPIKey)
@@ -249,6 +251,7 @@ final class AppStore: ObservableObject {
       if deleteSourceAfterImport { try? FileManager.default.removeItem(at: url) }
       captures = await workspace.allRecords()
       startProcessing(record)
+      notifyProcessingStarted(record)
       recordUsage(
         .captureAdded,
         feature: source == .recording ? "screen_recording" : "video_import",
@@ -312,11 +315,28 @@ final class AppStore: ObservableObject {
     await loadLibrary()
     recordUsage(.storyCreated, feature: "story_creation")
     let center = UNUserNotificationCenter.current()
+    center.removeDeliveredNotifications(withIdentifiers: ["processing-\(id)"])
     _ = try? await center.requestAuthorization(options: [.alert, .sound])
     let content = UNMutableNotificationContent()
     content.title = "Your JesSee story is ready"
     content.body = captures.first(where: { $0.id == id })?.title ?? "Open the library to review it."
     try? await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+  }
+
+  private func notifyProcessingStarted(_ record: CaptureRecord) {
+    Task {
+      let center = UNUserNotificationCenter.current()
+      guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else {
+        return
+      }
+      let content = UNMutableNotificationContent()
+      content.title = "JesSee is processing your recording"
+      content.body = "You can keep working. JesSee will notify you when the story is ready."
+      content.sound = .default
+      try? await center.add(
+        UNNotificationRequest(
+          identifier: "processing-\(record.id)", content: content, trigger: nil))
+    }
   }
 
   private func persistConfiguration() {
@@ -355,5 +375,19 @@ final class AppStore: ObservableObject {
       try? await Task.sleep(for: .seconds(4))
       if self?.notice == value { self?.notice = nil }
     }
+  }
+}
+
+private final class JesSeeNotificationDelegate: NSObject, UNUserNotificationCenterDelegate,
+  @unchecked Sendable
+{
+  static let shared = JesSeeNotificationDelegate()
+
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+    withCompletionHandler completionHandler: @escaping @Sendable (UNNotificationPresentationOptions)
+      -> Void
+  ) {
+    completionHandler([.banner, .sound])
   }
 }

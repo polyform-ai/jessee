@@ -10,11 +10,11 @@ struct MenuPopoverView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      HeaderView(store: store, openLibrary: { openWindow(id: "library") })
+      HeaderView(store: store, openLibrary: { presentLibrary() })
       Divider()
       Group {
         if store.isConfigured {
-          HomeView(store: store, openLibrary: { openWindow(id: "library") })
+          HomeView(store: store, openLibrary: presentLibrary)
         } else {
           SetupView(store: store)
         }
@@ -24,6 +24,12 @@ struct MenuPopoverView: View {
     .frame(width: 390)
     .background(Color(nsColor: .windowBackgroundColor))
     .overlay(alignment: .top) { NoticeView(notice: store.notice).padding(.top, 58) }
+  }
+
+  private func presentLibrary(captureID: String? = nil) {
+    if let captureID { store.selectedCaptureID = captureID }
+    openWindow(id: "library")
+    DispatchQueue.main.async { NSApp.activate(ignoringOtherApps: true) }
   }
 }
 
@@ -81,9 +87,9 @@ private struct HeaderView: View {
 private struct HomeView: View {
   @ObservedObject var store: AppStore
   @ObservedObject private var recorder: RecordingCoordinator
-  let openLibrary: () -> Void
+  let openLibrary: (String?) -> Void
 
-  init(store: AppStore, openLibrary: @escaping () -> Void) {
+  init(store: AppStore, openLibrary: @escaping (String?) -> Void) {
     self.store = store
     self.recorder = store.recorder
     self.openLibrary = openLibrary
@@ -199,20 +205,24 @@ private struct GuideView: View {
 
 private struct RecentCapturesView: View {
   @ObservedObject var store: AppStore
-  let openLibrary: () -> Void
+  let openLibrary: (String?) -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       HStack {
         Text("Recent").font(.subheadline.weight(.semibold))
         Spacer()
-        if !store.captures.isEmpty { Button("See all", action: openLibrary).buttonStyle(.link) }
+        if !store.captures.isEmpty {
+          Button("See all in Library") { openLibrary(nil) }.buttonStyle(.link)
+        }
       }
       if store.recentCaptures.isEmpty {
         Text("Your recordings and imported videos will appear here.")
           .font(.caption).foregroundStyle(.secondary).padding(.vertical, 8)
       } else {
-        ForEach(store.recentCaptures) { record in CaptureRow(record: record, store: store) }
+        ForEach(store.recentCaptures) { record in
+          CaptureRow(record: record, store: store) { openLibrary(record.id) }
+        }
       }
     }
   }
@@ -221,27 +231,38 @@ private struct RecentCapturesView: View {
 private struct CaptureRow: View {
   let record: CaptureRecord
   @ObservedObject var store: AppStore
+  let openEditor: () -> Void
 
   var body: some View {
     HStack(spacing: 10) {
-      Image(systemName: record.source == .recording ? "record.circle" : "film")
-        .foregroundStyle(record.stage == .failed ? .red : accent)
-      VStack(alignment: .leading, spacing: 2) {
-        Text(record.title).lineLimit(1).font(.subheadline.weight(.medium))
-        Text(record.stage.label).font(.caption).foregroundStyle(
-          record.stage == .failed ? .red : .secondary)
+      Button(action: openEditor) {
+        HStack(spacing: 10) {
+          Image(systemName: record.source == .recording ? "record.circle" : "film")
+            .foregroundStyle(record.stage == .failed ? .red : accent)
+          VStack(alignment: .leading, spacing: 2) {
+            Text(record.title).lineLimit(1).font(.subheadline.weight(.medium))
+            Text(record.stage.label).font(.caption).foregroundStyle(
+              record.stage == .failed ? .red : .secondary)
+          }
+          Spacer()
+          if record.stage.isProcessing { ProgressView().controlSize(.small) }
+          Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
+            .foregroundStyle(.tertiary)
+        }
+        .contentShape(Rectangle())
       }
-      Spacer()
-      if record.stage.isProcessing { ProgressView().controlSize(.small) }
+      .buttonStyle(.plain)
       Menu {
         if record.pdfFilename != nil { Button("Open PDF") { store.openPDF(record) } }
         Button("Show in Finder") { store.reveal(record) }
         if record.stage == .failed { Button("Try again") { store.retry(record) } }
       } label: {
-        Image(systemName: "ellipsis")
-      }.menuStyle(.borderlessButton)
+        Image(systemName: "ellipsis").frame(width: 24, height: 24)
+      }
+      .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+      .help("More actions")
     }
-    .padding(.vertical, 4)
+    .padding(.vertical, 2)
   }
 }
 
@@ -425,11 +446,10 @@ private struct NoticeView: View {
 
 struct LibraryView: View {
   @ObservedObject var store: AppStore
-  @State private var selection: String?
 
   var body: some View {
     NavigationSplitView {
-      List(store.captures, selection: $selection) { record in
+      List(store.captures, selection: $store.selectedCaptureID) { record in
         VStack(alignment: .leading, spacing: 3) {
           Text(record.title).lineLimit(1).font(.headline)
           HStack {
@@ -446,7 +466,9 @@ struct LibraryView: View {
           .help("Import a video")
       }
     } detail: {
-      if let id = selection, let record = store.captures.first(where: { $0.id == id }) {
+      if let id = store.selectedCaptureID,
+        let record = store.captures.first(where: { $0.id == id })
+      {
         CaptureDetailView(store: store, record: record)
       } else {
         ContentUnavailableView(
@@ -455,7 +477,15 @@ struct LibraryView: View {
       }
     }
     .frame(minWidth: 900, minHeight: 620)
-    .onAppear { selection = selection ?? store.captures.first?.id }
+    .onAppear(perform: selectDefaultCapture)
+    .onChange(of: store.captures.map(\.id)) { _, _ in selectDefaultCapture() }
+  }
+
+  private func selectDefaultCapture() {
+    if let selectedCaptureID = store.selectedCaptureID,
+      store.captures.contains(where: { $0.id == selectedCaptureID })
+    { return }
+    store.selectedCaptureID = store.captures.first?.id
   }
 }
 

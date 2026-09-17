@@ -187,6 +187,49 @@ import Testing
   #expect(decoded.summaryHTML == story.summaryHTML)
 }
 
+@Test func storySourceURLIsBackwardCompatibleAndRoundTrips() throws {
+  let legacy = Data(#"{"title":"Legacy","summary":"Summary","keyPoints":[],"steps":[]}"#.utf8)
+  #expect(try JesSeeJSON.decoder().decode(StoryDocument.self, from: legacy).sourceURL == nil)
+
+  let story = StoryDocument(
+    title: "Web story", sourceURL: "https://example.com/page", summary: "Summary",
+    keyPoints: [], steps: [])
+  let decoded = try JesSeeJSON.decoder().decode(
+    StoryDocument.self, from: JesSeeJSON.encoder().encode(story))
+  #expect(decoded.sourceURL == "https://example.com/page")
+}
+
+@Test func modelSelectedScreenshotOverridesStepEndTiming() {
+  let frames = [
+    CapturedFrame(seconds: 10, filename: "first.jpg"),
+    CapturedFrame(seconds: 20, filename: "second.jpg"),
+    CapturedFrame(seconds: 30, filename: "third.jpg"),
+  ]
+  #expect(
+    OpenAIClient.selectedFrame(requestedSeconds: 10, stepEndSeconds: 30, frames: frames)?.filename
+      == "first.jpg")
+  #expect(
+    OpenAIClient.selectedFrame(requestedSeconds: 99, stepEndSeconds: 20, frames: frames)?.filename
+      == "second.jpg")
+}
+
+@Test func storyPlanningKeepsMarkedScreenshotsInTheVisualSet() {
+  let frames = (0..<18).map { index in
+    CapturedFrame(
+      seconds: Double(index), filename: "frame-\(index).jpg", hasVisibleMarkup: index == 7)
+  }
+  let selected = OpenAIClient.planningFrames(frames, maximum: 12)
+  #expect(selected.count == 12)
+  #expect(selected.contains(where: { $0.filename == "frame-7.jpg" }))
+}
+
+@Test func webpageURLsAreNormalizedAndUnsafeValuesAreRejected() {
+  #expect(OpenAIClient.normalizedWebURL("example.com/path") == "https://example.com/path")
+  #expect(OpenAIClient.normalizedWebURL("https://example.com/path") == "https://example.com/path")
+  #expect(OpenAIClient.normalizedWebURL("file:///tmp/private") == nil)
+  #expect(OpenAIClient.normalizedWebURL("not a URL") == nil)
+}
+
 @Test func workspaceKeepsImportedMediaAndHistory() async throws {
   let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
     UUID().uuidString, isDirectory: true)
@@ -212,7 +255,7 @@ import Testing
   try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
   defer { try? FileManager.default.removeItem(at: temporary) }
   let story = StoryDocument(
-    title: "A clearer workflow",
+    title: "A clearer workflow", sourceURL: "https://example.com/workflow",
     summary: "The finished explanation stands on its own.",
     summaryHTML: "<p>The finished explanation <strong>stands</strong> on its own.</p>",
     keyPoints: ["Capture the intent", "Keep the evidence"],
@@ -228,6 +271,9 @@ import Testing
   #expect(
     try String(contentsOf: temporary.appendingPathComponent(output.html), encoding: .utf8).contains(
       "<strong>stands</strong>"))
+  #expect(
+    try String(contentsOf: temporary.appendingPathComponent(output.html), encoding: .utf8).contains(
+      "https://example.com/workflow"))
 }
 
 @Test func mediaToolsReadVideoExtractAudioAndCreateFrames() async throws {

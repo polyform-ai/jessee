@@ -28,6 +28,7 @@ interface StoryStep {
 
 interface Story {
   title: string;
+  sourceURL?: string;
   summary: string;
   summaryHTML?: string;
   keyPoints: Array<{ id: string; text: string }>;
@@ -226,6 +227,7 @@ function renderShell(): void {
       <nav class="editor-toolbar" aria-label="Text formatting">
         ${tool("paragraph", "Text", true)}${tool("bold", "<strong>B</strong>")}${tool("italic", "<em>I</em>")}${tool("bulletList", "• Bullets", true)}${tool("orderedList", "1. List", true)}${tool("blockquote", "Callout", true)}<span class="divider"></span>${tool("undo", "↶")}${tool("redo", "↷")}<span class="toolbar-tip">Click anywhere to write · select text to format</span>
       </nav>
+      <label class="source-field"><span>Source URL</span><input id="sourceURL" type="url" value="${escapeAttribute(payload.story.sourceURL || "")}" placeholder="https://example.com/page" aria-label="Source URL" /></label>
       <section class="paper" id="storyEditor"></section>
       <footer><span>The PDF follows this same order and keeps every divider, image, list, and callout.</span><button class="button secondary" id="addStep">+ Add another step</button></footer>
     </div>
@@ -240,6 +242,7 @@ function bindShellEvents(): void {
   mustFind<HTMLButtonElement>("#saveStory").addEventListener("click", () => send("save"));
   mustFind<HTMLButtonElement>("#openPDF").addEventListener("click", () => send("saveAndOpenPDF"));
   mustFind<HTMLButtonElement>("#addStep").addEventListener("click", addStep);
+  mustFind<HTMLInputElement>("#sourceURL").addEventListener("input", markDirty);
   mustFind<HTMLDialogElement>("#imagePicker").addEventListener("cancel", (event) => {
     event.preventDefault();
     closePicker();
@@ -397,7 +400,8 @@ function serializeStory(): Story {
       imageAnnotations: parseAnnotations(image?.attrs?.annotations)
     } satisfies StoryStep;
   });
-  return { title: title || "Untitled story", summary, summaryHTML, keyPoints, steps };
+  const sourceURL = mustFind<HTMLInputElement>("#sourceURL").value.trim() || undefined;
+  return { title: title || "Untitled story", sourceURL, summary, summaryHTML, keyPoints, steps };
 }
 
 function openImagePicker(stepIndex: number): void {
