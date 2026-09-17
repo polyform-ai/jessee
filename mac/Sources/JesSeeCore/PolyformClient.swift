@@ -187,12 +187,19 @@ public struct PolyformClient: Sendable {
         filename: frame.filename, contentType: "image/jpeg",
         fileData: "data:image/jpeg;base64,\(data.base64EncodedString())")
     }
-    let userMessage = String(
+    let contextJSON = String(
       decoding: try encoder.encode(context), as: UTF8.self)
+    let userInput = """
+      \(DirectOpenAIClient.storyPrompt)
+
+      Recording context:
+      \(contextJSON)
+      """
     let response: WorkflowResponse<StoryDraft> = try await post(
       storyWorkflowURL,
       body: StoryRequest(
-        prompt: DirectOpenAIClient.storyPrompt, userMessage: userMessage, files: attachments),
+        attachments: attachments, userInput: userInput,
+        outputJSON: DirectOpenAIClient.storyOutputJSON),
       accessToken: accessToken)
     let draft = response.result
     return StoryDocument(
@@ -462,9 +469,9 @@ private struct WorkflowAttachment: Encodable {
 }
 
 private struct StoryRequest: Encodable {
-  var prompt: String
-  var userMessage: String
-  var files: [WorkflowAttachment]
+  var attachments: [WorkflowAttachment]
+  var userInput: String
+  var outputJSON: String
 }
 
 private struct StoryDraft: Decodable {

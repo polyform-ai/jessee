@@ -3,12 +3,15 @@ import Foundation
 public struct DirectOpenAIClient: Sendable {
   public static let transcriptionModel = "whisper-1"
   public static let storyModel = "gpt-5.6-sol"
+  static let storyOutputJSON = """
+    {"title":"string","sourceURL":"string or null","summary":"string","keyPoints":["string"],"steps":[{"startSeconds":0,"endSeconds":5,"screenshotTimeSeconds":4.5,"title":"string","narrative":"string","transcript":"string"}]}
+    """
   static let storyPrompt = """
     Turn a narrated screen recording into a polished visual walkthrough that can replace watching the video.
     Write in the speaker's direct, reader-facing voice. Never say "the user said", "the narrator", or "this recording shows".
     Preserve the speaker's goal, important decisions, concrete details, and chronological actions. Titles and narratives must make sense on their own.
-    Return only valid JSON with this shape:
-    {"title":string,"sourceURL":string|null,"summary":string,"keyPoints":string[],"steps":[{"startSeconds":number,"endSeconds":number,"screenshotTimeSeconds":number,"title":string,"narrative":string,"transcript":string}]}
+    Return only valid JSON matching this example shape:
+    \(storyOutputJSON)
     Use the transcript timestamps. Keep each step focused and choose boundaries that make a useful screenshot possible.
     For every step, choose screenshotTimeSeconds from the exact available screenshot times. When imageAttached is true for any screenshot, choose only among those attached images. Choose the image that best proves the point, not merely the image nearest the end of the step. Prefer a clearly marked-up image or a stable resulting state. Avoid loading skeletons, blank transitions, and incidental clicks unless the missing or empty state is itself the issue. If the narration contrasts two materially different states, make separate steps so each state has its own visual evidence.
     Omit generic navigation steps when they do not help explain the requested outcome.

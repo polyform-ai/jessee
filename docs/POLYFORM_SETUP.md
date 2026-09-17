@@ -27,11 +27,11 @@ Each segment must contain `start`, `end`, and `text`; an integer `id` is optiona
 
 Create a light protected AI wrapper that accepts this JSON contract:
 
-- `prompt`: JesSee's complete system prompt, including the required output schema and image-selection rules;
-- `user_message`: a JSON string containing the transcript and every available screenshot time;
-- `files`: the selected screenshot attachments, with the AI block's attachment source set to `files`.
+- `attachments`: the selected screenshot attachments, with the AI block's attachment source set to `attachments`;
+- `user_input`: JesSee's complete story instructions followed by the transcript and every available screenshot time;
+- `output_json`: a JSON example describing the exact structured result JesSee expects.
 
-The wrapper owns the provider and model choice. Use the current quality model with medium reasoning, pass `prompt`, `user_message`, and `files` directly into the AI call, and return the parsed structured value under `result`:
+The wrapper owns the provider and model choice. Use the current quality model with medium reasoning, pass `user_input`, `attachments`, and `output_json` into the AI call, and return the parsed structured value under `result`:
 
 ```json
 {
