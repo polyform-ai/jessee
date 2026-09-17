@@ -25,12 +25,13 @@ Each segment must contain `start`, `end`, and `text`; an integer `id` is optiona
 
 ## Story workflow
 
-Configure the existing protected AI workflow to accept:
+Create a light protected AI wrapper that accepts this JSON contract:
 
-- `story_context`: JSON containing the transcript and all available screenshot times;
-- `attachments`: an array of selected screenshot attachments, with the AI block's attachment source set to `attachments`.
+- `prompt`: JesSee's complete system prompt, including the required output schema and image-selection rules;
+- `user_message`: a JSON string containing the transcript and every available screenshot time;
+- `files`: the selected screenshot attachments, with the AI block's attachment source set to `files`.
 
-Use the current quality model with medium reasoning. Return this structured value under `result`:
+The wrapper owns the provider and model choice. Use the current quality model with medium reasoning, pass `prompt`, `user_message`, and `files` directly into the AI call, and return the parsed structured value under `result`:
 
 ```json
 {

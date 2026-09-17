@@ -9,11 +9,12 @@ public struct PolyformServiceConfiguration: Sendable, Equatable {
 
   public var apiBase: URL
   public var appKey: String
-  public var transcriptionWorkflowURL: URL
-  public var storyWorkflowURL: URL
+  public var transcriptionWorkflowURL: URL?
+  public var storyWorkflowURL: URL?
 
   public init(
-    apiBase: URL, appKey: String, transcriptionWorkflowURL: URL, storyWorkflowURL: URL
+    apiBase: URL, appKey: String, transcriptionWorkflowURL: URL? = nil,
+    storyWorkflowURL: URL? = nil
   ) {
     self.apiBase = apiBase
     self.appKey = appKey
@@ -26,20 +27,23 @@ public struct PolyformServiceConfiguration: Sendable, Equatable {
       let apiBaseValue = bundle.object(forInfoDictionaryKey: apiBaseInfoKey) as? String,
       let apiBase = URL(string: apiBaseValue), apiBase.scheme == "https",
       let appKey = bundle.object(forInfoDictionaryKey: appKeyInfoKey) as? String,
-      !appKey.isEmpty,
-      let transcriptionValue = bundle.object(forInfoDictionaryKey: transcriptionURLInfoKey)
-        as? String,
-      let transcriptionURL = URL(string: transcriptionValue), transcriptionURL.scheme == "https",
-      let storyValue = bundle.object(forInfoDictionaryKey: storyURLInfoKey) as? String,
-      let storyURL = URL(string: storyValue), storyURL.scheme == "https"
+      !appKey.isEmpty
     else { return nil }
     return Self(
-      apiBase: apiBase, appKey: appKey, transcriptionWorkflowURL: transcriptionURL,
-      storyWorkflowURL: storyURL)
+      apiBase: apiBase, appKey: appKey,
+      transcriptionWorkflowURL: optionalHTTPSURL(
+        bundle.object(forInfoDictionaryKey: transcriptionURLInfoKey)),
+      storyWorkflowURL: optionalHTTPSURL(bundle.object(forInfoDictionaryKey: storyURLInfoKey)))
   }
 
   public func authURL(_ action: String) -> URL {
     apiBase.appending(path: "workflow-auth/\(appKey)/\(action)")
+  }
+
+  private static func optionalHTTPSURL(_ value: Any?) -> URL? {
+    guard let value = value as? String, let url = URL(string: value), url.scheme == "https"
+    else { return nil }
+    return url
   }
 }
 
@@ -130,6 +134,10 @@ public struct PolyformClient: Sendable {
   }
 
   public func transcribe(audioURL: URL, accessToken: String) async throws -> TranscriptDocument {
+    guard let transcriptionWorkflowURL = configuration.transcriptionWorkflowURL else {
+      throw PolyformClientError.invalidResponse(
+        "This JesSee build is not connected to the Polyform transcription workflow.")
+    }
     let upload = try await upload(
       fileURL: audioURL, contentType: "audio/mp4", visibility: "private",
       accessToken: accessToken)
@@ -137,7 +145,7 @@ public struct PolyformClient: Sendable {
       Task { try? await deleteUpload(id: upload.id, accessToken: accessToken) }
     }
     let response: WorkflowResponse<TranscriptionResult> = try await post(
-      configuration.transcriptionWorkflowURL,
+      transcriptionWorkflowURL,
       body: TranscriptionRequest(audio: UploadReference(uploadID: upload.id)),
       accessToken: accessToken)
     let value = response.result
@@ -158,6 +166,10 @@ public struct PolyformClient: Sendable {
     accessToken: String,
     includeScreenshotPixels: Bool = true
   ) async throws -> StoryDocument {
+    guard let storyWorkflowURL = configuration.storyWorkflowURL else {
+      throw PolyformClientError.invalidResponse(
+        "This JesSee build is waiting for the Polyform story workflow.")
+    }
     let imageFrames = includeScreenshotPixels ? Self.planningFrames(frames) : []
     let filenames = Set(imageFrames.map(\.filename))
     let context = StoryContext(
@@ -175,9 +187,12 @@ public struct PolyformClient: Sendable {
         filename: frame.filename, contentType: "image/jpeg",
         fileData: "data:image/jpeg;base64,\(data.base64EncodedString())")
     }
+    let userMessage = String(
+      decoding: try encoder.encode(context), as: UTF8.self)
     let response: WorkflowResponse<StoryDraft> = try await post(
-      configuration.storyWorkflowURL,
-      body: StoryRequest(storyContext: context, attachments: attachments),
+      storyWorkflowURL,
+      body: StoryRequest(
+        prompt: DirectOpenAIClient.storyPrompt, userMessage: userMessage, files: attachments),
       accessToken: accessToken)
     let draft = response.result
     return StoryDocument(
@@ -447,8 +462,9 @@ private struct WorkflowAttachment: Encodable {
 }
 
 private struct StoryRequest: Encodable {
-  var storyContext: StoryContext
-  var attachments: [WorkflowAttachment]
+  var prompt: String
+  var userMessage: String
+  var files: [WorkflowAttachment]
 }
 
 private struct StoryDraft: Decodable {
