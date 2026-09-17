@@ -76,6 +76,7 @@ private struct WorkflowTestValue: Decodable, Equatable {
   var text: String
 }
 
+@Suite(.serialized) struct PolyformClientTests {
 @Test func polyformClientUsesDocumentedSnakeCaseContracts() async throws {
   let configuration = URLSessionConfiguration.ephemeral
   configuration.protocolClasses = [StubURLProtocol.self]
@@ -145,6 +146,74 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(storyJSON["user_input"] != nil)
   #expect(storyJSON["output_json"] != nil)
   #expect(uploadJSON["content_type"] as? String == "application/pdf")
+}
+
+@Test func publicPDFWithoutUsableLinkIsDeleted() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [StubURLProtocol.self]
+  let client = PolyformClient(
+    configuration: PolyformServiceConfiguration(
+      apiBase: URL(string: "https://example.test")!, appKey: "app-key"),
+    session: URLSession(configuration: configuration))
+  StubURLProtocol.prepare([
+    .init(
+      status: 200,
+      data: Data(
+        #"{"upload_id":"upload-orphan","upload_url":"https://example.test/upload-target"}"#.utf8)),
+    .init(status: 200, data: Data()),
+    .init(status: 200, data: Data(#"{"upload_id":"upload-orphan"}"#.utf8)),
+    .init(status: 204, data: Data()),
+  ])
+
+  let temporaryPDF = FileManager.default.temporaryDirectory.appendingPathComponent(
+    "\(UUID().uuidString).pdf")
+  try Data("pdf".utf8).write(to: temporaryPDF)
+  defer { try? FileManager.default.removeItem(at: temporaryPDF) }
+
+  var failedAsExpected = false
+  do {
+    _ = try await client.publishPDF(at: temporaryPDF, accessToken: "token")
+  } catch {
+    failedAsExpected = true
+  }
+  #expect(failedAsExpected)
+  let requests = StubURLProtocol.requests()
+  #expect(requests.count == 4)
+  #expect(requests.last?.httpMethod == "DELETE")
+  #expect(requests.last?.url?.path.hasSuffix("/uploads/upload-orphan") == true)
+}
+
+@Test func successfulTranscriptionSurvivesTemporaryUploadCleanupFailure() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [StubURLProtocol.self]
+  let client = PolyformClient(
+    configuration: PolyformServiceConfiguration(
+      apiBase: URL(string: "https://example.test")!, appKey: "app-key",
+      transcriptionWorkflowURL: URL(string: "https://example.test/transcribe")!),
+    session: URLSession(configuration: configuration))
+  StubURLProtocol.prepare([
+    .init(
+      status: 200,
+      data: Data(
+        #"{"upload_id":"audio-1","upload_url":"https://example.test/upload-target"}"#.utf8)),
+    .init(status: 200, data: Data()),
+    .init(status: 200, data: Data(#"{"upload_id":"audio-1"}"#.utf8)),
+    .init(
+      status: 200,
+      data: Data(
+        #"{"success":true,"result":{"text":"Done","model":"whisper-1","language":"en","duration_seconds":1,"segments":[{"id":0,"start":0,"end":1,"text":"Done"}],"words":[]}}"#.utf8)),
+    .init(status: 503, data: Data(#"{"error":"try again"}"#.utf8)),
+  ])
+
+  let temporaryAudio = FileManager.default.temporaryDirectory.appendingPathComponent(
+    "\(UUID().uuidString).m4a")
+  try Data("audio".utf8).write(to: temporaryAudio)
+  defer { try? FileManager.default.removeItem(at: temporaryAudio) }
+
+  let transcript = try await client.transcribe(audioURL: temporaryAudio, accessToken: "token")
+  #expect(transcript.text == "Done")
+  #expect(StubURLProtocol.requests().last?.httpMethod == "DELETE")
+}
 }
 
 @Test func workflowResponsesAcceptDirectAndLightWrapperResults() throws {

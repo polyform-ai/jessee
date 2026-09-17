@@ -162,7 +162,9 @@ public struct PolyformClient: Sendable {
       try? await deleteUpload(id: upload.id, accessToken: accessToken)
       throw error
     }
-    try await deleteUpload(id: upload.id, accessToken: accessToken)
+    // Cleanup should never turn a completed, paid transcription into a failed capture.
+    // The managed upload is temporary and is still deleted on a best-effort basis.
+    try? await deleteUpload(id: upload.id, accessToken: accessToken)
     return transcript
   }
 
@@ -231,6 +233,12 @@ public struct PolyformClient: Sendable {
       fileURL: fileURL, contentType: "application/pdf", visibility: "public",
       accessToken: accessToken)
     guard uploaded.publicURL != nil else {
+      do {
+        try await deleteUpload(id: uploaded.id, accessToken: accessToken)
+      } catch {
+        throw PolyformClientError.invalidResponse(
+          "Polyform uploaded the PDF without a public link, and upload \(uploaded.id) could not be removed: \(error.localizedDescription)")
+      }
       throw PolyformClientError.invalidResponse(
         "Polyform uploaded the PDF but did not return its public link.")
     }
