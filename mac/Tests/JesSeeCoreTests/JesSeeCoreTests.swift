@@ -400,10 +400,24 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(selected.contains(where: { $0.filename == "frame-7.jpg" }))
 }
 
+@Test func storyPlanningKeepsTimelineCoverageWhenMarkupPersists() {
+  let frames = (0..<18).map { index in
+    CapturedFrame(
+      seconds: Double(index), filename: "frame-\(index).jpg", hasVisibleMarkup: index >= 3)
+  }
+  let selected = PolyformClient.planningFrames(frames, maximum: 12)
+  #expect(selected.count == 12)
+  #expect(selected.contains(where: { $0.filename == "frame-0.jpg" }))
+  #expect(selected.contains(where: { $0.hasVisibleMarkup }))
+}
+
 @Test func webpageURLsAreNormalizedAndUnsafeValuesAreRejected() {
   #expect(PolyformClient.normalizedWebURL("example.com/path") == "https://example.com/path")
   #expect(
     PolyformClient.normalizedWebURL("https://example.com/path") == "https://example.com/path")
+  #expect(
+    PolyformClient.normalizedWebURL("http://localhost:3000/page") == "http://localhost:3000/page")
+  #expect(PolyformClient.normalizedWebURL("https://jira/browse/ABC") == "https://jira/browse/ABC")
   #expect(PolyformClient.normalizedWebURL("file:///tmp/private") == nil)
   #expect(PolyformClient.normalizedWebURL("not a URL") == nil)
 }
