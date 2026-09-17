@@ -186,7 +186,7 @@ public struct OpenAIClient: Sendable {
     if !value.contains("://") { value = "https://\(value)" }
     guard let components = URLComponents(string: value),
       let scheme = components.scheme?.lowercased(), ["http", "https"].contains(scheme),
-      let host = components.host, host.contains("."), !host.contains(" ")
+      let host = components.host, !host.isEmpty, !host.contains(" ")
     else { return nil }
     return components.url?.absoluteString
   }

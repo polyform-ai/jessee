@@ -40,6 +40,8 @@ test("lists inside callouts survive HTML rehydration", () => {
 test("source URLs are normalized before the editor saves them", () => {
   assert.equal(normalizeSourceURL("example.com/page"), "https://example.com/page");
   assert.equal(normalizeSourceURL("https://example.com/page"), "https://example.com/page");
+  assert.equal(normalizeSourceURL("http://localhost:3000/page"), "http://localhost:3000/page");
+  assert.equal(normalizeSourceURL("https://jira/browse/ABC"), "https://jira/browse/ABC");
   assert.equal(normalizeSourceURL("file:///tmp/private"), undefined);
   assert.equal(normalizeSourceURL("not a URL"), undefined);
 });

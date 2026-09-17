@@ -243,6 +243,8 @@ import Testing
 @Test func webpageURLsAreNormalizedAndUnsafeValuesAreRejected() {
   #expect(OpenAIClient.normalizedWebURL("example.com/path") == "https://example.com/path")
   #expect(OpenAIClient.normalizedWebURL("https://example.com/path") == "https://example.com/path")
+  #expect(OpenAIClient.normalizedWebURL("http://localhost:3000/page") == "http://localhost:3000/page")
+  #expect(OpenAIClient.normalizedWebURL("https://jira/browse/ABC") == "https://jira/browse/ABC")
   #expect(OpenAIClient.normalizedWebURL("file:///tmp/private") == nil)
   #expect(OpenAIClient.normalizedWebURL("not a URL") == nil)
 }
