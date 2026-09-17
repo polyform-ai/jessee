@@ -93,6 +93,28 @@ import Testing
   let data = Data(#"{"email":"a@b.com","outputFolderPath":"/tmp","setupCompleted":true}"#.utf8)
   let configuration = try JesSeeJSON.decoder().decode(JesSeeConfiguration.self, from: data)
   #expect(configuration.shareScreenshotsWithOpenAI)
+  #expect(!configuration.shareAnonymousFeatureUsage)
+}
+
+@Test func featureUsageWritesAnAnonymousWarehouseReadyEvent() async throws {
+  let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+    UUID().uuidString, isDirectory: true)
+  try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: temporary) }
+
+  let recorder = FeatureUsageRecorder(
+    product: "jessee", appVersion: "test", applicationSupportURL: temporary)
+  let event = await recorder.record(
+    .captureAdded, feature: "video_import", source: "imported_video", itemCount: 1)
+  let fileURL = temporary.appendingPathComponent("jessee/feature-usage.jsonl")
+  let line = try String(contentsOf: fileURL, encoding: .utf8)
+
+  #expect(event.product == "jessee")
+  #expect(event.feature == "video_import")
+  #expect(UUID(uuidString: event.anonymousCustomerID) != nil)
+  #expect(line.contains(#""activity":"capture_added""#))
+  #expect(!line.contains("email"))
+  #expect(!line.contains("filename"))
 }
 
 @Test func captionsPreserveSegmentTiming() {

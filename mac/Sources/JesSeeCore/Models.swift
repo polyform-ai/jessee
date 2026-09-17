@@ -332,15 +332,18 @@ public struct JesSeeConfiguration: Codable, Sendable, Equatable {
   public var outputFolderPath: String
   public var setupCompleted: Bool
   public var shareScreenshotsWithOpenAI: Bool
+  public var shareAnonymousFeatureUsage: Bool
 
   public init(
     email: String = "", outputFolderPath: String = "", setupCompleted: Bool = false,
-    shareScreenshotsWithOpenAI: Bool = true
+    shareScreenshotsWithOpenAI: Bool = true,
+    shareAnonymousFeatureUsage: Bool = false
   ) {
     self.email = email
     self.outputFolderPath = outputFolderPath
     self.setupCompleted = setupCompleted
     self.shareScreenshotsWithOpenAI = shareScreenshotsWithOpenAI
+    self.shareAnonymousFeatureUsage = shareAnonymousFeatureUsage
   }
 
   public init(from decoder: any Decoder) throws {
@@ -350,6 +353,8 @@ public struct JesSeeConfiguration: Codable, Sendable, Equatable {
     setupCompleted = try container.decodeIfPresent(Bool.self, forKey: .setupCompleted) ?? false
     shareScreenshotsWithOpenAI =
       try container.decodeIfPresent(Bool.self, forKey: .shareScreenshotsWithOpenAI) ?? true
+    shareAnonymousFeatureUsage =
+      try container.decodeIfPresent(Bool.self, forKey: .shareAnonymousFeatureUsage) ?? false
   }
 
   public func pendingSetupStep(hasAPIKey: Bool) -> Int {

@@ -44,6 +44,9 @@ fi
 if [[ -n "${JESSEE_SPARKLE_PUBLIC_KEY:-}" ]]; then
   /usr/libexec/PlistBuddy -c "Set :SUPublicEDKey $JESSEE_SPARKLE_PUBLIC_KEY" "$app_dir/Contents/Info.plist"
 fi
+if [[ -n "${JESSEE_FEATURE_USAGE_ENDPOINT:-}" ]]; then
+  /usr/libexec/PlistBuddy -c "Add :PFFeatureUsageEndpoint string $JESSEE_FEATURE_USAGE_ENDPOINT" "$app_dir/Contents/Info.plist"
+fi
 
 iconset=$(mktemp -d)/JesSee.iconset
 mkdir -p "$iconset"

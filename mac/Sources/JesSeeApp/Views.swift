@@ -634,6 +634,16 @@ struct SettingsView: View {
             ? "Improves visual understanding. Original videos and the full library stay in your folder."
             : "Only narration, timestamps, and screenshot timing are used to plan the story."
         ).font(.caption).foregroundStyle(.secondary)
+        Toggle(
+          "Share anonymous feature usage",
+          isOn: Binding(
+            get: { store.configuration.shareAnonymousFeatureUsage },
+            set: { store.setAnonymousFeatureUsageSharing($0) }
+          )
+        )
+        Text(
+          "Shares only feature names, completion times, app version, counts, and a random installation ID. JesSee never includes recordings, screenshots, narration, story text, filenames, email, or API keys."
+        ).font(.caption).foregroundStyle(.secondary)
       }
       Section("Software Updates") {
         LabeledContent("Installed", value: SoftwareUpdateController.shared.displayVersion)
