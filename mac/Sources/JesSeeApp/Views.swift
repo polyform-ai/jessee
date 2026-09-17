@@ -444,9 +444,14 @@ struct LibraryView: View {
 }
 
 private struct CaptureDetailView: View {
+  private struct LoadedStory {
+    let recordID: String
+    var document: StoryDocument
+  }
+
   @ObservedObject var store: AppStore
   let record: CaptureRecord
-  @State private var story: StoryDocument?
+  @State private var loadedStory: LoadedStory?
 
   var body: some View {
     VStack(spacing: 0) {
@@ -475,13 +480,15 @@ private struct CaptureDetailView: View {
         .background(.red.opacity(0.08))
       }
 
-      if let story, let directory = store.captureDirectory(for: record) {
-        StoryWebEditor(story: story, record: record, directoryURL: directory) {
+      if let loadedStory, loadedStory.recordID == record.id,
+        let directory = store.captureDirectory(for: record)
+      {
+        StoryWebEditor(story: loadedStory.document, record: record, directoryURL: directory) {
           updatedStory, shouldOpenPDF, completion in
           Task {
             let saved = await store.saveStory(updatedStory, for: record)
             if saved {
-              self.story = updatedStory
+              self.loadedStory = LoadedStory(recordID: record.id, document: updatedStory)
               if shouldOpenPDF { store.openPDF(recordID: record.id) }
             }
             completion(
@@ -503,7 +510,12 @@ private struct CaptureDetailView: View {
           description: Text("Try processing this recording again."))
       }
     }
-    .task(id: record.updatedAt) { story = await store.loadStory(for: record) }
+    .task(id: "\(record.id):\(record.storyFilename ?? "")") {
+      loadedStory = nil
+      let document = await store.loadStory(for: record)
+      guard !Task.isCancelled, let document else { return }
+      loadedStory = LoadedStory(recordID: record.id, document: document)
+    }
   }
 
   private var stageIcon: String {

@@ -1,6 +1,7 @@
 import { Editor, Node as TiptapNode, mergeAttributes, type JSONContent } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import "./macEditor.css";
+import { htmlBlocks, htmlText, narrativeHTML, renderBlocks } from "./richTextHTML";
 
 type AnnotationKind = "highlight" | "redaction";
 
@@ -544,92 +545,6 @@ function parseAnnotations(value: unknown): Annotation[] {
   try { return JSON.parse(String(value || "[]")) as Annotation[]; } catch { return []; }
 }
 
-function htmlBlocks(html: string): JSONContent[] {
-  const template = document.createElement("template");
-  template.innerHTML = html;
-  const blocks: JSONContent[] = [];
-  for (const child of [...template.content.children]) {
-    if (child.tagName === "UL" || child.tagName === "OL") {
-      blocks.push({
-        type: child.tagName === "UL" ? "bulletList" : "orderedList",
-        content: [...child.children].map((item) => ({
-          type: "listItem",
-          content: [...item.children].length
-            ? [...item.children].map(blockFromElement)
-            : [{ type: "paragraph", content: inlineContent(item) }]
-        }))
-      });
-    } else if (child.tagName === "BLOCKQUOTE") {
-      blocks.push({
-        type: "blockquote",
-        content: [...child.children].length
-          ? [...child.children].map(blockFromElement)
-          : [{ type: "paragraph", content: inlineContent(child) }]
-      });
-    } else {
-      blocks.push({ type: "paragraph", content: inlineContent(child) });
-    }
-  }
-  return blocks.length ? blocks : [textNode("paragraph", "")];
-}
-
-function blockFromElement(element: Element): JSONContent {
-  return { type: "paragraph", content: inlineContent(element) };
-}
-
-function inlineContent(element: Element): JSONContent[] {
-  const content: JSONContent[] = [];
-  const visit = (node: Node, marks: JSONContent["marks"] = []) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      if (node.textContent) content.push({ type: "text", text: node.textContent, marks });
-      return;
-    }
-    if (!(node instanceof Element)) return;
-    if (node.tagName === "BR") {
-      content.push({ type: "hardBreak" });
-      return;
-    }
-    const nextMarks = [...(marks || [])];
-    if (["STRONG", "B"].includes(node.tagName)) nextMarks.push({ type: "bold" });
-    if (["EM", "I"].includes(node.tagName)) nextMarks.push({ type: "italic" });
-    node.childNodes.forEach((child) => visit(child, nextMarks));
-  };
-  element.childNodes.forEach((child) => visit(child));
-  return content;
-}
-
-function narrativeHTML(value: string): string {
-  const paragraphs = value.split(/\n\s*\n/).map((text) => text.trim()).filter(Boolean);
-  return (paragraphs.length ? paragraphs : [""]).map((paragraph) => `<p>${escapeHTML(paragraph)}</p>`).join("");
-}
-
-function renderBlocks(blocks: JSONContent[]): string {
-  return blocks.map(renderBlock).join("");
-}
-
-function renderBlock(node: JSONContent): string {
-  if (node.type === "paragraph") return `<p>${renderInline(node.content || []) || "<br>"}</p>`;
-  if (node.type === "heading") return `<h2>${renderInline(node.content || [])}</h2>`;
-  if (node.type === "blockquote") return `<blockquote>${renderBlocks(node.content || [])}</blockquote>`;
-  if (node.type === "bulletList" || node.type === "orderedList") {
-    const tag = node.type === "bulletList" ? "ul" : "ol";
-    return `<${tag}>${(node.content || []).map((item) => `<li>${renderBlocks(item.content || [])}</li>`).join("")}</${tag}>`;
-  }
-  return "";
-}
-
-function renderInline(content: JSONContent[]): string {
-  return content.map((node) => {
-    if (node.type === "hardBreak") return "<br>";
-    let text = escapeHTML(node.text || "");
-    for (const mark of node.marks || []) {
-      if (mark.type === "bold") text = `<strong>${text}</strong>`;
-      if (mark.type === "italic") text = `<em>${text}</em>`;
-    }
-    return text;
-  }).join("");
-}
-
 function textNode(type: string, text: string): JSONContent {
   return { type, content: textContent(text) };
 }
@@ -645,12 +560,6 @@ function textOf(node?: JSONContent): string {
 
 function children(node?: JSONContent): JSONContent[] {
   return (node?.content || []) as JSONContent[];
-}
-
-function htmlText(html: string): string {
-  const template = document.createElement("template");
-  template.innerHTML = html;
-  return (template.content.textContent || "").replace(/\s+/g, " ").trim();
 }
 
 function formatRange(start: number, end: number): string {

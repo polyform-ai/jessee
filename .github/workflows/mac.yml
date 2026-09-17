@@ -14,8 +14,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Build native editor assets
-        run: npm ci && npm run mac:editor
+      - name: Test and build native editor assets
+        run: npm ci && npm run mac:typecheck && npm run mac:editor-test && npm run mac:editor
       - name: Test native app
         run: swift test
       - name: Build app bundle

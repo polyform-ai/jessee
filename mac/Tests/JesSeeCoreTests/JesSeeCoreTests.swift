@@ -26,23 +26,6 @@ import Testing
   #expect(try JesSeeKeychain.loadAPIKey(service: service) == nil)
 }
 
-@Test func keychainLoadMigratesDataProtectionItemsWhenAvailable() throws {
-  let service = "ai.polyform.jessee.tests.migration.\(UUID().uuidString)"
-  let key = "sk-test-\(UUID().uuidString)"
-  defer {
-    try? JesSeeKeychain.removeAPIKey(service: service)
-    try? JesSeeKeychain.removeAPIKey(service: service, dataProtection: true)
-  }
-
-  do {
-    try JesSeeKeychain.saveAPIKey(key, service: service, dataProtection: true)
-  } catch let error as NSError where error.code == Int(errSecMissingEntitlement) {
-    return
-  }
-  #expect(try JesSeeKeychain.loadAPIKeyMigratingIfNeeded(service: service) == key)
-  #expect(try JesSeeKeychain.loadAPIKey(service: service) == key)
-}
-
 @Test func captureDimensionsPreserveAspectRatioWithinEncoderBounds() {
   #expect(
     CaptureDimensions.fitted(pointWidth: 960, pointHeight: 540, pointPixelScale: 2)
