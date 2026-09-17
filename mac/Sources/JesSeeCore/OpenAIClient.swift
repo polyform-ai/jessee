@@ -229,10 +229,14 @@ public struct OpenAIClient: Sendable {
   {
     guard frames.count > maximum, maximum > 1 else { return frames }
     let marked = frames.filter(\.hasVisibleMarkup)
-    if marked.count >= maximum { return evenlySampled(marked, count: maximum) }
-    let markedFilenames = Set(marked.map(\.filename))
-    let unmarked = frames.filter { !markedFilenames.contains($0.filename) }
-    return (marked + evenlySampled(unmarked, count: maximum - marked.count))
+    let markedLimit = max(1, maximum * 2 / 3)
+    let selectedMarked = evenlySampled(marked, count: min(marked.count, markedLimit))
+    let selectedFilenames = Set(selectedMarked.map(\.filename))
+    let timelineCandidates = frames.filter { !selectedFilenames.contains($0.filename) }
+    return (
+      selectedMarked
+        + evenlySampled(timelineCandidates, count: maximum - selectedMarked.count)
+    )
       .sorted { $0.seconds < $1.seconds }
   }
 

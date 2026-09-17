@@ -223,6 +223,17 @@ import Testing
   #expect(selected.contains(where: { $0.filename == "frame-7.jpg" }))
 }
 
+@Test func storyPlanningKeepsTimelineCoverageWhenMarkupPersists() {
+  let frames = (0..<18).map { index in
+    CapturedFrame(
+      seconds: Double(index), filename: "frame-\(index).jpg", hasVisibleMarkup: index >= 3)
+  }
+  let selected = OpenAIClient.planningFrames(frames, maximum: 12)
+  #expect(selected.count == 12)
+  #expect(selected.contains(where: { $0.filename == "frame-0.jpg" }))
+  #expect(selected.contains(where: { $0.hasVisibleMarkup }))
+}
+
 @Test func storySelectionCannotUseAMetadataOnlyScreenshot() throws {
   let frames = (0..<18).map { index in
     CapturedFrame(seconds: Double(index), filename: "frame-\(index).jpg")
