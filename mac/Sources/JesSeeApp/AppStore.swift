@@ -35,9 +35,13 @@ final class AppStore: ObservableObject {
       workspace = CaptureWorkspace(
         rootURL: URL(fileURLWithPath: configuration.outputFolderPath, isDirectory: true))
     }
-    recorder.onFinished = { [weak self] url in
+    recorder.onFinished = { [weak self] result in
       Task { @MainActor in
-        await self?.addCapture(from: url, source: .recording, deleteSourceAfterImport: true)
+        await self?.addCapture(
+          from: result.url,
+          source: .recording,
+          deleteSourceAfterImport: true,
+          recordingMarkups: result.markups)
       }
     }
     Task { await loadLibrary() }
@@ -60,10 +64,17 @@ final class AppStore: ObservableObject {
       try await OpenAIClient().validate(apiKey: candidate)
       do {
         try JesSeeKeychain.saveAPIKey(candidate)
+        guard try JesSeeKeychain.loadAPIKey() == candidate else {
+          throw JesSeeError.keychainUnavailable(
+            "JesSee saved the key but could not read it back from Keychain.")
+        }
       } catch {
         throw JesSeeError.keychainUnavailable(error.localizedDescription)
       }
       hasAPIKey = true
+      if !configuration.setupCompleted {
+        setupStep = max(setupStep, 1)
+      }
       show(.success("OpenAI is connected."))
       return true
     } catch {
@@ -150,6 +161,11 @@ final class AppStore: ObservableObject {
     NSWorkspace.shared.open(workspace.directoryURL(for: record).appendingPathComponent(filename))
   }
 
+  func openPDF(recordID: String) {
+    guard let record = captures.first(where: { $0.id == recordID }) else { return }
+    openPDF(record)
+  }
+
   func loadStory(for record: CaptureRecord) async -> StoryDocument? {
     guard let workspace, let filename = record.storyFilename else { return nil }
     return try? await workspace.read(StoryDocument.self, filename: filename, for: record)
@@ -181,6 +197,10 @@ final class AppStore: ObservableObject {
     return workspace.directoryURL(for: record).appendingPathComponent(filename)
   }
 
+  func captureDirectory(for record: CaptureRecord) -> URL? {
+    workspace?.directoryURL(for: record)
+  }
+
   func openSettings() {
     NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
     NSApp.activate(ignoringOtherApps: true)
@@ -189,14 +209,20 @@ final class AppStore: ObservableObject {
   func clearNotice() { notice = nil }
 
   private func addCapture(
-    from url: URL, source: CaptureSource, deleteSourceAfterImport: Bool = false
+    from url: URL,
+    source: CaptureSource,
+    deleteSourceAfterImport: Bool = false,
+    recordingMarkups: [RecordingMarkupStroke]? = nil
   ) async {
     guard let workspace else {
       show(.error(JesSeeError.outputFolderUnavailable.localizedDescription))
       return
     }
     do {
-      let record = try await workspace.importMedia(from: url, source: source)
+      let record = try await workspace.importMedia(
+        from: url,
+        source: source,
+        recordingMarkups: recordingMarkups)
       if deleteSourceAfterImport { try? FileManager.default.removeItem(at: url) }
       captures = await workspace.allRecords()
       startProcessing(record)

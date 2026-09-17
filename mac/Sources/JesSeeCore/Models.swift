@@ -101,8 +101,10 @@ public struct StoryStep: Codable, Sendable, Equatable, Identifiable {
   public var endSeconds: Double
   public var title: String
   public var narrative: String
+  public var narrativeHTML: String?
   public var transcript: String
   public var imageFilename: String?
+  public var imageAnnotations: [StoryAnnotation]
 
   public init(
     id: String = UUID().uuidString.lowercased(),
@@ -110,16 +112,116 @@ public struct StoryStep: Codable, Sendable, Equatable, Identifiable {
     endSeconds: Double,
     title: String,
     narrative: String,
+    narrativeHTML: String? = nil,
     transcript: String,
-    imageFilename: String? = nil
+    imageFilename: String? = nil,
+    imageAnnotations: [StoryAnnotation] = []
   ) {
     self.id = id
     self.startSeconds = startSeconds
     self.endSeconds = endSeconds
     self.title = title
     self.narrative = narrative
+    self.narrativeHTML = narrativeHTML
     self.transcript = transcript
     self.imageFilename = imageFilename
+    self.imageAnnotations = imageAnnotations
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case id
+    case startSeconds
+    case endSeconds
+    case title
+    case narrative
+    case narrativeHTML
+    case transcript
+    case imageFilename
+    case imageAnnotations
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      id: try container.decodeIfPresent(String.self, forKey: .id)
+        ?? UUID().uuidString.lowercased(),
+      startSeconds: try container.decode(Double.self, forKey: .startSeconds),
+      endSeconds: try container.decode(Double.self, forKey: .endSeconds),
+      title: try container.decode(String.self, forKey: .title),
+      narrative: try container.decode(String.self, forKey: .narrative),
+      narrativeHTML: try container.decodeIfPresent(String.self, forKey: .narrativeHTML),
+      transcript: try container.decode(String.self, forKey: .transcript),
+      imageFilename: try container.decodeIfPresent(String.self, forKey: .imageFilename),
+      imageAnnotations: try container.decodeIfPresent(
+        [StoryAnnotation].self, forKey: .imageAnnotations) ?? []
+    )
+  }
+}
+
+public enum StoryAnnotationKind: String, Codable, Sendable, Equatable {
+  case highlight
+  case redaction
+}
+
+public struct StoryAnnotation: Codable, Sendable, Equatable, Identifiable {
+  public var id: String
+  public var kind: StoryAnnotationKind
+  public var x: Double
+  public var y: Double
+  public var width: Double
+  public var height: Double
+
+  public init(
+    id: String = UUID().uuidString.lowercased(), kind: StoryAnnotationKind, x: Double, y: Double,
+    width: Double, height: Double
+  ) {
+    self.id = id
+    self.kind = kind
+    self.x = x
+    self.y = y
+    self.width = width
+    self.height = height
+  }
+}
+
+public enum RecordingMarkupKind: String, Codable, Sendable, Equatable {
+  case pen
+  case highlight
+}
+
+public struct RecordingMarkupPoint: Codable, Sendable, Equatable {
+  public var x: Double
+  public var y: Double
+
+  public init(x: Double, y: Double) {
+    self.x = x
+    self.y = y
+  }
+}
+
+public struct RecordingMarkupStroke: Codable, Sendable, Equatable, Identifiable {
+  public var id: String
+  public var kind: RecordingMarkupKind
+  public var points: [RecordingMarkupPoint]
+  public var createdAtSeconds: Double
+  public var removedAtSeconds: Double?
+
+  public init(
+    id: String = UUID().uuidString.lowercased(),
+    kind: RecordingMarkupKind,
+    points: [RecordingMarkupPoint],
+    createdAtSeconds: Double,
+    removedAtSeconds: Double? = nil
+  ) {
+    self.id = id
+    self.kind = kind
+    self.points = points
+    self.createdAtSeconds = createdAtSeconds
+    self.removedAtSeconds = removedAtSeconds
+  }
+
+  public func isVisible(at seconds: Double) -> Bool {
+    createdAtSeconds <= seconds && (removedAtSeconds.map { seconds < $0 } ?? true)
   }
 }
 
@@ -154,12 +256,17 @@ public struct StoryKeyPoint: Codable, Sendable, Equatable, Identifiable {
 public struct StoryDocument: Codable, Sendable, Equatable {
   public var title: String
   public var summary: String
+  public var summaryHTML: String?
   public var keyPoints: [StoryKeyPoint]
   public var steps: [StoryStep]
 
-  public init(title: String, summary: String, keyPoints: [String], steps: [StoryStep]) {
+  public init(
+    title: String, summary: String, summaryHTML: String? = nil, keyPoints: [String],
+    steps: [StoryStep]
+  ) {
     self.title = title
     self.summary = summary
+    self.summaryHTML = summaryHTML
     self.keyPoints = keyPoints.map { StoryKeyPoint(text: $0) }
     self.steps = steps
   }
@@ -179,6 +286,8 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
   public var htmlFilename: String?
   public var pdfFilename: String?
   public var imageFilenames: [String]
+  public var imageTimes: [String: Double]?
+  public var recordingMarkups: [RecordingMarkupStroke]?
   public var error: String?
 
   public init(
@@ -195,6 +304,8 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     htmlFilename: String? = nil,
     pdfFilename: String? = nil,
     imageFilenames: [String] = [],
+    imageTimes: [String: Double]? = nil,
+    recordingMarkups: [RecordingMarkupStroke]? = nil,
     error: String? = nil
   ) {
     self.id = id
@@ -210,6 +321,8 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     self.htmlFilename = htmlFilename
     self.pdfFilename = pdfFilename
     self.imageFilenames = imageFilenames
+    self.imageTimes = imageTimes
+    self.recordingMarkups = recordingMarkups
     self.error = error
   }
 }

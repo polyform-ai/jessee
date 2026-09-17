@@ -10,7 +10,7 @@ let package = Package(
     .executable(name: "JesSeeApp", targets: ["JesSeeApp"]),
   ],
   dependencies: [
-    .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.7.0"),
+    .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.7.0")
   ],
   targets: [
     .target(
@@ -30,8 +30,10 @@ let package = Package(
       ],
       path: "mac/Sources/JesSeeApp",
       linkerSettings: [
+        .linkedFramework("Carbon"),
         .linkedFramework("ScreenCaptureKit"),
         .linkedFramework("UserNotifications"),
+        .linkedFramework("WebKit"),
       ]
     ),
     .testTarget(

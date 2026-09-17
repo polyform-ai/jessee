@@ -26,7 +26,11 @@ public actor CaptureWorkspace {
     records.sorted { $0.createdAt > $1.createdAt }
   }
 
-  public func importMedia(from sourceURL: URL, source: CaptureSource) throws -> CaptureRecord {
+  public func importMedia(
+    from sourceURL: URL,
+    source: CaptureSource,
+    recordingMarkups: [RecordingMarkupStroke]? = nil
+  ) throws -> CaptureRecord {
     guard FileManager.default.fileExists(atPath: sourceURL.path) else {
       throw JesSeeError.sourceUnavailable(sourceURL.path)
     }
@@ -50,7 +54,8 @@ public actor CaptureWorkspace {
       updatedAt: now,
       title: fallbackTitle,
       source: source,
-      mediaFilename: filename
+      mediaFilename: filename,
+      recordingMarkups: recordingMarkups
     )
     try save(record)
     return record

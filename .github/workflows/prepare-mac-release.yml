@@ -28,6 +28,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Test and build the Mac story editor
+        run: npm ci && npm run mac:typecheck && npm run mac:editor-test && npm run mac:editor
+
       - name: Validate release inputs and secrets
         env:
           VERSION: ${{ inputs.version }}

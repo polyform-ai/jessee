@@ -5,7 +5,6 @@ const websiteSource = resolve("website");
 const websiteBuild = resolve("site-dist");
 const showcasePdf = resolve("output/pdf/jessee-explains-jessee.pdf");
 const packageMetadata = JSON.parse(readFileSync(resolve("package.json"), "utf8"));
-const extensionManifest = JSON.parse(readFileSync(resolve("public/manifest.json"), "utf8"));
 
 rmSync(websiteBuild, { recursive: true, force: true });
 cpSync(websiteSource, websiteBuild, { recursive: true });
@@ -22,22 +21,9 @@ const macInstallUrl = "https://github.com/polyform-ai/jessee/releases/latest/dow
 const releaseMetadata = {
   schemaVersion: 1,
   version,
-  browserVersion: extensionManifest.version,
   publishedAt: new Date().toISOString(),
   notes: "JesSee is now a signed native Mac app with menu-bar recording, video import, a local library, and automatic updates.",
   mac: {
-    channel: "sparkle",
-    automaticUpdates: true,
-    installUrl: macInstallUrl
-  },
-  // Keep the legacy fields so an installed browser preview can direct its user
-  // to the native replacement instead of silently becoming stranded.
-  chrome: {
-    channel: "sparkle",
-    automaticUpdates: true,
-    installUrl: macInstallUrl
-  },
-  safari: {
     channel: "sparkle",
     automaticUpdates: true,
     installUrl: macInstallUrl

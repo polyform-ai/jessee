@@ -14,7 +14,8 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "types": ["chrome", "node", "vitest/globals"]
+    "allowImportingTsExtensions": true,
+    "types": ["node"]
   },
-  "include": ["src", "tests", "vite.config.ts", "playwright.config.ts"]
+  "include": ["src/macEditor.ts", "src/richTextHTML.ts", "tests/macEditorRichText.test.ts", "vite.mac-editor.config.ts"]
 }

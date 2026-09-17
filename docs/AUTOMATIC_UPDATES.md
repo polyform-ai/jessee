@@ -2,11 +2,7 @@
 
 The native Mac app uses Sparkle for signed in-place updates. The first install is a signed, notarized `JesSee.dmg`; subsequent releases are delivered from the app's **Check for Updates…** button and automatic update checks.
 
-## Retiring the browser extensions
-
-Chrome and Safari extension builds remain in the repository for history and migration support, but they are no longer the supported install path. The website offers only the native Mac app.
-
-`site-dist/releases/latest.json` retains the old `chrome` and `safari` fields as a migration bridge. Both point preview users to the signed Mac installer. They do not advertise or update an extension.
+Version 0.2.1 is the first supported native Mac release. Credentials from the retired browser previews were never stored in the Mac Keychain. Local pre-release Mac builds used development-only signing and may ask their tester to connect OpenAI once in the signed app; all supported releases use the same login-keychain item from that point forward.
 
 ## Native Mac app
 
@@ -22,7 +18,7 @@ The appcast URL is `https://github.com/polyform-ai/jessee/releases/latest/downlo
 
 ## Release metadata
 
-`npm run site:build` creates `site-dist/releases/latest.json`. It advertises the native Sparkle channel and keeps the legacy browser fields only so old preview installs can find the replacement. Production credentials or signing material are never written into this file.
+`npm run site:build` creates `site-dist/releases/latest.json`. It advertises the native Sparkle channel only. Production credentials or signing material are never written into this file.
 
 Before publishing a new release:
 

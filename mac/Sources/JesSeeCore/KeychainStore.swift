@@ -10,20 +10,25 @@ public enum JesSeeKeychain {
   }
 
   public static func saveAPIKey(_ value: String) throws {
+    try saveAPIKey(value, service: service)
+  }
+
+  static func saveAPIKey(_ value: String, service: String) throws {
     let key = value.trimmingCharacters(in: .whitespacesAndNewlines)
     guard key.hasPrefix("sk-"), key.count >= 20, let data = key.data(using: .utf8) else {
       throw JesSeeError.invalidAPIKey
     }
 
+    // The first public Mac release establishes the encrypted login keychain as JesSee's stable
+    // credential store. Unlike the data-protection keychain, it does not require a restricted
+    // entitlement and provisioning profile in the direct Developer ID distribution.
     let query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: service,
       kSecAttrAccount as String: account,
-      kSecUseDataProtectionKeychain as String: true,
     ]
     let attributes: [String: Any] = [
       kSecValueData as String: data,
-      kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
       kSecAttrLabel as String: "JesSee OpenAI API key",
       kSecAttrDescription as String:
         "Used locally by JesSee to transcribe recordings and create visual stories.",
@@ -41,11 +46,14 @@ public enum JesSeeKeychain {
   }
 
   public static func loadAPIKey() throws -> String? {
+    try loadAPIKey(service: service)
+  }
+
+  static func loadAPIKey(service: String) throws -> String? {
     let query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: service,
       kSecAttrAccount as String: account,
-      kSecUseDataProtectionKeychain as String: true,
       kSecReturnData as String: true,
       kSecMatchLimit as String: kSecMatchLimitOne,
     ]
@@ -62,11 +70,14 @@ public enum JesSeeKeychain {
   }
 
   public static func removeAPIKey() throws {
+    try removeAPIKey(service: service)
+  }
+
+  static func removeAPIKey(service: String) throws {
     let query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: service,
       kSecAttrAccount as String: account,
-      kSecUseDataProtectionKeychain as String: true,
     ]
     let status = SecItemDelete(query as CFDictionary)
     guard status == errSecSuccess || status == errSecItemNotFound else {

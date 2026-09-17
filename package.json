@@ -1,6 +1,6 @@
 {
   "name": "jessee",
-  "version": "0.1.0-alpha.5",
+  "version": "0.2.1",
   "description": "A native Mac recorder that turns narrated walkthroughs and imported videos into visual, AI-ready documents.",
   "license": "MIT",
   "repository": {
@@ -15,40 +15,28 @@
   "scripts": {
     "mac:build": "swift build",
     "mac:test": "swift test",
-    "mac:app": "zsh mac/Support/build-app.sh",
-    "build": "vite build",
-    "safari:resources": "npm run build && node scripts/prepare-safari-resources.mjs",
-    "build:safari": "npm run safari:resources && xcodebuild -project safari/JesSee.xcodeproj -scheme JesSee -configuration Debug -derivedDataPath safari/build build && node scripts/validate-safari-bundle.mjs",
-    "build:safari:unsigned": "npm run safari:resources && xcodebuild -project safari/JesSee.xcodeproj -scheme JesSee -configuration Debug -derivedDataPath safari/build CODE_SIGNING_ALLOWED=NO build && node scripts/validate-safari-bundle.mjs",
-    "release:package": "npm run safari:resources && node scripts/package-release.mjs",
-    "release:validate": "node scripts/validate-release-packages.mjs",
+    "mac:typecheck": "tsc --noEmit",
+    "mac:editor-test": "node --experimental-strip-types --test tests/macEditorRichText.test.ts",
+    "mac:editor": "vite build --config vite.mac-editor.config.ts",
+    "mac:app": "npm run mac:editor && zsh mac/Support/build-app.sh",
+    "mac:check": "npm run mac:typecheck && npm run mac:editor-test && npm run mac:editor && swift test && zsh mac/Support/build-app.sh",
     "site:build": "node scripts/prepare-website.mjs",
     "site:preview": "npm run site:build && wrangler pages dev ./site-dist",
     "deploy:cloudflare": "npm run site:build && wrangler pages deploy ./site-dist --project-name jessee --branch main",
     "deploy:cloudflare:preview": "npm run site:build && wrangler pages deploy ./site-dist --project-name jessee --branch preview",
-    "dev": "vite build --watch",
-    "test": "vitest run",
-    "test:e2e": "playwright test",
-    "check": "tsc --noEmit && npm run build && npm test && npm run test:e2e"
+    "dev": "vite build --watch --config vite.mac-editor.config.ts",
+    "check": "npm run mac:check"
   },
   "dependencies": {
     "@tiptap/core": "^3.31.3",
     "@tiptap/pm": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
-    "@vitejs/plugin-react": "^4.7.0",
-    "jspdf": "^4.2.1",
     "vite": "^7.0.3"
   },
   "devDependencies": {
-    "@playwright/test": "^1.53.2",
-    "@tailwindcss/vite": "^4.3.2",
-    "@types/chrome": "^0.0.326",
     "@types/node": "^24.0.10",
-    "fake-indexeddb": "^6.2.5",
-    "sharp": "^0.35.3",
-    "tailwindcss": "^4.3.2",
+    "linkedom": "^0.18.13",
     "typescript": "^5.8.3",
-    "vitest": "^3.2.4",
-    "wrangler": "^4.129.1"
+    "wrangler": "^4.133.0"
   }
 }

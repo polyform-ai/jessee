@@ -2,242 +2,83 @@
 
 ### Help AI see what you see.
 
-Communication today is surprisingly inefficient.
+AI is bad at processing video. A walkthrough contains the full story, but sending every frame consumes enormous context, a folder of screenshots loses the sequence, and rewriting the recording as a prompt means doing the work twice.
 
-We write long tickets. We take screenshots. We jump on calls. We record videos. Then someone, whether it's another person or an AI, has to watch everything, understand the context, and turn it into action.
+JesSee is a native Mac app that records how you explain work, connects the narration to the important screen states, and turns the result into an editable visual story and one continuous PDF.
 
-JesSee is built around a simple idea:
+Use it for:
 
-**The best way to explain something is to show it.**
+- Product specs and bug reports for AI agents
+- Tutorials, playbooks, and support guidance
+- Detailed asynchronous handoffs
+- Turning an existing video into structured context
 
-Record your screen, talk through what you're thinking, and let AI transform that explanation into structured knowledge.
+## What the Mac app includes
 
-A single recording can become:
-
-- A bug report
-- A feature ticket
-- A PRD
-- A construction guide
-- A support article
-- A knowledge base document
-- A step by step tutorial
-- Or anything else the recipient needs
-
-JesSee keeps recent walkthroughs in a local library, so the recording does not disappear after the first PDF. Search by title or page, replay the retained recording, reopen the reader-facing story in the visual editor, change its words or screenshots, and download a fresh PDF.
-
-The recording is simply the source of truth. The output is tailored to the purpose.
-
-## Beyond Documentation
-
-JesSee isn't about creating videos.
-
-It's about creating understanding.
-
-Instead of asking people or AI to consume a 15 minute recording, JesSee extracts the important moments, organizes them into logical sections, identifies key decisions, captures screenshots where they matter, and produces clean, structured documents that are easy to consume.
-
-Think of it as turning communication into structured context.
-
-## Why I Built It
-
-I originally built JesSee because I realized I naturally explain work by showing it.
-
-When I file bugs or describe new features, I almost never want to write a long ticket. I open a screen recorder, walk through the product, explain my thoughts out loud, and then hand that recording to AI.
-
-The AI writes a much better ticket than I would have.
-
-It's faster.
-
-It's more accurate.
-
-And it preserves context that would otherwise be lost.
-
-That simple workflow has become one of the most valuable tools I use every day.
-
-## Where This Goes
-
-Today JesSee can turn a recording into a polished document.
-
-Tomorrow it becomes much more.
-
-Imagine every recording becoming structured context that can be explored by both humans and AI.
-
-The same recording could generate multiple outputs:
-
-- Engineering tickets
-- Product requirements
-- QA test plans
-- Customer facing documentation
-- Executive summaries
-- Onboarding guides
-
-Instead of replaying a video over and over, anyone could ask questions directly against the captured context.
-
-> Create three engineering tickets.
-
-> Summarize this for product.
-
-> Turn this into onboarding documentation.
-
-> What changed compared to the previous walkthrough?
-
-> Which parts of this workflow seem confusing?
-
-The recording becomes a living source of knowledge rather than a static video.
-
-## Open Source
-
-JesSee is an open source project because I believe communication with AI is still in its infancy.
-
-There is a huge opportunity to rethink how humans express ideas to machines.
-
-Today we mostly type prompts.
-
-Tomorrow we'll show, explain, sketch, annotate, and collaborate naturally.
-
-JesSee is an experiment in building that future.
-
-JesSee improves fastest when people share the real communication problems they run into.
-
-- Found a bug, a confusing workflow, or an idea for a new document type? [Open an issue](https://github.com/polyform-ai/jessee/issues).
-- Want to build an improvement? Fork the project and [open a pull request](https://github.com/polyform-ai/jessee/pulls).
-- Interested in collaborating or working on JesSee part time? Email Ahmed at [ahmed@polyform.ai](mailto:ahmed@polyform.ai).
-
-Good first contributions include visual-story improvements, accessibility work, capture-quality improvements, integrations, and tests that make the recording flow more reliable.
-
-## The Vision
-
-Long term, I'd love to work with engineers, designers, and AI researchers who are excited about improving how humans communicate with AI.
-
-The current project is intentionally simple, but there are many directions to explore:
-
-- Rich sharing and collaboration
-- Uploading existing videos for AI understanding
-- Multiple document outputs from the same recording
-- Timeline based context exploration
-- Interactive conversations with captured walkthroughs
-- Better screenshot extraction and annotation
-- AI generated follow up questions when context is missing
-- Integration with products like Polyform for deeper workflow automation
-
-Ultimately, I don't think we're building a better screen recorder.
-
-We're building a better way to communicate.
-
-## Native Mac App
-
-JesSee is moving to a native, menu-bar Mac app. This avoids the fragile browser-extension handoff and keeps the recorder available from whatever app or browser you are explaining.
-
-The native app currently includes:
-
-- A four-step first-run guide for OpenAI, email, library folder, and microphone access
-- Native recording of a chosen window, app, or display from the menu bar
-- A compact recording surface with timer, Redo, and Stop & Process
+- A guided setup for OpenAI, email, output folder, and microphone access
+- Menu-bar recording for any selected window, app, or display
+- A live timer, microphone meter, drawing and highlighting controls
+- Global recording shortcuts, including `⌥S` to stop and process
 - Video import for existing walkthroughs
-- Background transcription and story creation using word- and segment-level timestamps
-- A local library with durable processing status and retryable failures
-- A visual story editor for titles, summaries, key points, step copy, and alternate screenshots
-- One continuous PDF plus an HTML copy, captions, transcript, screenshots, narration, and original video in a folder the user controls
+- Background transcription and story creation with timestamp-aligned screenshots
+- A local library with processing state, retry, replay, and editable history
+- A Tiptap-based visual editor for headings, paragraphs, lists, callouts, image choice, and image markup
+- One continuous PDF plus an HTML copy, captions, transcript, screenshots, narration, and original video in a folder you control
+- Signed updates through Sparkle
 
-The app requires macOS 15 or newer. Build and test it locally:
+JesSee requires macOS 15 or newer and your own OpenAI API key. Recordings and generated files remain in the output folder you choose. Creating a story sends the narration and selected screenshots to OpenAI through that key.
 
-```bash
-npm run mac:test
-npm run mac:app
-open mac/build/JesSee.app
-```
+## Install
 
-The local package is ad-hoc signed for development. Public distribution still requires Developer ID signing, notarization, and the native update feed described in [the automatic update path](docs/AUTOMATIC_UPDATES.md).
+Download the latest signed and notarized installer from [jessee.ai](https://jessee.ai) or the [latest GitHub release](https://github.com/polyform-ai/jessee/releases/latest).
 
-## Legacy Browser Extension
+1. Open `JesSee.dmg`.
+2. Drag JesSee to Applications.
+3. Open JesSee from Applications and complete the four-step setup.
+4. Use the menu-bar icon to record, import video, open the library, or check for updates.
 
-The Chrome and Safari extension source remains temporarily available while the native recording flow is tested on real permissions, long recordings, and production OpenAI requests. It is no longer the target architecture. Once the signed Mac build passes those release gates, the extension packages and installation path can be removed without leaving users with no working download.
+The browser extensions have been retired. The native app records Safari, Chrome, and other Mac apps without an extension.
 
-JesSee ships as a Chrome MV3 extension and a macOS Safari Web Extension that capture screen context, microphone narration, cursor movement, and timestamped screenshots. GPT-5.6 Sol creates the first draft of a reader-facing visual story. The Tiptap editor keeps the outcome, summary, key points, step copy, and selected images together in one continuous document: edit the words directly, click any image to step through alternatives, preview the finished handoff, then download that same composition as one continuous PDF page.
+## Recording controls
 
-### What JesSee captures and sends
+The floating recording bar shows the elapsed time and microphone activity. Hover any control to see its purpose and shortcut.
 
-JesSee only captures a tab, window, or screen after you explicitly choose it in Chrome's share picker. Microphone narration is enabled separately in Settings and is required before a capture can begin.
+| Action | Shortcut |
+| --- | --- |
+| Draw | `⌥D` |
+| Highlight | `⌥H` |
+| Undo | `⌥Z` |
+| Clear marks | `⌥C` |
+| Redo take | `⌥R` |
+| Stop and process | `⌥S` |
 
-Captures, recordings, and generated PDFs stay on your computer. When you choose **Create Plan**, JesSee sends the narration, timestamps, timeline metadata, screenshot metadata, and a curated set of up to 20 transition screenshots to OpenAI using the API key you provide. In **Private Mode**, no screenshot pixels are sent; only narration and timeline metadata, including local screenshot IDs, are used to plan where local evidence belongs. **Generate PDF** performs no additional AI request and renders the reviewed plan with its selected local images. The browser extension has no product analytics or telemetry endpoint configured. The public website uses GA4 for page, download, and GitHub-link measurement; it does not send extension content, API keys, email addresses, or unapproved URL parameters to GA4. Only standard campaign-attribution fields are retained, and values that resemble email addresses are discarded.
+Select an active drawing tool again to return to normal interaction with the recorded app.
 
-## Local Use
-
-1. Build the extension:
-
-   ```bash
-   npm run build
-   ```
-
-2. Open `chrome://extensions`.
-3. Enable Developer mode.
-4. Click **Load unpacked**.
-5. Select:
-
-   ```text
-   path/to/jessee/dist
-   ```
-
-6. Open the extension, add your email, a fresh OpenAI API key, and choose a local output folder.
-7. Click **Start Capture**, choose the tab/window/screen in Chrome's picker, explain the flow, then click **Close Capture**.
-8. While recording, the glowing pointer compresses and rebounds on every click so actions remain clear without covering the page. Hold **B** and drag to draw an outline box, or hold **R** and drag to blur/redact an area. Press **C** to clear every annotation and redaction from the current capture. Clicks and marked frames are captured automatically.
-9. Create the story to open the visual editor. JesSee supplies the first draft; edit its headings, paragraphs, and key points directly in the document. Click any large image to step backward or forward through the captured moments, then choose the best one. **Best matches** ranks screenshots by timing, page context, and useful markup, while **All images** keeps the complete capture available.
-10. Generate and download the PDF from the plan editor or the recorder.
-11. Open **Library** to search prior walkthroughs, replay a retained recording, continue editing its story, or download a fresh PDF.
-
-Mic narration and cursor highlighting are always enabled. JesSee captures timestamped screenshots automatically and pairs them with a sentence-level timestamped transcript. Planning aligns narration to the end of each sentence so evidence reflects the completed action or resulting screen state. Representative transition images help the model understand major changes, while the full screenshot timeline remains available by ID so the plan can choose an earlier or later frame when it tells the story better.
-
-For a concise product walkthrough, use the [two-minute demo playbook](docs/DEMO_PLAYBOOK.md). It keeps the story focused on the transformation from a short explanation to a reviewed, image-backed handoff.
-
-## Website
-
-The open-source product site lives in `website/` and is hosted at [jessee.ai](https://jessee.ai) on Cloudflare Pages. Preview it locally with `npm run site:preview`. Maintainers can deploy a branch preview with `npm run deploy:cloudflare:preview`; `npm run deploy:cloudflare` publishes the `main` production branch.
-
-Early Chrome and Safari downloads are published as GitHub prerelease assets. Run `npm run release:package` to produce both ZIP files and their checksums. See [the developer-preview installation guide](docs/INSTALL_PREVIEW.md) for the deliberate installation steps and current verification limits.
-
-Settings includes a release check for developer-preview installs. Trusted automatic installation will use the Chrome Web Store on Chrome and a signed, notarized macOS app update channel on Safari; see [the automatic update path](docs/AUTOMATIC_UPDATES.md) for the release gates.
-
-## Safari
-
-JesSee also includes a macOS Safari Web Extension wrapper in `safari/` for Safari 16.4 and newer. Safari opens the recorder in its own extension tab because Safari does not support Chrome's side panel API. Safari also keeps capture artifacts in extension storage and downloads the finished PDF because Chrome's directory picker is unavailable there.
-
-Build the Safari app and extension for local use:
-
-```bash
-npm run build:safari
-```
-
-The local build uses Xcode's **Sign to Run Locally** identity when a development certificate is not configured, which makes the extension discoverable by Safari on the same Mac. For a normal development setup, open `safari/JesSee.xcodeproj` in Xcode, select your Development Team for both targets, and run the **JesSee** scheme. Then enable JesSee in Safari under **Settings → Extensions** and allow website access when Safari asks. Click the toolbar icon from the page you want to explain; JesSee remembers that page while the recorder runs in a full-width extension tab. After recording begins, the toolbar popover keeps the annotation shortcuts and Finish Recording control available without covering the captured page. Finishing the recording automatically creates and opens the visual plan for review before the PDF is generated.
-
-If you only need an unsigned compilation check, run `npm run build:safari:unsigned`. Safari will not register that build as an extension.
-
-The Safari resource bundle is generated from the same Vite build as Chrome. Run `npm run safari:resources` after frontend changes before building or running from Xcode. Generated Safari resources and Xcode build output are intentionally excluded from git.
-
-## Development
-
-Install dependencies:
+## Build and test
 
 ```bash
 npm install
-```
-
-Run a production build:
-
-```bash
-npm run build
-```
-
-Run the full local check:
-
-```bash
 npm run check
+open mac/build/JesSee.app
 ```
 
-Telemetry/webhook posting is disabled in the public source. If you are experimenting locally, keep private endpoints out of commits.
+`npm run check` builds the embedded story editor, runs the Swift test suite, creates the local app bundle, and verifies its signature.
 
-## Validation
+The public release workflow creates a universal Developer ID-signed app, submits the app and DMG to Apple for notarization, and generates the signed Sparkle update feed. See [Signed Mac releases and automatic updates](docs/AUTOMATIC_UPDATES.md).
+
+## Website
+
+The product site lives in `website/` and is hosted at [jessee.ai](https://jessee.ai) on Cloudflare Pages.
 
 ```bash
-npm run check
+npm run site:preview
+npm run deploy:cloudflare:preview
 ```
 
-This runs TypeScript, builds the extension, runs unit tests, and loads the extension settings page in Playwright Chromium.
+Publishing production remains an explicit release step: `npm run deploy:cloudflare`.
+
+## Open source
+
+JesSee is MIT licensed. Found a bug or confusing workflow? [Open an issue](https://github.com/polyform-ai/jessee/issues). Want to improve it? Fork the project and [open a pull request](https://github.com/polyform-ai/jessee/pulls).
+
+Good first contributions include visual-story improvements, accessibility, capture quality, document output, and tests that make the native recording flow more reliable.
