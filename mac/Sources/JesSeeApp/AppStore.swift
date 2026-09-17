@@ -37,6 +37,7 @@ final class AppStore: ObservableObject {
   private let polyformClient: PolyformClient?
   private var workspace: CaptureWorkspace?
   private var processingTasks: [String: Task<Void, Never>] = [:]
+  private var processingNotificationTasks: [String: Task<Void, Never>] = [:]
   private var refreshTask: Task<WorkflowAuthSession, Error>?
   private var signInTask: Task<Void, Never>?
   private var workflowSession: WorkflowAuthSession?
@@ -425,8 +426,7 @@ final class AppStore: ObservableObject {
         recordingMarkups: recordingMarkups)
       if deleteSourceAfterImport { try? FileManager.default.removeItem(at: url) }
       captures = await workspace.allRecords()
-      startProcessing(record)
-      notifyProcessingStarted(record)
+      startProcessing(record, notifyStarted: true)
       recordUsage(
         .captureAdded,
         feature: source == .recording ? "screen_recording" : "video_import",
@@ -437,11 +437,10 @@ final class AppStore: ObservableObject {
     }
   }
 
-  private func startProcessing(_ record: CaptureRecord) {
+  private func startProcessing(_ record: CaptureRecord, notifyStarted: Bool = false) {
     guard processingTasks[record.id] == nil, let workspace else { return }
     let appStore = self
     let task = Task {
-      defer { Task { @MainActor in appStore.processingTasks[record.id] = nil } }
       do {
         let service = try await appStore.processingService()
         let processor = CaptureProcessor(workspace: workspace, service: service)
@@ -455,8 +454,10 @@ final class AppStore: ObservableObject {
       } catch {
         appStore.show(.error(appStore.authenticationAwareError(error).localizedDescription))
       }
+      appStore.finishProcessingLifecycle(record.id)
     }
     processingTasks[record.id] = task
+    if notifyStarted { notifyProcessingStarted(record) }
   }
 
   private func loadLibrary() async {
@@ -498,11 +499,13 @@ final class AppStore: ObservableObject {
   }
 
   private func notifyProcessingStarted(_ record: CaptureRecord) {
-    Task {
+    processingNotificationTasks[record.id]?.cancel()
+    processingNotificationTasks[record.id] = Task { [weak self] in
       let center = UNUserNotificationCenter.current()
       guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else {
         return
       }
+      guard !Task.isCancelled, self?.processingTasks[record.id] != nil else { return }
       let content = UNMutableNotificationContent()
       content.title = "JesSee is processing your recording"
       content.body = "You can keep working. JesSee will notify you when the story is ready."
@@ -510,7 +513,20 @@ final class AppStore: ObservableObject {
       try? await center.add(
         UNNotificationRequest(
           identifier: "processing-\(record.id)", content: content, trigger: nil))
+      if Task.isCancelled || self?.processingTasks[record.id] == nil {
+        center.removePendingNotificationRequests(withIdentifiers: ["processing-\(record.id)"])
+        center.removeDeliveredNotifications(withIdentifiers: ["processing-\(record.id)"])
+      }
     }
+  }
+
+  private func finishProcessingLifecycle(_ id: String) {
+    processingTasks[id] = nil
+    processingNotificationTasks[id]?.cancel()
+    processingNotificationTasks[id] = nil
+    let center = UNUserNotificationCenter.current()
+    center.removePendingNotificationRequests(withIdentifiers: ["processing-\(id)"])
+    center.removeDeliveredNotifications(withIdentifiers: ["processing-\(id)"])
   }
 
   private func persistConfiguration() {

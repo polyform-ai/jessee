@@ -85,7 +85,13 @@ public struct DirectOpenAIClient: Sendable {
     includeScreenshotPixels: Bool = true
   ) async throws -> StoryDocument {
     let imageFrames = includeScreenshotPixels ? PolyformClient.planningFrames(frames) : []
-    let includedImageFilenames = Set(imageFrames.map(\.filename))
+    let imageAttachments = imageFrames.compactMap { frame -> (CapturedFrame, Data)? in
+      let imageURL = captureDirectory.appendingPathComponent(frame.filename)
+      guard let data = try? Data(contentsOf: imageURL) else { return nil }
+      return (frame, data)
+    }
+    let attachedFrames = imageAttachments.map(\.0)
+    let includedImageFilenames = Set(attachedFrames.map(\.filename))
     var userContent: [[String: Any]] = [
       [
         "type": "input_text",
@@ -94,9 +100,7 @@ public struct DirectOpenAIClient: Sendable {
           includedImageFilenames: includedImageFilenames),
       ]
     ]
-    for frame in imageFrames {
-      let imageURL = captureDirectory.appendingPathComponent(frame.filename)
-      guard let data = try? Data(contentsOf: imageURL) else { continue }
+    for (frame, data) in imageAttachments {
       userContent.append([
         "type": "input_text",
         "text":
@@ -128,13 +132,15 @@ public struct DirectOpenAIClient: Sendable {
       throw JesSeeError.invalidResponse("JesSee received an incomplete story from OpenAI.")
     }
     let draft = try JSONDecoder().decode(DirectStoryDraft.self, from: json)
+    let eligibleFrames = attachedFrames.isEmpty ? frames : attachedFrames
     return StoryDocument(
       title: draft.title, sourceURL: PolyformClient.normalizedWebURL(draft.sourceURL),
       summary: draft.summary, keyPoints: draft.keyPoints,
       steps: draft.steps.map { step in
         let frame = PolyformClient.selectedFrame(
-          requestedSeconds: step.screenshotTimeSeconds, stepEndSeconds: step.endSeconds,
-          frames: frames)
+          requestedSeconds: step.screenshotTimeSeconds,
+          stepEndSeconds: step.endSeconds,
+          frames: eligibleFrames)
         return StoryStep(
           startSeconds: step.startSeconds, endSeconds: step.endSeconds, title: step.title,
           narrative: step.narrative, transcript: step.transcript,
