@@ -619,8 +619,8 @@ final class AppStore: ObservableObject {
     persistConfiguration()
   }
 
-  private func withPolyformAuthentication<Value>(
-    _ operation: (PolyformClient, String) async throws -> Value
+  private func withPolyformAuthentication<Value: Sendable>(
+    _ operation: @Sendable (PolyformClient, String) async throws -> Value
   ) async throws -> Value {
     guard let polyformClient else { throw JesSeeError.serviceNotConfigured }
     let token = try await accessToken()
