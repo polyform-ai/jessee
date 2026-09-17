@@ -635,14 +635,14 @@ struct SettingsView: View {
             : "Only narration, timestamps, and screenshot timing are used to plan the story."
         ).font(.caption).foregroundStyle(.secondary)
         Toggle(
-          "Share anonymous feature usage",
+          "Share product analytics",
           isOn: Binding(
             get: { store.configuration.shareAnonymousFeatureUsage },
             set: { store.setAnonymousFeatureUsageSharing($0) }
           )
         )
         Text(
-          "Shares only feature names, completion times, app version, counts, and a random installation ID. JesSee never includes recordings, screenshots, narration, story text, filenames, email, or API keys."
+          "Shares completed feature names, times, app version, counts, and random analytics IDs. The Polyform collector may receive routine connection metadata such as your IP address. If you save an email, Polyform associates it with an opaque user ID; Google Analytics receives only that ID, never your email. Turning this off removes the local analytics ID. JesSee never includes recordings, screenshots, narration, story text, filenames, or API keys."
         ).font(.caption).foregroundStyle(.secondary)
       }
       Section("Software Updates") {

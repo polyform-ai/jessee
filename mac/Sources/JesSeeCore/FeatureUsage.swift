@@ -11,7 +11,8 @@ public struct FeatureUsageEvent: Codable, Equatable, Sendable {
   public let activityID: String
   public let occurredAt: Date
   public let activity: String
-  public let anonymousCustomerID: String
+  public let clientID: String
+  public let userID: String?
   public let product: String
   public let appVersion: String
   public let feature: String
@@ -24,7 +25,8 @@ public struct FeatureUsageEvent: Codable, Equatable, Sendable {
     case activityID = "activity_id"
     case occurredAt = "ts"
     case activity
-    case anonymousCustomerID = "anonymous_customer_id"
+    case clientID = "client_id"
+    case userID = "user_id"
     case product
     case appVersion = "app_version"
     case feature
@@ -35,6 +37,24 @@ public struct FeatureUsageEvent: Codable, Equatable, Sendable {
   }
 }
 
+public struct FeatureUsageIdentity: Codable, Equatable, Sendable {
+  public let occurredAt: Date
+  public let product: String
+  public let appVersion: String
+  public let clientID: String
+  public let userID: String
+  public let email: String
+
+  enum CodingKeys: String, CodingKey {
+    case occurredAt = "ts"
+    case product
+    case appVersion = "app_version"
+    case clientID = "client_id"
+    case userID = "user_id"
+    case email
+  }
+}
+
 public actor FeatureUsageRecorder {
   public static let endpointInfoKey = "PFFeatureUsageEndpoint"
 
@@ -42,7 +62,7 @@ public actor FeatureUsageRecorder {
   private let appVersion: String
   private let eventFileURL: URL
   private let endpoint: URL?
-  private let installationID: String
+  private var clientID: String?
   private let session: URLSession
 
   public init(
@@ -60,7 +80,7 @@ public actor FeatureUsageRecorder {
       ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
     let directory = supportRoot.appendingPathComponent(product, isDirectory: true)
     eventFileURL = directory.appendingPathComponent("feature-usage.jsonl")
-    installationID = Self.loadInstallationID(in: directory)
+    clientID = nil
     self.endpoint = endpoint ?? Self.configuredEndpoint()
     self.session = session
   }
@@ -71,13 +91,16 @@ public actor FeatureUsageRecorder {
     feature: String,
     source: String? = nil,
     mode: String? = nil,
-    itemCount: Int? = nil
+    itemCount: Int? = nil,
+    userID: String? = nil
   ) async -> FeatureUsageEvent {
+    let clientID = currentClientID()
     let event = FeatureUsageEvent(
       activityID: UUID().uuidString.lowercased(),
       occurredAt: Date(),
       activity: activity.rawValue,
-      anonymousCustomerID: installationID,
+      clientID: clientID,
+      userID: userID,
       product: product,
       appVersion: appVersion,
       feature: feature,
@@ -87,13 +110,31 @@ public actor FeatureUsageRecorder {
       itemCount: itemCount)
     guard let data = Self.encode(event) else { return event }
     Self.append(data, to: eventFileURL)
-    await send(data)
+    await send(event, kind: "track")
     return event
   }
 
-  private func send(_ eventData: Data) async {
+  public func identify(email: String, userID: String) async {
+    let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard normalizedEmail.contains("@"), UUID(uuidString: userID) != nil else { return }
+    let clientID = currentClientID()
+    let identity = FeatureUsageIdentity(
+      occurredAt: Date(), product: product, appVersion: appVersion, clientID: clientID,
+      userID: userID.lowercased(), email: normalizedEmail)
+    await send(identity, kind: "identify")
+  }
+
+  public func resetClientID() {
+    clientID = nil
+    let directory = eventFileURL.deletingLastPathComponent()
+    try? FileManager.default.removeItem(at: directory.appendingPathComponent("ga4-client-id"))
+    try? FileManager.default.removeItem(
+      at: directory.appendingPathComponent("feature-usage-installation-id"))
+  }
+
+  private func send<T: Encodable>(_ payload: T, kind: String) async {
     guard let endpoint else { return }
-    let body = Data("{\"event\":".utf8) + eventData + Data("}".utf8)
+    guard let body = Self.encodeEnvelope(payload, kind: kind) else { return }
     var request = URLRequest(url: endpoint)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -104,6 +145,11 @@ public actor FeatureUsageRecorder {
     else { return }
   }
 
+  static func encodeEnvelope<T: Encodable>(_ payload: T, kind: String) -> Data? {
+    guard let payloadData = encode(payload) else { return nil }
+    return Data("{\"kind\":\"\(kind)\",\"payload\":".utf8) + payloadData + Data("}".utf8)
+  }
+
   private static func configuredEndpoint() -> URL? {
     guard let value = Bundle.main.object(forInfoDictionaryKey: endpointInfoKey) as? String,
       let url = URL(string: value), url.scheme == "https"
@@ -111,25 +157,37 @@ public actor FeatureUsageRecorder {
     return url
   }
 
-  private static func loadInstallationID(in directory: URL) -> String {
-    let fileURL = directory.appendingPathComponent("feature-usage-installation-id")
+  private func currentClientID() -> String {
+    if let clientID { return clientID }
+    let value = Self.loadClientID(in: eventFileURL.deletingLastPathComponent())
+    clientID = value
+    return value
+  }
+
+  private static func loadClientID(in directory: URL) -> String {
+    let fileURL = directory.appendingPathComponent("ga4-client-id")
     if let value = try? String(contentsOf: fileURL, encoding: .utf8)
       .trimmingCharacters(in: .whitespacesAndNewlines),
-      UUID(uuidString: value) != nil
+      isValidClientID(value)
     {
-      return value.lowercased()
+      return value
     }
-    let value = UUID().uuidString.lowercased()
+    let value = "\(UInt32.random(in: 1...UInt32.max)).\(UInt32.random(in: 1...UInt32.max))"
     try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     try? Data("\(value)\n".utf8).write(to: fileURL, options: .atomic)
     return value
   }
 
-  private static func encode(_ event: FeatureUsageEvent) -> Data? {
+  private static func isValidClientID(_ value: String) -> Bool {
+    let parts = value.split(separator: ".", omittingEmptySubsequences: false)
+    return parts.count == 2 && parts.allSatisfy { UInt32($0).map { $0 > 0 } ?? false }
+  }
+
+  private static func encode<T: Encodable>(_ value: T) -> Data? {
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = .iso8601
     encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-    return try? encoder.encode(event)
+    return try? encoder.encode(value)
   }
 
   private static func append(_ data: Data, to fileURL: URL) {

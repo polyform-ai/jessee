@@ -91,7 +91,11 @@ final class AppStore: ObservableObject {
       return false
     }
     configuration.email = value
+    if configuration.analyticsUserID == nil {
+      configuration.analyticsUserID = UUID().uuidString.lowercased()
+    }
     persistConfiguration()
+    identifyForAnalyticsIfEnabled()
     return true
   }
 
@@ -124,7 +128,17 @@ final class AppStore: ObservableObject {
 
   func setAnonymousFeatureUsageSharing(_ enabled: Bool) {
     configuration.shareAnonymousFeatureUsage = enabled
+    if enabled, !configuration.email.isEmpty, configuration.analyticsUserID == nil {
+      configuration.analyticsUserID = UUID().uuidString.lowercased()
+    } else if !enabled {
+      configuration.analyticsUserID = nil
+    }
     persistConfiguration()
+    if enabled {
+      identifyForAnalyticsIfEnabled()
+    } else {
+      Task { await featureUsage.resetClientID() }
+    }
   }
 
   func requestMicrophone() async -> Bool {
@@ -164,8 +178,9 @@ final class AppStore: ObservableObject {
 
   func openPDF(_ record: CaptureRecord) {
     guard let workspace, let filename = record.pdfFilename else { return }
-    NSWorkspace.shared.open(workspace.directoryURL(for: record).appendingPathComponent(filename))
-    recordUsage(.pdfOpened, feature: "pdf_review")
+    if NSWorkspace.shared.open(workspace.directoryURL(for: record).appendingPathComponent(filename)) {
+      recordUsage(.pdfOpened, feature: "pdf_review")
+    }
   }
 
   func openPDF(recordID: String) {
@@ -320,8 +335,18 @@ final class AppStore: ObservableObject {
     guard configuration.shareAnonymousFeatureUsage else { return }
     Task {
       await featureUsage.record(
-        activity, feature: feature, source: source, mode: mode, itemCount: itemCount)
+        activity, feature: feature, source: source, mode: mode, itemCount: itemCount,
+        userID: configuration.analyticsUserID)
     }
+  }
+
+  private func identifyForAnalyticsIfEnabled() {
+    guard configuration.shareAnonymousFeatureUsage,
+      !configuration.email.isEmpty,
+      let userID = configuration.analyticsUserID
+    else { return }
+    let email = configuration.email
+    Task { await featureUsage.identify(email: email, userID: userID) }
   }
 
   private func show(_ value: Notice) {
