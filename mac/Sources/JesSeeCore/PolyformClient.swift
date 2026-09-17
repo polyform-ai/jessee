@@ -6,6 +6,7 @@ public struct PolyformServiceConfiguration: Sendable, Equatable {
   public static let appKeyInfoKey = "PFWorkflowAuthAppKey"
   public static let transcriptionURLInfoKey = "PFTranscriptionWorkflowURL"
   public static let storyURLInfoKey = "PFStoryWorkflowURL"
+  public static let managedAIEnabledInfoKey = "PFManagedAIEnabled"
 
   public var apiBase: URL
   public var appKey: String
@@ -24,6 +25,7 @@ public struct PolyformServiceConfiguration: Sendable, Equatable {
 
   public static func configured(bundle: Bundle = .main) -> Self? {
     guard
+      bundle.object(forInfoDictionaryKey: managedAIEnabledInfoKey) as? Bool == true,
       let apiBaseValue = bundle.object(forInfoDictionaryKey: apiBaseInfoKey) as? String,
       let apiBase = URL(string: apiBaseValue), apiBase.scheme == "https",
       let appKey = bundle.object(forInfoDictionaryKey: appKeyInfoKey) as? String,
@@ -171,7 +173,17 @@ public struct PolyformClient: Sendable {
         "This JesSee build is waiting for the Polyform story workflow.")
     }
     let imageFrames = includeScreenshotPixels ? Self.planningFrames(frames) : []
-    let filenames = Set(imageFrames.map(\.filename))
+    let imageAttachments = imageFrames.compactMap { frame -> (CapturedFrame, WorkflowAttachment)? in
+      let url = captureDirectory.appendingPathComponent(frame.filename)
+      guard let data = try? Data(contentsOf: url) else { return nil }
+      return (
+        frame,
+        WorkflowAttachment(
+          filename: frame.filename, contentType: "image/jpeg",
+          fileData: "data:image/jpeg;base64,\(data.base64EncodedString())"))
+    }
+    let attachedFrames = imageAttachments.map(\.0)
+    let filenames = Set(attachedFrames.map(\.filename))
     let context = StoryContext(
       transcript: transcript,
       availableScreenshots: frames.map {
@@ -180,13 +192,7 @@ public struct PolyformClient: Sendable {
           hasVisibleMarkup: $0.hasVisibleMarkup,
           imageAttached: filenames.contains($0.filename))
       })
-    let attachments = imageFrames.compactMap { frame -> WorkflowAttachment? in
-      let url = captureDirectory.appendingPathComponent(frame.filename)
-      guard let data = try? Data(contentsOf: url) else { return nil }
-      return WorkflowAttachment(
-        filename: frame.filename, contentType: "image/jpeg",
-        fileData: "data:image/jpeg;base64,\(data.base64EncodedString())")
-    }
+    let attachments = imageAttachments.map(\.1)
     let contextJSON = String(
       decoding: try encoder.encode(context), as: UTF8.self)
     let response: WorkflowResponse<StoryDraft> = try await post(
@@ -197,6 +203,7 @@ public struct PolyformClient: Sendable {
         outputJSON: DirectOpenAIClient.storyOutputJSON),
       accessToken: accessToken)
     let draft = response.result
+    let eligibleFrames = attachedFrames.isEmpty ? frames : attachedFrames
     return StoryDocument(
       title: draft.title,
       sourceURL: Self.normalizedWebURL(draft.sourceURL),
@@ -206,7 +213,7 @@ public struct PolyformClient: Sendable {
         let frame = Self.selectedFrame(
           requestedSeconds: step.screenshotTimeSeconds,
           stepEndSeconds: step.endSeconds,
-          frames: frames)
+          frames: eligibleFrames)
         return StoryStep(
           startSeconds: step.startSeconds, endSeconds: step.endSeconds,
           title: step.title, narrative: step.narrative, transcript: step.transcript,
@@ -214,18 +221,13 @@ public struct PolyformClient: Sendable {
       })
   }
 
-  public func publishPDF(
-    at fileURL: URL, replacing uploadID: String?, accessToken: String
-  ) async throws -> ManagedUpload {
+  public func publishPDF(at fileURL: URL, accessToken: String) async throws -> ManagedUpload {
     let uploaded = try await upload(
       fileURL: fileURL, contentType: "application/pdf", visibility: "public",
       accessToken: accessToken)
     guard uploaded.publicURL != nil else {
       throw PolyformClientError.invalidResponse(
         "Polyform uploaded the PDF but did not return its public link.")
-    }
-    if let uploadID, uploadID != uploaded.id {
-      try? await deleteUpload(id: uploadID, accessToken: accessToken)
     }
     return uploaded
   }
@@ -260,7 +262,7 @@ public struct PolyformClient: Sendable {
     let request = try authorizedRequest(
       url: configuration.authURL("uploads/\(id)"), accessToken: accessToken,
       method: "DELETE")
-    _ = try await checkedData(for: request)
+    _ = try await checkedData(for: request, recognizesAuthenticationFailure: true)
   }
 
   static func selectedFrame(
@@ -343,14 +345,22 @@ public struct PolyformClient: Sendable {
     }
   }
 
-  private func checkedData(for request: URLRequest) async throws -> Data {
+  private func checkedData(
+    for request: URLRequest, recognizesAuthenticationFailure: Bool = false
+  ) async throws -> Data {
     let data: Data
     let response: URLResponse
     do { (data, response) = try await session.data(for: request) } catch {
       throw PolyformClientError.requestFailed(0, error.localizedDescription)
     }
-    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+    guard let http = response as? HTTPURLResponse else {
+      throw PolyformClientError.invalidResponse("Polyform returned an unreadable response.")
+    }
+    guard (200..<300).contains(http.statusCode) else {
       let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+      if recognizesAuthenticationFailure, status == 401 || status == 403 {
+        throw PolyformClientError.authenticationRequired(Self.errorDetail(from: data))
+      }
       throw PolyformClientError.requestFailed(status, Self.errorDetail(from: data))
     }
     return data
@@ -377,16 +387,32 @@ private struct AuthRequestBody: Encodable {
   var email: String
   var codeChallenge: String
   var codeChallengeMethod: String
+
+  private enum CodingKeys: String, CodingKey {
+    case email
+    case codeChallenge
+    case codeChallengeMethod
+  }
 }
 
 private struct AuthRequestResponse: Decodable {
   var attemptID: String?
   var expiresIn: TimeInterval
+
+  private enum CodingKeys: String, CodingKey {
+    case attemptID = "attemptId"
+    case expiresIn
+  }
 }
 
 private struct AuthExchangeBody: Encodable {
   var attemptID: String
   var codeVerifier: String
+
+  private enum CodingKeys: String, CodingKey {
+    case attemptID = "attemptId"
+    case codeVerifier
+  }
 }
 
 private struct AuthTokenResponse: Decodable {
@@ -394,6 +420,13 @@ private struct AuthTokenResponse: Decodable {
   var expiresIn: TimeInterval
   var email: String
   var grantID: String
+
+  private enum CodingKeys: String, CodingKey {
+    case accessToken
+    case expiresIn
+    case email
+    case grantID = "grantId"
+  }
 
   var session: WorkflowAuthSession {
     WorkflowAuthSession(
@@ -407,16 +440,33 @@ private struct UploadRequest: Encodable {
   var contentType: String
   var byteCount: Int
   var visibility: String
+
+  private enum CodingKeys: String, CodingKey {
+    case filename
+    case contentType
+    case byteCount
+    case visibility
+  }
 }
 
 private struct UploadResponse: Decodable {
   var uploadID: String
   var uploadURL: String?
   var publicURL: String?
+
+  private enum CodingKeys: String, CodingKey {
+    case uploadID = "uploadId"
+    case uploadURL = "uploadUrl"
+    case publicURL = "publicUrl"
+  }
 }
 
 private struct EmptyBody: Encodable {}
-private struct UploadReference: Encodable { var uploadID: String }
+private struct UploadReference: Encodable {
+  var uploadID: String
+
+  private enum CodingKeys: String, CodingKey { case uploadID = "uploadId" }
+}
 private struct TranscriptionRequest: Encodable { var audio: UploadReference }
 
 struct WorkflowResponse<Result: Decodable>: Decodable {
@@ -430,10 +480,14 @@ struct WorkflowResponse<Result: Decodable>: Decodable {
 
   private struct NestedResult: Decodable {
     var result: Result
+
+    private enum CodingKeys: String, CodingKey { case result }
   }
 
   private struct NestedTextResult: Decodable {
     var result: String
+
+    private enum CodingKeys: String, CodingKey { case result }
   }
 
   init(from decoder: Decoder) throws {
@@ -481,6 +535,15 @@ private struct TranscriptionResult: Decodable {
   var durationSeconds: Double?
   var segments: [Segment]
   var words: [Word]
+
+  private enum CodingKeys: String, CodingKey {
+    case text
+    case model
+    case language
+    case durationSeconds
+    case segments
+    case words
+  }
 }
 
 private struct StoryScreenshot: Encodable {
@@ -488,6 +551,13 @@ private struct StoryScreenshot: Encodable {
   var filename: String
   var hasVisibleMarkup: Bool
   var imageAttached: Bool
+
+  private enum CodingKeys: String, CodingKey {
+    case timeSeconds
+    case filename
+    case hasVisibleMarkup
+    case imageAttached
+  }
 }
 
 private struct StoryContext: Encodable {
@@ -500,6 +570,13 @@ private struct WorkflowAttachment: Encodable {
   var filename: String
   var contentType: String
   var fileData: String
+
+  private enum CodingKeys: String, CodingKey {
+    case type
+    case filename
+    case contentType
+    case fileData
+  }
 }
 
 private struct StoryRequest: Encodable {
@@ -507,6 +584,13 @@ private struct StoryRequest: Encodable {
   var userInput: String
   var prompt: String
   var outputJSON: String
+
+  private enum CodingKeys: String, CodingKey {
+    case attachments
+    case userInput
+    case prompt
+    case outputJSON = "outputJson"
+  }
 }
 
 private struct StoryDraft: Decodable {
@@ -517,12 +601,29 @@ private struct StoryDraft: Decodable {
     var title: String
     var narrative: String
     var transcript: String
+
+    private enum CodingKeys: String, CodingKey {
+      case startSeconds
+      case endSeconds
+      case screenshotTimeSeconds
+      case title
+      case narrative
+      case transcript
+    }
   }
   var title: String
   var sourceURL: String?
   var summary: String
   var keyPoints: [String]
   var steps: [Step]
+
+  private enum CodingKeys: String, CodingKey {
+    case title
+    case sourceURL = "sourceUrl"
+    case summary
+    case keyPoints
+    case steps
+  }
 }
 
 private struct ErrorEnvelope: Decodable { var detail: String }

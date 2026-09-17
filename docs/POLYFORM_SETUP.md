@@ -2,6 +2,8 @@
 
 JesSee uses one Polyform workflow-auth group for email-approved access to transcription, story creation, and optional public PDF uploads. The Mac app uses PKCE, stores the returned bearer session in Keychain, and rotates the session through the workflow-auth refresh endpoint.
 
+> Release status: this integration is retained but disabled. `PFManagedAIEnabled` is `false`, signed releases do not inject the workflow URLs, and the app offers Bring Your Own Key only. Enable it only after the backend work and signed end-to-end checks below are complete.
+
 These are production configuration steps; they are not performed by the app repository.
 
 ## Workflow-auth group
@@ -61,14 +63,14 @@ The prompt should select `screenshot_time_seconds` only from the supplied screen
 
 ## Release configuration
 
-Add these repository secrets before packaging a signed JesSee release:
+Before enabling Polyform Covered in a future signed release, add these repository secrets:
 
 - `TRANSCRIPTION_WORKFLOW_URL`
 - `STORY_WORKFLOW_URL`
 - `GA4_MEASUREMENT_ID`
 - `GA4_API_SECRET`
 
-The workflow URLs are injected into the signed app bundle. The GA4 values are used only for direct Measurement Protocol event ingestion; they are not user identity or authorization secrets.
+When the feature gate is enabled, the workflow URLs are injected into the signed app bundle. The current release requires only the GA4 values for direct Measurement Protocol event ingestion; they are not user identity or authorization secrets.
 
 ## Public PDFs
 

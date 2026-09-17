@@ -57,6 +57,11 @@ final class AppStore: ObservableObject {
       workflowSession = nil
       authenticationState = .signedOut
     }
+    if polyformClient == nil, configuration.aiProviderMode == .polyformCovered {
+      configuration.aiProviderMode = hasAPIKey ? .bringYourOwnKey : nil
+      configuration.setupCompleted = false
+      try? configurationStore.save(configuration)
+    }
     setupStep = configuration.pendingSetupStep(
       hasPolyformSession: workflowSession != nil, hasAPIKey: hasAPIKey)
     if !configuration.outputFolderPath.isEmpty {
@@ -81,15 +86,17 @@ final class AppStore: ObservableObject {
   var isConfigured: Bool {
     guard configuration.setupCompleted, workspace != nil else { return false }
     switch configuration.aiProviderMode {
-    case .polyformCovered: return workflowSession != nil
+    case .polyformCovered: return isPolyformCoveredAvailable && workflowSession != nil
     case .bringYourOwnKey: return hasAPIKey
     case nil: return false
     }
   }
 
   var recentCaptures: [CaptureRecord] { Array(captures.prefix(4)) }
+  var isPolyformCoveredAvailable: Bool { polyformClient != nil }
 
   func selectProvider(_ mode: AIProviderMode) {
+    guard mode != .polyformCovered || isPolyformCoveredAvailable else { return }
     configuration.aiProviderMode = mode
     configuration.setupCompleted = false
     setupStep = 1
@@ -97,6 +104,7 @@ final class AppStore: ObservableObject {
   }
 
   func changeProviderFromSettings(_ mode: AIProviderMode) {
+    guard mode != .polyformCovered || isPolyformCoveredAvailable else { return }
     configuration.aiProviderMode = mode
     let credentialAvailable =
       mode == .polyformCovered ? workflowSession != nil : hasAPIKey
@@ -116,6 +124,8 @@ final class AppStore: ObservableObject {
       try JesSeeKeychain.saveAPIKey(candidate)
       hasAPIKey = true
       setupStep = max(setupStep, 2)
+      restoreCompletedSetupIfPossible(for: .bringYourOwnKey)
+      persistConfiguration()
       show(.success("OpenAI key saved securely."))
       return true
     } catch {
@@ -153,6 +163,7 @@ final class AppStore: ObservableObject {
             workflowSession = session
             authenticationState = .signedIn(session.email)
             configuration.email = session.email
+            restoreCompletedSetupIfPossible(for: .polyformCovered)
             persistConfiguration()
             if !configuration.setupCompleted { setupStep = max(setupStep, 1) }
             show(.success("Signed in to JesSee."))
@@ -181,6 +192,8 @@ final class AppStore: ObservableObject {
 
   func signOut() {
     signInTask?.cancel()
+    refreshTask?.cancel()
+    refreshTask = nil
     try? JesSeeKeychain.removeWorkflowSession()
     workflowSession = nil
     authenticationState = .signedOut
@@ -280,6 +293,10 @@ final class AppStore: ObservableObject {
 
   func saveStory(_ story: StoryDocument, for record: CaptureRecord) async -> Bool {
     guard let workspace else { return false }
+    guard publishingCaptureID != record.id else {
+      show(.error("Wait for the public-link update to finish before saving more edits."))
+      return false
+    }
     do {
       try await workspace.write(story, filename: "story.json", for: record)
       let rendered = try DocumentRenderer.render(
@@ -289,7 +306,6 @@ final class AppStore: ObservableObject {
       updated.storyFilename = "story.json"
       updated.htmlFilename = rendered.html
       updated.pdfFilename = rendered.pdf
-      updated.publicPDFURL = nil
       try await workspace.save(updated)
       replace(updated)
       show(.success("Story and PDF updated."))
@@ -317,27 +333,64 @@ final class AppStore: ObservableObject {
       guard let self else { return }
       defer { publishingCaptureID = nil }
       do {
-        guard let polyformClient, let workspace, let filename = record.pdfFilename else {
+        guard let workspace, let filename = record.pdfFilename else {
           throw JesSeeError.invalidResponse("Create the PDF before publishing it.")
         }
-        let token = try await accessToken()
-        let upload = try await polyformClient.publishPDF(
-          at: workspace.directoryURL(for: record).appendingPathComponent(filename),
-          replacing: record.publicPDFUploadID,
-          accessToken: token)
+        let upload = try await withPolyformAuthentication { client, token in
+          try await client.publishPDF(
+            at: workspace.directoryURL(for: record).appendingPathComponent(filename),
+            accessToken: token)
+        }
         guard let publicURL = upload.publicURL else {
           throw JesSeeError.invalidResponse("Polyform did not return a public PDF link.")
         }
-        var updated = record
+        var updated = await workspace.record(id: record.id) ?? record
+        let cleanupIDs = ([updated.publicPDFUploadID].compactMap { $0 }
+          + (updated.publicPDFCleanupUploadIDs ?? []))
+          .filter { $0 != upload.id }
+          .reduce(into: [String]()) { result, id in
+            if !result.contains(id) { result.append(id) }
+          }
         updated.publicPDFUploadID = upload.id
         updated.publicPDFURL = publicURL.absoluteString
+        updated.publicPDFCleanupUploadIDs = cleanupIDs.isEmpty ? nil : cleanupIDs
+        do {
+          try await workspace.save(updated)
+        } catch {
+          do {
+            try await withPolyformAuthentication { client, token in
+              try await client.deleteUpload(id: upload.id, accessToken: token)
+            }
+          } catch let rollbackError {
+            throw JesSeeError.serviceUnavailable(
+              "JesSee could not save or roll back the new public PDF. Upload \(upload.id) may need cleanup: \(rollbackError.localizedDescription)")
+          }
+          throw error
+        }
+        replace(updated)
+
+        var failedCleanupIDs: [String] = []
+        for uploadID in cleanupIDs {
+          do {
+            try await withPolyformAuthentication { client, token in
+              try await client.deleteUpload(id: uploadID, accessToken: token)
+            }
+          } catch {
+            failedCleanupIDs.append(uploadID)
+          }
+        }
+        updated.publicPDFCleanupUploadIDs = failedCleanupIDs.isEmpty ? nil : failedCleanupIDs
         try await workspace.save(updated)
         replace(updated)
+        if !failedCleanupIDs.isEmpty {
+          throw JesSeeError.serviceUnavailable(
+            "The new public link is ready, but JesSee could not retire a previous upload. Use Update link to retry cleanup.")
+        }
         copyToPasteboard(publicURL.absoluteString)
         recordUsage(.pdfPublished, feature: "public_pdf")
         show(.success("Public PDF link copied."))
       } catch {
-        show(.error(error.localizedDescription))
+        show(.error(authenticationAwareError(error).localizedDescription))
       }
     }
   }
@@ -400,7 +453,7 @@ final class AppStore: ObservableObject {
         }
         await appStore.captureFinished(record.id)
       } catch {
-        appStore.show(.error(error.localizedDescription))
+        appStore.show(.error(appStore.authenticationAwareError(error).localizedDescription))
       }
     }
     processingTasks[record.id] = task
@@ -497,15 +550,27 @@ final class AppStore: ObservableObject {
           refreshTask = task
         }
         defer { refreshTask = nil }
-        session = try await task.value
-        try JesSeeKeychain.saveWorkflowSession(session)
-        workflowSession = session
-        authenticationState = .signedIn(session.email)
+        let refreshed = try await task.value
+        guard workflowSession?.grantID == session.grantID else {
+          throw CancellationError()
+        }
+        try JesSeeKeychain.saveWorkflowSession(refreshed)
+        workflowSession = refreshed
+        authenticationState = .signedIn(refreshed.email)
+        session = refreshed
       } catch PolyformClientError.refreshTooEarly {
         // The local clock can enter the refresh window slightly before the server.
       } catch PolyformClientError.authenticationRequired {
         signOutAfterAuthenticationFailure()
         throw JesSeeError.signInRequired
+      } catch is CancellationError {
+        guard let current = workflowSession, current.expiresAt > Date() else {
+          throw JesSeeError.signInRequired
+        }
+        return current.accessToken
+      } catch {
+        guard session.expiresAt > Date() else { throw error }
+        return session.accessToken
       }
     }
     return session.accessToken
@@ -527,12 +592,44 @@ final class AppStore: ObservableObject {
   }
 
   private func signOutAfterAuthenticationFailure() {
+    refreshTask?.cancel()
+    refreshTask = nil
     try? JesSeeKeychain.removeWorkflowSession()
     workflowSession = nil
     authenticationState = .signedOut
     configuration.setupCompleted = false
     setupStep = 0
     persistConfiguration()
+  }
+
+  private func withPolyformAuthentication<Value>(
+    _ operation: (PolyformClient, String) async throws -> Value
+  ) async throws -> Value {
+    guard let polyformClient else { throw JesSeeError.serviceNotConfigured }
+    let token = try await accessToken()
+    do {
+      return try await operation(polyformClient, token)
+    } catch {
+      throw authenticationAwareError(error)
+    }
+  }
+
+  private func authenticationAwareError(_ error: Error) -> Error {
+    if let clientError = error as? PolyformClientError,
+      case .authenticationRequired = clientError
+    {
+      signOutAfterAuthenticationFailure()
+      return JesSeeError.signInRequired
+    }
+    return error
+  }
+
+  private func restoreCompletedSetupIfPossible(for mode: AIProviderMode) {
+    guard configuration.aiProviderMode == mode,
+      !configuration.outputFolderPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else { return }
+    configuration.setupCompleted = true
+    setupStep = 3
   }
 
   private func copyToPasteboard(_ value: String) {

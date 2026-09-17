@@ -5,8 +5,126 @@ import Testing
 
 @testable import JesSeeCore
 
+private final class StubURLProtocol: URLProtocol, @unchecked Sendable {
+  struct Stub {
+    var status: Int
+    var data: Data
+  }
+
+  private static let lock = NSLock()
+  nonisolated(unsafe) private static var stubs: [Stub] = []
+  nonisolated(unsafe) private static var capturedRequests: [URLRequest] = []
+  nonisolated(unsafe) private static var capturedBodies: [Data?] = []
+
+  static func prepare(_ values: [Stub]) {
+    lock.lock()
+    stubs = values
+    capturedRequests = []
+    capturedBodies = []
+    lock.unlock()
+  }
+
+  static func requests() -> [URLRequest] {
+    lock.lock()
+    defer { lock.unlock() }
+    return capturedRequests
+  }
+
+  static func bodies() -> [Data?] {
+    lock.lock()
+    defer { lock.unlock() }
+    return capturedBodies
+  }
+
+  override class func canInit(with request: URLRequest) -> Bool { true }
+  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+  override func startLoading() {
+    let body = Self.readBody(from: request)
+    Self.lock.lock()
+    Self.capturedRequests.append(request)
+    Self.capturedBodies.append(body)
+    let stub = Self.stubs.removeFirst()
+    Self.lock.unlock()
+    let response = HTTPURLResponse(
+      url: request.url!, statusCode: stub.status, httpVersion: nil,
+      headerFields: ["Content-Type": "application/json"])!
+    client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+    client?.urlProtocol(self, didLoad: stub.data)
+    client?.urlProtocolDidFinishLoading(self)
+  }
+
+  override func stopLoading() {}
+
+  private static func readBody(from request: URLRequest) -> Data? {
+    if let body = request.httpBody { return body }
+    guard let stream = request.httpBodyStream else { return nil }
+    stream.open()
+    defer { stream.close() }
+    var data = Data()
+    var buffer = [UInt8](repeating: 0, count: 4096)
+    while stream.hasBytesAvailable {
+      let count = stream.read(&buffer, maxLength: buffer.count)
+      guard count > 0 else { break }
+      data.append(contentsOf: buffer.prefix(count))
+    }
+    return data
+  }
+}
+
 private struct WorkflowTestValue: Decodable, Equatable {
   var text: String
+}
+
+@Test func polyformClientUsesDocumentedSnakeCaseContracts() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [StubURLProtocol.self]
+  let client = PolyformClient(
+    configuration: PolyformServiceConfiguration(
+      apiBase: URL(string: "https://example.test")!, appKey: "app-key",
+      transcriptionWorkflowURL: URL(string: "https://example.test/transcribe")!,
+      storyWorkflowURL: URL(string: "https://example.test/story")!),
+    session: URLSession(configuration: configuration))
+  StubURLProtocol.prepare([
+    .init(status: 200, data: Data(#"{"attempt_id":"attempt-1","expires_in":600}"#.utf8)),
+    .init(
+      status: 200,
+      data: Data(
+        #"{"access_token":"token-1","expires_in":86400,"email":"person@example.com","grant_id":"grant-1"}"#.utf8)),
+    .init(
+      status: 200,
+      data: Data(
+        #"{"success":true,"result":{"result":"```json\n{\"title\":\"Story\",\"source_url\":\"example.com/page\",\"summary\":\"Summary\",\"key_points\":[\"Point\"],\"steps\":[{\"start_seconds\":0,\"end_seconds\":1,\"screenshot_time_seconds\":null,\"title\":\"Step\",\"narrative\":\"Do it.\",\"transcript\":\"Do it\"}]}\n```"}}"#.utf8)),
+  ])
+
+  let attempt = try await client.requestSignIn(email: "person@example.com", challenge: "challenge")
+  #expect(attempt.id == "attempt-1")
+  let session = try await client.exchangeSignIn(attemptID: attempt.id, verifier: "verifier")
+  #expect(session.grantID == "grant-1")
+  let story = try await client.createStory(
+    transcript: TranscriptDocument(
+      text: "Do it", language: "en", duration: 1,
+      segments: [TranscriptSegment(id: 0, start: 0, end: 1, text: "Do it")], words: [],
+      provider: "Polyform", model: "whisper-1"),
+    frames: [], captureDirectory: FileManager.default.temporaryDirectory,
+    accessToken: session.accessToken, includeScreenshotPixels: false)
+  #expect(story.sourceURL == "https://example.com/page")
+
+  let requests = StubURLProtocol.requests()
+  #expect(requests.count == 3)
+  let bodies = StubURLProtocol.bodies()
+  let requestBody = try #require(bodies.first ?? nil)
+  let exchangeBody = try #require(bodies.dropFirst().first ?? nil)
+  let storyBody = try #require(bodies.last ?? nil)
+  let requestJSON = try #require(
+    JSONSerialization.jsonObject(with: requestBody) as? [String: Any])
+  let exchangeJSON = try #require(
+    JSONSerialization.jsonObject(with: exchangeBody) as? [String: Any])
+  let storyJSON = try #require(JSONSerialization.jsonObject(with: storyBody) as? [String: Any])
+  #expect(requestJSON["code_challenge"] as? String == "challenge")
+  #expect(exchangeJSON["attempt_id"] as? String == "attempt-1")
+  #expect(storyJSON["user_input"] != nil)
+  #expect(storyJSON["output_json"] != nil)
 }
 
 @Test func workflowResponsesAcceptDirectAndLightWrapperResults() throws {

@@ -319,12 +319,21 @@ private struct ProviderChoiceStep: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       Label("Choose how AI is covered", systemImage: "sparkles").font(.headline)
-      Text("Both options create the same editable story and PDF.")
+      Text(
+        store.isPolyformCoveredAvailable
+          ? "Both options create the same editable story and PDF."
+          : "Bring your own OpenAI key to create editable stories and PDFs."
+      )
         .font(.caption).foregroundStyle(.secondary)
-      providerButton(
-        title: "Polyform Covered",
-        detail: "Sign in by email. Polyform covers transcription and AI costs.",
-        icon: "heart.fill", mode: .polyformCovered)
+      if store.isPolyformCoveredAvailable {
+        providerButton(
+          title: "Polyform Covered",
+          detail: "Sign in by email. Polyform covers transcription and AI costs.",
+          icon: "heart.fill", mode: .polyformCovered)
+      } else {
+        Label("Polyform Covered is temporarily unavailable", systemImage: "clock")
+          .font(.caption).foregroundStyle(.secondary)
+      }
       providerButton(
         title: "Bring Your Own Key",
         detail: "Use your own OpenAI API key, saved securely in this Mac's Keychain.",
@@ -602,7 +611,9 @@ private struct CaptureDetailView: View {
         }
         Spacer()
         if record.pdfFilename != nil {
-          if store.configuration.aiProviderMode == .polyformCovered {
+          if store.isPolyformCoveredAvailable,
+            store.configuration.aiProviderMode == .polyformCovered
+          {
             if record.publicPDFURL != nil {
               Button {
                 store.copyPublicPDFLink(record)
@@ -715,19 +726,27 @@ struct SettingsView: View {
   var body: some View {
     Form {
       Section("AI processing") {
-        Picker(
-          "Plan",
-          selection: Binding(
-            get: { store.configuration.aiProviderMode ?? .polyformCovered },
-            set: { store.changeProviderFromSettings($0) }
-          )
-        ) {
-          Text("Polyform Covered").tag(AIProviderMode.polyformCovered)
-          Text("Bring Your Own Key").tag(AIProviderMode.bringYourOwnKey)
+        if store.isPolyformCoveredAvailable {
+          Picker(
+            "Plan",
+            selection: Binding(
+              get: { store.configuration.aiProviderMode ?? .polyformCovered },
+              set: { store.changeProviderFromSettings($0) }
+            )
+          ) {
+            Text("Polyform Covered").tag(AIProviderMode.polyformCovered)
+            Text("Bring Your Own Key").tag(AIProviderMode.bringYourOwnKey)
+          }
+          .pickerStyle(.segmented)
+        } else {
+          LabeledContent("Plan", value: "Bring Your Own Key")
+          Text("Polyform Covered is temporarily unavailable while its managed service is finalized.")
+            .font(.caption).foregroundStyle(.secondary)
         }
-        .pickerStyle(.segmented)
 
-        if store.configuration.aiProviderMode == .polyformCovered {
+        if store.isPolyformCoveredAvailable,
+          store.configuration.aiProviderMode == .polyformCovered
+        {
           Text(
             "Polyform.AI built JesSee and covers its AI costs. You can support it by introducing ahmed@polyform.ai to a Series A company hiring a data team or hitting the limits of AI for data, or by donating via Venmo @Ahmed-Elsamadisi."
           )

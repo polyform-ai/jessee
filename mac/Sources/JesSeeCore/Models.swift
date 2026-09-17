@@ -290,6 +290,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
   public var pdfFilename: String?
   public var publicPDFUploadID: String?
   public var publicPDFURL: String?
+  public var publicPDFCleanupUploadIDs: [String]?
   public var imageFilenames: [String]
   public var imageTimes: [String: Double]?
   public var recordingMarkups: [RecordingMarkupStroke]?
@@ -310,6 +311,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     pdfFilename: String? = nil,
     publicPDFUploadID: String? = nil,
     publicPDFURL: String? = nil,
+    publicPDFCleanupUploadIDs: [String]? = nil,
     imageFilenames: [String] = [],
     imageTimes: [String: Double]? = nil,
     recordingMarkups: [RecordingMarkupStroke]? = nil,
@@ -329,6 +331,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     self.pdfFilename = pdfFilename
     self.publicPDFUploadID = publicPDFUploadID
     self.publicPDFURL = publicPDFURL
+    self.publicPDFCleanupUploadIDs = publicPDFCleanupUploadIDs
     self.imageFilenames = imageFilenames
     self.imageTimes = imageTimes
     self.recordingMarkups = recordingMarkups
