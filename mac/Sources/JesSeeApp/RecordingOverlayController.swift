@@ -355,8 +355,7 @@ private struct RecordingHUDView: View {
             .font(.system(size: 12, weight: .bold))
         }
         .buttonStyle(.borderedProminent).tint(.red).disabled(model.isStopping)
-        .help("Stop and process (⌥S)")
-        .onHover { hovering in showControl(hovering ? "Stop and process · ⌥S" : nil) }
+        .jesseeHoverHelp("Stop and process · ⌥S", onChange: showControl)
       }
       Text(
         hoveredControl
@@ -430,8 +429,7 @@ private struct RecordingToolButton: View {
       isActive ? Color.accentColor.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 7)
     )
     .foregroundStyle(isActive ? Color.accentColor : Color.primary)
-    .help("\(title) (\(shortcut))")
-    .onHover { hovering in onHover(hovering ? "\(title) · \(shortcut)" : nil) }
+    .jesseeHoverHelp("\(title) · \(shortcut)", onChange: onHover)
     .accessibilityLabel(title)
     .accessibilityHint("Shortcut \(shortcut)")
   }

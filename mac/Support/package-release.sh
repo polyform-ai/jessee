@@ -81,7 +81,7 @@ This release is signed by Polyform, notarized by Apple, and can update itself fr
 
 - Record with a visible timer and live microphone level.
 - Draw, highlight, undo, clear, redo, or stop directly from the floating controls.
-- Hover recording and editor icons to see what each control does.
+- Hover menu-bar, recording, and editor icons for immediate guidance, even while another app is active.
 - Press Option-S from anywhere to stop and process the recording.
 - Edit the generated story, choose alternate screenshots, mark up evidence, and export one continuous PDF.
 EOF

@@ -30,35 +30,51 @@ struct MenuPopoverView: View {
 private struct HeaderView: View {
   @ObservedObject var store: AppStore
   let openLibrary: () -> Void
+  @State private var hoveredAction: String?
 
   var body: some View {
-    HStack(spacing: 11) {
-      ZStack {
-        RoundedRectangle(cornerRadius: 10).fill(accent.gradient)
-        Image(systemName: "viewfinder").font(.system(size: 19, weight: .bold)).foregroundStyle(
-          .white)
+    VStack(spacing: 5) {
+      HStack(spacing: 11) {
+        ZStack {
+          RoundedRectangle(cornerRadius: 10).fill(accent.gradient)
+          Image(systemName: "viewfinder").font(.system(size: 19, weight: .bold)).foregroundStyle(
+            .white)
+        }
+        .frame(width: 36, height: 36)
+        VStack(alignment: .leading, spacing: 1) {
+          Text("JesSee").font(.headline)
+          Text("Turn a walkthrough into a story").font(.caption).foregroundStyle(.secondary)
+        }
+        Spacer()
+        if store.isConfigured {
+          Button(action: openLibrary) { Image(systemName: "books.vertical") }
+            .jesseeHoverHelp("Open Library", onChange: showAction)
+          Button(action: SoftwareUpdateController.shared.checkForUpdates) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+          }.jesseeHoverHelp("Check for Updates", onChange: showAction)
+          Button(action: store.openSettings) { Image(systemName: "gearshape") }
+            .jesseeHoverHelp("Settings", onChange: showAction)
+          Button {
+            NSApp.terminate(nil)
+          } label: {
+            Image(systemName: "power")
+          }.jesseeHoverHelp("Quit JesSee", onChange: showAction)
+        }
       }
-      .frame(width: 36, height: 36)
-      VStack(alignment: .leading, spacing: 1) {
-        Text("JesSee").font(.headline)
-        Text("Turn a walkthrough into a story").font(.caption).foregroundStyle(.secondary)
-      }
-      Spacer()
       if store.isConfigured {
-        Button(action: openLibrary) { Image(systemName: "books.vertical") }.help("Open Library")
-        Button(action: SoftwareUpdateController.shared.checkForUpdates) {
-          Image(systemName: "arrow.triangle.2.circlepath")
-        }.help("Check for Updates")
-        Button(action: store.openSettings) { Image(systemName: "gearshape") }.help("Settings")
-        Button {
-          NSApp.terminate(nil)
-        } label: {
-          Image(systemName: "power")
-        }.help("Quit JesSee")
+        Text(hoveredAction ?? "Hover an icon to see what it does")
+          .font(.system(size: 10, weight: .medium))
+          .foregroundStyle(hoveredAction == nil ? .tertiary : .secondary)
+          .frame(maxWidth: .infinity, alignment: .trailing)
+          .contentTransition(.opacity)
       }
     }
     .buttonStyle(.borderless)
     .padding(14)
+  }
+
+  private func showAction(_ message: String?) {
+    withAnimation(.easeOut(duration: 0.1)) { hoveredAction = message }
   }
 }
 
