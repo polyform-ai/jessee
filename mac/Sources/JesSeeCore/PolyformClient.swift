@@ -47,7 +47,7 @@ public struct PolyformServiceConfiguration: Sendable, Equatable {
 
   static func validatedHTTPSURL(_ value: Any?) -> URL? {
     guard let value = value as? String, let url = URL(string: value), url.scheme == "https",
-      url.host != nil
+      let host = url.host, !host.isEmpty
     else { return nil }
     return url
   }

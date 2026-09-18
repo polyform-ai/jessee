@@ -16,7 +16,8 @@ is_valid_https_url() {
   local value=$1
   local remainder=${value#https://}
   local host=${remainder%%/*}
-  [[ "$value" == https://* && -n "$host" && "$remainder" != *[[:space:]]* ]]
+  [[ "$value" == https://* && -n "$host" && "$host" != :* \
+    && "$remainder" != *[[:space:]]* ]]
 }
 
 cd "$repo_dir"
