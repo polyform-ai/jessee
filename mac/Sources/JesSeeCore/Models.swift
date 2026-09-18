@@ -300,6 +300,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
   public var imageTimes: [String: Double]?
   public var recordingMarkups: [RecordingMarkupStroke]?
   public var automaticProcessingAttempts: Int?
+  public var automaticProcessingRetryAt: Date?
   public var processingProviderMode: AIProviderMode?
   public var processingRecovery: CaptureProcessingRecovery?
   public var error: String?
@@ -324,6 +325,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     imageTimes: [String: Double]? = nil,
     recordingMarkups: [RecordingMarkupStroke]? = nil,
     automaticProcessingAttempts: Int? = nil,
+    automaticProcessingRetryAt: Date? = nil,
     processingProviderMode: AIProviderMode? = nil,
     processingRecovery: CaptureProcessingRecovery? = nil,
     error: String? = nil
@@ -347,6 +349,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     self.imageTimes = imageTimes
     self.recordingMarkups = recordingMarkups
     self.automaticProcessingAttempts = automaticProcessingAttempts
+    self.automaticProcessingRetryAt = automaticProcessingRetryAt
     self.processingProviderMode = processingProviderMode
     self.processingRecovery = processingRecovery
     self.error = error
@@ -354,7 +357,8 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
 }
 
 public enum CaptureProcessingRetryPolicy {
-  public static let maximumAttempts = 3
+  public static let maximumAttempts = 6
+  public static let legacyMaximumAttempts = 3
 
   public static func shouldRetry(_ error: Error) -> Bool {
     if error is CancellationError { return false }
@@ -385,8 +389,19 @@ public enum CaptureProcessingRetryPolicy {
     return false
   }
 
-  public static func delayAfterFailedAttempt(_ attempt: Int) -> Duration {
-    .seconds(attempt <= 1 ? 2 : 5)
+  public static func delaySecondsAfterFailedAttempt(_ attempt: Int) -> TimeInterval {
+    switch attempt {
+    case ...1: 2
+    case 2: 5
+    case 3: 60
+    case 4: 5 * 60
+    default: 30 * 60
+    }
+  }
+
+  public static func shouldResumeLegacyExhausted(_ record: CaptureRecord) -> Bool {
+    record.stage == .failed && record.processingRecovery == nil
+      && record.automaticProcessingAttempts == legacyMaximumAttempts
   }
 
   public static func shouldResume(

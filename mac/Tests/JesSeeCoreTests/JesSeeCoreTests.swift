@@ -144,25 +144,30 @@ private struct WorkflowTestValue: Decodable, Equatable {
   let encoded = try JesSeeJSON.encoder().encode(original)
   var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
   object.removeValue(forKey: "automaticProcessingAttempts")
+  object.removeValue(forKey: "automaticProcessingRetryAt")
   object.removeValue(forKey: "processingProviderMode")
   object.removeValue(forKey: "processingRecovery")
   let legacy = try JSONSerialization.data(withJSONObject: object)
 
   let decoded = try JesSeeJSON.decoder().decode(CaptureRecord.self, from: legacy)
   #expect(decoded.automaticProcessingAttempts == nil)
+  #expect(decoded.automaticProcessingRetryAt == nil)
   #expect(decoded.processingProviderMode == nil)
 }
 
 @Test func captureRecordPersistsTheProviderThatOwnsProcessing() throws {
+  let retryAt = Date(timeIntervalSince1970: 1_800_000_000)
   let original = CaptureRecord(
     title: "Pinned capture", source: .recording, stage: .creatingStory,
     mediaFilename: "recording.mp4", automaticProcessingAttempts: 1,
+    automaticProcessingRetryAt: retryAt,
     processingProviderMode: .polyformCovered)
 
   let encoded = try JesSeeJSON.encoder().encode(original)
   let decoded = try JesSeeJSON.decoder().decode(CaptureRecord.self, from: encoded)
 
   #expect(decoded.processingProviderMode == AIProviderMode.polyformCovered)
+  #expect(decoded.automaticProcessingRetryAt == retryAt)
 }
 
 @Test func credentialRecoveryOnlyResumesMatchingFailedCaptures() {
@@ -188,6 +193,24 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(
     CaptureProcessingRetryPolicy.recovery(for: .bringYourOwnKey) == .openAIKey)
   #expect(CaptureProcessingRetryPolicy.recovery(for: nil) == nil)
+}
+
+@Test func automaticProcessingUsesBoundedImmediateAndDelayedRecovery() {
+  #expect(CaptureProcessingRetryPolicy.maximumAttempts == 6)
+  #expect(CaptureProcessingRetryPolicy.delaySecondsAfterFailedAttempt(1) == 2)
+  #expect(CaptureProcessingRetryPolicy.delaySecondsAfterFailedAttempt(2) == 5)
+  #expect(CaptureProcessingRetryPolicy.delaySecondsAfterFailedAttempt(3) == 60)
+  #expect(CaptureProcessingRetryPolicy.delaySecondsAfterFailedAttempt(4) == 300)
+  #expect(CaptureProcessingRetryPolicy.delaySecondsAfterFailedAttempt(5) == 1_800)
+
+  let oldExhausted = CaptureRecord(
+    title: "Older failure", source: .recording, stage: .failed,
+    mediaFilename: "recording.mp4", automaticProcessingAttempts: 3)
+  let currentExhausted = CaptureRecord(
+    title: "Current failure", source: .recording, stage: .failed,
+    mediaFilename: "recording.mp4", automaticProcessingAttempts: 6)
+  #expect(CaptureProcessingRetryPolicy.shouldResumeLegacyExhausted(oldExhausted))
+  #expect(!CaptureProcessingRetryPolicy.shouldResumeLegacyExhausted(currentExhausted))
 }
 
 @Suite(.serialized) struct PolyformClientTests {
@@ -851,13 +874,16 @@ private struct WorkflowTestValue: Decodable, Equatable {
 
   let workspace = CaptureWorkspace(rootURL: temporary)
   _ = try await workspace.load()
-  let record = try await workspace.importMedia(from: source, source: .importedVideo)
+  let record = try await workspace.importMedia(
+    from: source, source: .importedVideo, processingProviderMode: .polyformCovered)
   #expect(FileManager.default.fileExists(atPath: workspace.mediaURL(for: record).path))
+  #expect(record.processingProviderMode == .polyformCovered)
 
   let reloaded = CaptureWorkspace(rootURL: temporary)
   let history = try await reloaded.load()
   #expect(history.count == 1)
   #expect(history.first?.title == "walkthrough")
+  #expect(history.first?.processingProviderMode == .polyformCovered)
 }
 
 @Test @MainActor func rendererCreatesOneLongPDFAndEditableHTML() throws {
