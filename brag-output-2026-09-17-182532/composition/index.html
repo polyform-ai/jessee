@@ -281,6 +281,7 @@
       tl.to(".orb-b", { x: -42, y: 28, scale: 1.08, duration: 22.4, ease: "sine.inOut" }, 0);
       tl.to(".brand-grid", { x: 32, y: -20, duration: 4, ease: "sine.inOut" }, 18.4);
 
+      window.__timelines = window.__timelines || {};
       window.__timelines["main"] = tl;
       tl.seek(0);
     </script>
