@@ -57,6 +57,7 @@ public actor CaptureWorkspace {
       source: source,
       mediaFilename: filename,
       recordingMarkups: recordingMarkups,
+      processingRetryPolicyVersion: CaptureProcessingRetryPolicy.currentVersion,
       processingProviderMode: processingProviderMode
     )
     try save(record)

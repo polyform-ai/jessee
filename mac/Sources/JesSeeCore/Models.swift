@@ -301,6 +301,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
   public var recordingMarkups: [RecordingMarkupStroke]?
   public var automaticProcessingAttempts: Int?
   public var automaticProcessingRetryAt: Date?
+  public var processingRetryPolicyVersion: Int?
   public var processingProviderMode: AIProviderMode?
   public var processingRecovery: CaptureProcessingRecovery?
   public var error: String?
@@ -326,6 +327,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     recordingMarkups: [RecordingMarkupStroke]? = nil,
     automaticProcessingAttempts: Int? = nil,
     automaticProcessingRetryAt: Date? = nil,
+    processingRetryPolicyVersion: Int? = nil,
     processingProviderMode: AIProviderMode? = nil,
     processingRecovery: CaptureProcessingRecovery? = nil,
     error: String? = nil
@@ -350,6 +352,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     self.recordingMarkups = recordingMarkups
     self.automaticProcessingAttempts = automaticProcessingAttempts
     self.automaticProcessingRetryAt = automaticProcessingRetryAt
+    self.processingRetryPolicyVersion = processingRetryPolicyVersion
     self.processingProviderMode = processingProviderMode
     self.processingRecovery = processingRecovery
     self.error = error
@@ -357,6 +360,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
 }
 
 public enum CaptureProcessingRetryPolicy {
+  public static let currentVersion = 2
   public static let maximumAttempts = 6
   public static let legacyMaximumAttempts = 3
 
@@ -401,6 +405,7 @@ public enum CaptureProcessingRetryPolicy {
 
   public static func shouldResumeLegacyExhausted(_ record: CaptureRecord) -> Bool {
     record.stage == .failed && record.processingRecovery == nil
+      && record.processingRetryPolicyVersion == nil
       && record.automaticProcessingAttempts == legacyMaximumAttempts
   }
 

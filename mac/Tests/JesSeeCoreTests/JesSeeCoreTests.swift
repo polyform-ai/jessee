@@ -145,6 +145,7 @@ private struct WorkflowTestValue: Decodable, Equatable {
   var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
   object.removeValue(forKey: "automaticProcessingAttempts")
   object.removeValue(forKey: "automaticProcessingRetryAt")
+  object.removeValue(forKey: "processingRetryPolicyVersion")
   object.removeValue(forKey: "processingProviderMode")
   object.removeValue(forKey: "processingRecovery")
   let legacy = try JSONSerialization.data(withJSONObject: object)
@@ -152,6 +153,7 @@ private struct WorkflowTestValue: Decodable, Equatable {
   let decoded = try JesSeeJSON.decoder().decode(CaptureRecord.self, from: legacy)
   #expect(decoded.automaticProcessingAttempts == nil)
   #expect(decoded.automaticProcessingRetryAt == nil)
+  #expect(decoded.processingRetryPolicyVersion == nil)
   #expect(decoded.processingProviderMode == nil)
 }
 
@@ -161,6 +163,7 @@ private struct WorkflowTestValue: Decodable, Equatable {
     title: "Pinned capture", source: .recording, stage: .creatingStory,
     mediaFilename: "recording.mp4", automaticProcessingAttempts: 1,
     automaticProcessingRetryAt: retryAt,
+    processingRetryPolicyVersion: CaptureProcessingRetryPolicy.currentVersion,
     processingProviderMode: .polyformCovered)
 
   let encoded = try JesSeeJSON.encoder().encode(original)
@@ -168,6 +171,8 @@ private struct WorkflowTestValue: Decodable, Equatable {
 
   #expect(decoded.processingProviderMode == AIProviderMode.polyformCovered)
   #expect(decoded.automaticProcessingRetryAt == retryAt)
+  #expect(
+    decoded.processingRetryPolicyVersion == CaptureProcessingRetryPolicy.currentVersion)
 }
 
 @Test func credentialRecoveryOnlyResumesMatchingFailedCaptures() {
@@ -208,9 +213,15 @@ private struct WorkflowTestValue: Decodable, Equatable {
     mediaFilename: "recording.mp4", automaticProcessingAttempts: 3)
   let currentExhausted = CaptureRecord(
     title: "Current failure", source: .recording, stage: .failed,
-    mediaFilename: "recording.mp4", automaticProcessingAttempts: 6)
+    mediaFilename: "recording.mp4", automaticProcessingAttempts: 6,
+    processingRetryPolicyVersion: CaptureProcessingRetryPolicy.currentVersion)
+  let currentThirdAttemptFailure = CaptureRecord(
+    title: "Current terminal failure", source: .recording, stage: .failed,
+    mediaFilename: "recording.mp4", automaticProcessingAttempts: 3,
+    processingRetryPolicyVersion: CaptureProcessingRetryPolicy.currentVersion)
   #expect(CaptureProcessingRetryPolicy.shouldResumeLegacyExhausted(oldExhausted))
   #expect(!CaptureProcessingRetryPolicy.shouldResumeLegacyExhausted(currentExhausted))
+  #expect(!CaptureProcessingRetryPolicy.shouldResumeLegacyExhausted(currentThirdAttemptFailure))
 }
 
 @Suite(.serialized) struct PolyformClientTests {
@@ -878,6 +889,8 @@ private struct WorkflowTestValue: Decodable, Equatable {
     from: source, source: .importedVideo, processingProviderMode: .polyformCovered)
   #expect(FileManager.default.fileExists(atPath: workspace.mediaURL(for: record).path))
   #expect(record.processingProviderMode == .polyformCovered)
+  #expect(
+    record.processingRetryPolicyVersion == CaptureProcessingRetryPolicy.currentVersion)
 
   let reloaded = CaptureWorkspace(rootURL: temporary)
   let history = try await reloaded.load()
