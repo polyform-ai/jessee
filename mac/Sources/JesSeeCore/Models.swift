@@ -300,6 +300,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
   public var imageTimes: [String: Double]?
   public var recordingMarkups: [RecordingMarkupStroke]?
   public var automaticProcessingAttempts: Int?
+  public var processingProviderMode: AIProviderMode?
   public var processingRecovery: CaptureProcessingRecovery?
   public var error: String?
 
@@ -323,6 +324,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     imageTimes: [String: Double]? = nil,
     recordingMarkups: [RecordingMarkupStroke]? = nil,
     automaticProcessingAttempts: Int? = nil,
+    processingProviderMode: AIProviderMode? = nil,
     processingRecovery: CaptureProcessingRecovery? = nil,
     error: String? = nil
   ) {
@@ -345,6 +347,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     self.imageTimes = imageTimes
     self.recordingMarkups = recordingMarkups
     self.automaticProcessingAttempts = automaticProcessingAttempts
+    self.processingProviderMode = processingProviderMode
     self.processingRecovery = processingRecovery
     self.error = error
   }

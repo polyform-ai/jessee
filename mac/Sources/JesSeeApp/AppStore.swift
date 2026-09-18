@@ -121,11 +121,6 @@ final class AppStore: ObservableObject {
     setupStep = configuration.pendingSetupStep(
       hasPolyformSession: workflowSession != nil, hasAPIKey: hasAPIKey)
     persistConfiguration()
-    if credentialAvailable,
-      let recovery = CaptureProcessingRetryPolicy.recovery(for: mode)
-    {
-      Task { await resumeFailedCaptures(recoverableBy: recovery) }
-    }
   }
 
   func saveAPIKey(_ value: String) async -> Bool {
@@ -446,6 +441,7 @@ final class AppStore: ObservableObject {
 
   private func startProcessing(_ record: CaptureRecord, notifyStarted: Bool = false) {
     guard processingTasks[record.id] == nil, let workspace else { return }
+    let provider = record.processingProviderMode ?? configuration.aiProviderMode
     let appStore = self
     let task = Task {
       var failedAttempts = record.automaticProcessingAttempts ?? 0
@@ -455,9 +451,10 @@ final class AppStore: ObservableObject {
         return
       }
       while !Task.isCancelled, failedAttempts < CaptureProcessingRetryPolicy.maximumAttempts {
-        await appStore.markProcessingActive(record.id, failedAttempts: failedAttempts)
+        await appStore.markProcessingActive(
+          record.id, failedAttempts: failedAttempts, provider: provider)
         do {
-          let service = try await appStore.processingService()
+          let service = try await appStore.processingService(for: provider)
           let processor = CaptureProcessor(workspace: workspace, service: service)
           _ = try await processor.process(
             recordID: record.id,
@@ -477,7 +474,8 @@ final class AppStore: ObservableObject {
             CaptureProcessingRetryPolicy.shouldRetry(visibleError)
             && failedAttempts < CaptureProcessingRetryPolicy.maximumAttempts
           if shouldRetry {
-            await appStore.markProcessingActive(record.id, failedAttempts: failedAttempts)
+            await appStore.markProcessingActive(
+              record.id, failedAttempts: failedAttempts, provider: provider)
             do {
               try await Task.sleep(
                 for: CaptureProcessingRetryPolicy.delayAfterFailedAttempt(failedAttempts))
@@ -489,7 +487,7 @@ final class AppStore: ObservableObject {
           await appStore.markProcessingFailed(
             record.id,
             failedAttempts: failedAttempts,
-            recovery: appStore.credentialRecovery(for: visibleError),
+            recovery: appStore.credentialRecovery(for: visibleError, provider: provider),
             error: visibleError)
           appStore.show(.error(visibleError.localizedDescription))
           break
@@ -547,10 +545,13 @@ final class AppStore: ObservableObject {
     captures.sort { $0.createdAt > $1.createdAt }
   }
 
-  private func markProcessingActive(_ id: String, failedAttempts: Int) async {
+  private func markProcessingActive(
+    _ id: String, failedAttempts: Int, provider: AIProviderMode?
+  ) async {
     guard let workspace, var record = await workspace.record(id: id) else { return }
     record.stage = .preparingAudio
     record.automaticProcessingAttempts = failedAttempts
+    record.processingProviderMode = provider
     record.processingRecovery = nil
     record.error = nil
     try? await workspace.save(record)
@@ -560,6 +561,7 @@ final class AppStore: ObservableObject {
   private func markProcessingComplete(_ id: String) async {
     guard let workspace, var record = await workspace.record(id: id) else { return }
     record.automaticProcessingAttempts = nil
+    record.processingProviderMode = nil
     record.processingRecovery = nil
     try? await workspace.save(record)
     replace(record)
@@ -696,8 +698,10 @@ final class AppStore: ObservableObject {
     return session.accessToken
   }
 
-  private func processingService() async throws -> StoryProcessingService {
-    switch configuration.aiProviderMode {
+  private func processingService(for provider: AIProviderMode?) async throws
+    -> StoryProcessingService
+  {
+    switch provider {
     case .polyformCovered:
       guard let polyformClient else { throw JesSeeError.serviceNotConfigured }
       return .polyform(client: polyformClient, accessToken: try await accessToken())
@@ -746,9 +750,11 @@ final class AppStore: ObservableObject {
     return error
   }
 
-  private func credentialRecovery(for error: Error) -> CaptureProcessingRecovery? {
+  private func credentialRecovery(
+    for error: Error, provider: AIProviderMode?
+  ) -> CaptureProcessingRecovery? {
     guard let error = error as? JesSeeError else { return nil }
-    switch (configuration.aiProviderMode, error) {
+    switch (provider, error) {
     case (.polyformCovered, .signInRequired): return .polyformSignIn
     case (.bringYourOwnKey, .missingAPIKey), (.bringYourOwnKey, .invalidAPIKey):
       return .openAIKey

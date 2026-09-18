@@ -144,11 +144,25 @@ private struct WorkflowTestValue: Decodable, Equatable {
   let encoded = try JesSeeJSON.encoder().encode(original)
   var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
   object.removeValue(forKey: "automaticProcessingAttempts")
+  object.removeValue(forKey: "processingProviderMode")
   object.removeValue(forKey: "processingRecovery")
   let legacy = try JSONSerialization.data(withJSONObject: object)
 
   let decoded = try JesSeeJSON.decoder().decode(CaptureRecord.self, from: legacy)
   #expect(decoded.automaticProcessingAttempts == nil)
+  #expect(decoded.processingProviderMode == nil)
+}
+
+@Test func captureRecordPersistsTheProviderThatOwnsProcessing() throws {
+  let original = CaptureRecord(
+    title: "Pinned capture", source: .recording, stage: .creatingStory,
+    mediaFilename: "recording.mp4", automaticProcessingAttempts: 1,
+    processingProviderMode: .polyformCovered)
+
+  let encoded = try JesSeeJSON.encoder().encode(original)
+  let decoded = try JesSeeJSON.decoder().decode(CaptureRecord.self, from: encoded)
+
+  #expect(decoded.processingProviderMode == AIProviderMode.polyformCovered)
 }
 
 @Test func credentialRecoveryOnlyResumesMatchingFailedCaptures() {
