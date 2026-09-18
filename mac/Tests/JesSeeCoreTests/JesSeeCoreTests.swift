@@ -245,6 +245,106 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(transcript.text == "Done")
   #expect(StubURLProtocol.requests().last?.httpMethod == "DELETE")
 }
+
+@Test func polyformRefinementSendsTheFullDraftAndNearbyVisuals() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [StubURLProtocol.self]
+  let client = PolyformClient(
+    configuration: PolyformServiceConfiguration(
+      apiBase: URL(string: "https://example.test")!, appKey: "app-key",
+      storyWorkflowURL: URL(string: "https://example.test/story")!),
+    session: URLSession(configuration: configuration))
+  StubURLProtocol.prepare([
+    .init(
+      status: 200,
+      data: Data(
+        #"{"success":true,"result":{"output_json":{"title":"Refined","source_url":null,"summary":"Clear","key_points":["Point"],"steps":[{"start_seconds":0,"end_seconds":4,"screenshot_time_seconds":8,"title":"Use the visible label","narrative":"Place View auth details inline.","transcript":"this here should be"}]}}}"#.utf8))
+  ])
+  let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+    UUID().uuidString, isDirectory: true)
+  try FileManager.default.createDirectory(
+    at: temporary.appendingPathComponent("screenshots"), withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: temporary) }
+  try Data("jpeg".utf8).write(
+    to: temporary.appendingPathComponent("screenshots/nearby.jpg"))
+  let frames = [CapturedFrame(seconds: 8, filename: "screenshots/nearby.jpg")]
+  let current = StoryDocument(
+    title: "Draft", summary: "Needs review", keyPoints: ["Old point"],
+    steps: [
+      StoryStep(
+        startSeconds: 0, endSeconds: 4, title: "Wrong title",
+        narrative: "Review the year field.", transcript: "this year should be",
+        imageFilename: "screenshots/nearby.jpg")
+    ])
+  let transcript = TranscriptDocument(
+    text: "this year should be", language: "en", duration: 4,
+    segments: [TranscriptSegment(id: 0, start: 0, end: 4, text: "this year should be")],
+    words: [])
+
+  let refined = try await client.refineStory(
+    current, transcript: transcript, frames: frames, captureDirectory: temporary, round: 1,
+    accessToken: "token")
+  #expect(refined.title == "Refined")
+  #expect(refined.steps.first?.imageFilename == "screenshots/nearby.jpg")
+
+  let body = try #require(StubURLProtocol.bodies().first ?? nil)
+  let request = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+  #expect((request["prompt"] as? String)?.contains("refinement pass 1") == true)
+  #expect((request["attachments"] as? [[String: Any]])?.count == 1)
+  let userInput = try #require(request["user_input"] as? String)
+  let context = try #require(
+    JSONSerialization.jsonObject(with: Data(userInput.utf8)) as? [String: Any])
+  let draft = try #require(context["currentStory"] as? [String: Any])
+  #expect(draft["title"] as? String == "Draft")
+  #expect((context["availableScreenshots"] as? [[String: Any]])?.first?["imageAttached"] as? Bool == true)
+}
+
+@Test func directOpenAIRefinementUsesTheSameBoundedContract() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [StubURLProtocol.self]
+  let client = DirectOpenAIClient(session: URLSession(configuration: configuration))
+  let modelOutput =
+    #"{"title":"Final","sourceURL":null,"summary":"Clear","keyPoints":["Point"],"steps":[{"startSeconds":0,"endSeconds":4,"screenshotTimeSeconds":8,"title":"Inline auth details","narrative":"Place View auth details inline.","transcript":"this here should be"}]}"#
+  StubURLProtocol.prepare([
+    .init(
+      status: 200,
+      data: try JSONSerialization.data(withJSONObject: ["output_text": modelOutput]))
+  ])
+  let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+    UUID().uuidString, isDirectory: true)
+  try FileManager.default.createDirectory(
+    at: temporary.appendingPathComponent("screenshots"), withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: temporary) }
+  try Data("jpeg".utf8).write(
+    to: temporary.appendingPathComponent("screenshots/nearby.jpg"))
+  let frames = [CapturedFrame(seconds: 8, filename: "screenshots/nearby.jpg")]
+  let current = StoryDocument(
+    title: "Draft", summary: "Needs review", keyPoints: [],
+    steps: [
+      StoryStep(
+        startSeconds: 0, endSeconds: 4, title: "Wrong title",
+        narrative: "Review the year field.", transcript: "this year should be",
+        imageFilename: "screenshots/nearby.jpg")
+    ])
+  let transcript = TranscriptDocument(
+    text: "this year should be", language: "en", duration: 4,
+    segments: [TranscriptSegment(id: 0, start: 0, end: 4, text: "this year should be")],
+    words: [])
+
+  let refined = try await client.refineStory(
+    current, transcript: transcript, frames: frames, captureDirectory: temporary, round: 2,
+    apiKey: "key")
+  #expect(refined.title == "Final")
+  #expect(refined.steps.first?.imageFilename == "screenshots/nearby.jpg")
+
+  let body = try #require(StubURLProtocol.bodies().first ?? nil)
+  let request = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+  let input = try #require(request["input"] as? [[String: Any]])
+  let systemContent = try #require(input.first?["content"] as? [[String: Any]])
+  #expect((systemContent.first?["text"] as? String)?.contains("refinement pass 2") == true)
+  let userContent = try #require(input.last?["content"] as? [[String: Any]])
+  #expect(userContent.contains(where: { $0["type"] as? String == "input_image" }))
+}
 }
 
 @Test func workflowResponsesAcceptDirectAndLightWrapperResults() throws {
@@ -512,6 +612,47 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(
     PolyformClient.selectedFrame(requestedSeconds: 99, stepEndSeconds: 20, frames: frames)?.filename
       == "second.jpg")
+}
+
+@Test func refinementExploresBeforeAndAfterEverySelectedVisual() {
+  let frames = [
+    CapturedFrame(seconds: 10, filename: "first.jpg"),
+    CapturedFrame(seconds: 30, filename: "second.jpg"),
+  ]
+  let story = StoryDocument(
+    title: "Draft", summary: "Summary", keyPoints: [],
+    steps: [
+      StoryStep(
+        startSeconds: 5, endSeconds: 11, title: "First", narrative: "First", transcript: "",
+        imageFilename: "first.jpg"),
+      StoryStep(
+        startSeconds: 25, endSeconds: 31, title: "Second", narrative: "Second",
+        transcript: "", imageFilename: "second.jpg"),
+    ])
+
+  #expect(
+    StoryRefinement.candidateTimes(for: story, frames: frames, duration: 40)
+      == [8, 10, 12, 28, 30, 32])
+}
+
+@Test func refinementFrameSearchClampsToTheRecordingAndStaysBounded() {
+  let frames = (0..<10).map {
+    CapturedFrame(seconds: Double($0) * 10, filename: "frame-\($0).jpg")
+  }
+  let story = StoryDocument(
+    title: "Draft", summary: "Summary", keyPoints: [],
+    steps: frames.map { frame in
+      StoryStep(
+        startSeconds: frame.seconds, endSeconds: frame.seconds, title: frame.filename,
+        narrative: "Step", transcript: "", imageFilename: frame.filename)
+    })
+  let candidates = StoryRefinement.candidateTimes(
+    for: story, frames: frames, duration: 91, maximum: 18)
+
+  #expect(candidates.count == 18)
+  #expect(candidates.allSatisfy { $0 >= 0 && $0 < 91 })
+  #expect(candidates.contains(0))
+  #expect(candidates.contains(90))
 }
 
 @Test func storyPlanningKeepsMarkedScreenshotsInTheVisualSet() {

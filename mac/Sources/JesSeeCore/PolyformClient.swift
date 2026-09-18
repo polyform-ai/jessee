@@ -220,21 +220,48 @@ public struct PolyformClient: Sendable {
       accessToken: accessToken)
     let draft = response.result
     let eligibleFrames = attachedFrames.isEmpty ? frames : attachedFrames
-    return StoryDocument(
-      title: draft.title,
-      sourceURL: Self.normalizedWebURL(draft.sourceURL),
-      summary: draft.summary,
-      keyPoints: draft.keyPoints,
-      steps: draft.steps.map { step in
-        let frame = Self.selectedFrame(
-          requestedSeconds: step.screenshotTimeSeconds,
-          stepEndSeconds: step.endSeconds,
-          frames: eligibleFrames)
-        return StoryStep(
-          startSeconds: step.startSeconds, endSeconds: step.endSeconds,
-          title: step.title, narrative: step.narrative, transcript: step.transcript,
-          imageFilename: frame?.filename)
-      })
+    return StoryRefinement.document(from: draft, eligibleFrames: eligibleFrames)
+  }
+
+  public func refineStory(
+    _ story: StoryDocument,
+    transcript: TranscriptDocument,
+    frames: [CapturedFrame],
+    captureDirectory: URL,
+    round: Int,
+    accessToken: String
+  ) async throws -> StoryDocument {
+    guard let storyWorkflowURL = configuration.storyWorkflowURL else {
+      throw PolyformClientError.invalidResponse(
+        "This JesSee build is waiting for the Polyform story workflow.")
+    }
+    let imageAttachments = frames.compactMap { frame -> (CapturedFrame, WorkflowAttachment)? in
+      let url = captureDirectory.appendingPathComponent(frame.filename)
+      guard let data = try? Data(contentsOf: url) else { return nil }
+      return (
+        frame,
+        WorkflowAttachment(
+          filename: frame.filename, contentType: "image/jpeg",
+          fileData: "data:image/jpeg;base64,\(data.base64EncodedString())"))
+    }
+    let attachedFrames = imageAttachments.map(\.0)
+    let includedImageFilenames = Set(attachedFrames.map(\.filename))
+    let userInput = try StoryRefinement.userMessage(
+      story: story,
+      transcript: transcript,
+      frames: frames,
+      includedImageFilenames: includedImageFilenames,
+      round: round)
+    let response: WorkflowResponse<StoryDraft> = try await post(
+      storyWorkflowURL,
+      body: StoryRequest(
+        attachments: imageAttachments.map(\.1),
+        userInput: userInput,
+        prompt: StoryRefinement.prompt(round: round),
+        outputJSON: DirectOpenAIClient.storyOutputJSON),
+      accessToken: accessToken)
+    let eligibleFrames = attachedFrames.isEmpty ? frames : attachedFrames
+    return StoryRefinement.document(from: response.result, eligibleFrames: eligibleFrames)
   }
 
   public func publishPDF(at fileURL: URL, accessToken: String) async throws -> ManagedUpload {
@@ -642,51 +669,6 @@ private struct StoryRequest: Encodable {
     case userInput
     case prompt
     case outputJSON = "outputJson"
-  }
-}
-
-private struct StoryDraft: Decodable {
-  struct Step: Decodable {
-    var startSeconds: Double
-    var endSeconds: Double
-    var screenshotTimeSeconds: Double?
-    var title: String
-    var narrative: String
-    var transcript: String
-
-    private enum CodingKeys: String, CodingKey {
-      case startSeconds
-      case endSeconds
-      case screenshotTimeSeconds
-      case title
-      case narrative
-      case transcript
-    }
-  }
-  var title: String
-  var sourceURL: String?
-  var summary: String
-  var keyPoints: [String]
-  var steps: [Step]
-
-  private enum CodingKeys: String, CodingKey {
-    case title
-    case sourceURL
-    case sourceUrl
-    case summary
-    case keyPoints
-    case steps
-  }
-
-  init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    title = try container.decode(String.self, forKey: .title)
-    sourceURL =
-      try container.decodeIfPresent(String.self, forKey: .sourceURL)
-      ?? container.decodeIfPresent(String.self, forKey: .sourceUrl)
-    summary = try container.decode(String.self, forKey: .summary)
-    keyPoints = try container.decode([String].self, forKey: .keyPoints)
-    steps = try container.decode([Step].self, forKey: .steps)
   }
 }
 
