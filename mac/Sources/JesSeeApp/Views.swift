@@ -397,7 +397,6 @@ private struct AIProviderModeSelector: View {
 
 private struct PolyformCoveredStep: View {
   @ObservedObject var store: AppStore
-  @State private var email = ""
 
   var body: some View {
     VStack(alignment: .leading, spacing: 11) {
@@ -415,20 +414,39 @@ private struct PolyformCoveredStep: View {
           "Open Venmo", destination: URL(string: "https://account.venmo.com/u/Ahmed-Elsamadisi")!)
       }.font(.caption)
 
-      switch store.authenticationState {
-      case .signedIn(let connectedEmail):
-        Label("Signed in as \(connectedEmail)", systemImage: "checkmark.circle.fill")
-          .font(.caption).foregroundStyle(.green)
+      PolyformAuthenticationControls(store: store)
+      if case .signedIn = store.authenticationState {
         Button("Continue") { store.setupStep = 2 }
           .buttonStyle(.borderedProminent).tint(accent)
+      }
+      Button("Choose a different option") { store.setupStep = 0 }.buttonStyle(.link)
+    }
+  }
+}
+
+private struct PolyformAuthenticationControls: View {
+  @ObservedObject var store: AppStore
+  var allowsSignOut = false
+  @State private var email = ""
+
+  var body: some View {
+    Group {
+      switch store.authenticationState {
+      case .signedIn(let connectedEmail):
+        HStack {
+          Label("Signed in as \(connectedEmail)", systemImage: "checkmark.circle.fill")
+            .font(.caption).foregroundStyle(.green)
+          if allowsSignOut {
+            Spacer()
+            Button("Sign out") { store.signOut() }
+          }
+        }
       case .requesting:
         ProgressView("Sending your approval email…").controlSize(.small)
       case .waitingForApproval(let pendingEmail):
-        Label("Approve the link sent to \(pendingEmail)", systemImage: "envelope.badge")
-          .font(.caption).foregroundStyle(.secondary)
         HStack {
           ProgressView().controlSize(.small)
-          Text("JesSee will continue automatically.").font(.caption)
+          Text("Approve the link sent to \(pendingEmail)").font(.caption)
           Spacer()
           Button("Cancel") { store.cancelSignIn() }
         }
@@ -437,8 +455,8 @@ private struct PolyformCoveredStep: View {
         Button("Email me a sign-in link") { store.beginSignIn(email) }
           .buttonStyle(.borderedProminent).tint(accent).disabled(email.isEmpty)
       }
-      Button("Choose a different option") { store.setupStep = 0 }.buttonStyle(.link)
-    }.onAppear { email = store.configuration.email }
+    }
+    .onAppear { email = store.configuration.email }
   }
 }
 
@@ -628,6 +646,7 @@ private struct CaptureDetailView: View {
 
   @ObservedObject var store: AppStore
   let record: CaptureRecord
+  @Environment(\.openSettings) private var openSettings
   @State private var loadedStory: LoadedStory?
 
   var body: some View {
@@ -640,34 +659,39 @@ private struct CaptureDetailView: View {
         }
         Spacer()
         if record.pdfFilename != nil {
-          if store.isPolyformCoveredAvailable,
-            store.configuration.aiProviderMode == .polyformCovered
-          {
-            if record.publicPDFURL != nil {
-              Button {
-                store.copyPublicPDFLink(record)
-              } label: {
-                Label("Copy public link", systemImage: "link")
-              }
-              .disabled(store.publishingCaptureID != nil)
+          if record.publicPDFURL != nil {
+            Button {
+              store.copyPublicPDFLink(record)
+            } label: {
+              Label("Copy public link", systemImage: "link")
+            }
+            .disabled(store.publishingCaptureID != nil)
+            if store.isPublicPDFPublishingAvailable, store.isSignedIntoPolyform {
               Button {
                 store.publishPDF(record)
               } label: {
                 Label("Update link", systemImage: "arrow.triangle.2.circlepath")
               }
               .disabled(store.publishingCaptureID != nil)
-            } else {
-              Button {
-                store.publishPDF(record)
-              } label: {
-                if store.publishingCaptureID == record.id {
-                  ProgressView().controlSize(.small)
-                  Text("Creating link…")
-                } else {
-                  Label("Create public link", systemImage: "link.badge.plus")
-                }
+            }
+          } else if store.isPublicPDFPublishingAvailable, store.isSignedIntoPolyform {
+            Button {
+              store.publishPDF(record)
+            } label: {
+              if store.publishingCaptureID == record.id {
+                ProgressView().controlSize(.small)
+                Text("Creating link…")
+              } else {
+                Label("Generate public link", systemImage: "link.badge.plus")
               }
-              .disabled(store.publishingCaptureID != nil)
+            }
+            .disabled(store.publishingCaptureID != nil)
+          } else if store.isPublicPDFPublishingAvailable {
+            Button {
+              openSettings()
+              NSApp.activate(ignoringOtherApps: true)
+            } label: {
+              Label("Sign in to share", systemImage: "person.badge.key")
             }
           }
           Button("Open PDF") { store.openPDF(record) }.buttonStyle(.borderedProminent).tint(accent)
@@ -747,7 +771,6 @@ struct WelcomeView: View {
 
 struct SettingsView: View {
   @ObservedObject var store: AppStore
-  @State private var email = ""
   @State private var key = ""
   @State private var apiSaved = false
   @State private var apiError: String?
@@ -773,25 +796,6 @@ struct SettingsView: View {
               "Open Venmo",
               destination: URL(string: "https://account.venmo.com/u/Ahmed-Elsamadisi")!)
           }
-          switch store.authenticationState {
-          case .signedIn(let connectedEmail):
-            Label("Signed in as \(connectedEmail)", systemImage: "checkmark.circle.fill")
-              .font(.caption).foregroundStyle(.green)
-            Button("Sign out") { store.signOut() }
-          case .requesting:
-            ProgressView("Sending your approval email…").controlSize(.small)
-          case .waitingForApproval(let pendingEmail):
-            HStack {
-              ProgressView().controlSize(.small)
-              Text("Approve the link sent to \(pendingEmail)").font(.caption)
-              Spacer()
-              Button("Cancel") { store.cancelSignIn() }
-            }
-          case .signedOut:
-            TextField("you@company.com", text: $email)
-            Button("Email me a sign-in link") { store.beginSignIn(email) }
-              .disabled(email.isEmpty)
-          }
         } else {
           SecureField(store.hasAPIKey ? "Replace OpenAI API key" : "OpenAI API key", text: $key)
           Button(store.isTestingAPIKey ? "Checking…" : "Save and test key") {
@@ -813,6 +817,15 @@ struct SettingsView: View {
             Label(apiError, systemImage: "exclamationmark.circle.fill")
               .font(.caption).foregroundStyle(.red)
           }
+        }
+      }
+      if store.isPublicPDFPublishingAvailable {
+        Section("Public PDF links") {
+          Text(
+            "Sign in with Polyform to upload a finished PDF, generate a public URL, and copy it for sharing. Your local story and source files stay on this Mac."
+          )
+          .font(.caption).foregroundStyle(.secondary)
+          PolyformAuthenticationControls(store: store, allowsSignOut: true)
         }
       }
       Section("Library") {
@@ -866,6 +879,5 @@ struct SettingsView: View {
       }
     }
     .formStyle(.grouped).padding().frame(width: 620, height: 720)
-    .onAppear { email = store.configuration.email }
   }
 }

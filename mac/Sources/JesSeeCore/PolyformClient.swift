@@ -12,33 +12,38 @@ public struct PolyformServiceConfiguration: Sendable, Equatable {
   public var appKey: String
   public var transcriptionWorkflowURL: URL?
   public var storyWorkflowURL: URL?
+  public var managedAIEnabled: Bool
 
   public init(
     apiBase: URL, appKey: String, transcriptionWorkflowURL: URL? = nil,
-    storyWorkflowURL: URL? = nil
+    storyWorkflowURL: URL? = nil, managedAIEnabled: Bool = true
   ) {
     self.apiBase = apiBase
     self.appKey = appKey
     self.transcriptionWorkflowURL = transcriptionWorkflowURL
     self.storyWorkflowURL = storyWorkflowURL
+    self.managedAIEnabled = managedAIEnabled
+  }
+
+  public var supportsManagedAI: Bool {
+    managedAIEnabled && transcriptionWorkflowURL != nil && storyWorkflowURL != nil
   }
 
   public static func configured(bundle: Bundle = .main) -> Self? {
     guard
-      bundle.object(forInfoDictionaryKey: managedAIEnabledInfoKey) as? Bool == true,
       let apiBaseValue = bundle.object(forInfoDictionaryKey: apiBaseInfoKey) as? String,
       let apiBase = URL(string: apiBaseValue), apiBase.scheme == "https",
       let appKey = bundle.object(forInfoDictionaryKey: appKeyInfoKey) as? String,
-      !appKey.isEmpty,
-      let transcriptionWorkflowURL = validatedHTTPSURL(
-        bundle.object(forInfoDictionaryKey: transcriptionURLInfoKey)),
-      let storyWorkflowURL = validatedHTTPSURL(
-        bundle.object(forInfoDictionaryKey: storyURLInfoKey))
+      !appKey.isEmpty
     else { return nil }
     return Self(
       apiBase: apiBase, appKey: appKey,
-      transcriptionWorkflowURL: transcriptionWorkflowURL,
-      storyWorkflowURL: storyWorkflowURL)
+      transcriptionWorkflowURL: validatedHTTPSURL(
+        bundle.object(forInfoDictionaryKey: transcriptionURLInfoKey)),
+      storyWorkflowURL: validatedHTTPSURL(
+        bundle.object(forInfoDictionaryKey: storyURLInfoKey)),
+      managedAIEnabled:
+        bundle.object(forInfoDictionaryKey: managedAIEnabledInfoKey) as? Bool == true)
   }
 
   public func authURL(_ action: String) -> URL {

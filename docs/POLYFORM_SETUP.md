@@ -2,7 +2,7 @@
 
 JesSee uses one Polyform workflow-auth group for email-approved access to transcription, story creation, and optional public PDF uploads. The Mac app uses PKCE, stores the returned bearer session in Keychain, and rotates the session through the workflow-auth refresh endpoint.
 
-> Release status: this integration is retained but disabled. `PFManagedAIEnabled` is `false`, signed releases do not inject the workflow URLs, and the app offers Bring Your Own Key only. Enable it only after the backend work and signed end-to-end checks below are complete.
+> Release status: managed AI is retained but disabled. `PFManagedAIEnabled` is `false`, signed releases do not inject the workflow URLs, and the app offers Bring Your Own Key for AI processing. Polyform email authentication remains available for opt-in public PDF links; enable Polyform Covered AI only after the workflow and signed end-to-end checks below are complete.
 
 These are production configuration steps; they are not performed by the app repository.
 
@@ -76,7 +76,7 @@ For local end-to-end testing, build the app with `JESSEE_MANAGED_AI_ENABLED=1` p
 
 ## Public PDFs
 
-Public links are opt-in. JesSee uploads a PDF only after the user chooses **Create public link**, stores the returned upload ID and URL with that local capture, and replaces the prior upload after the user publishes an updated PDF.
+Public links are opt-in and independent of the selected AI provider. JesSee authenticates through the same workflow-auth group, uploads a PDF only after the user chooses **Generate public link**, stores the returned upload ID and URL with that local capture, and replaces the prior upload after the user publishes an updated PDF.
 
 The Polyform backend must allow `application/pdf` for workflow-auth managed uploads before enabling public upload access for the group. Do not enable this for a release until the backend change has been deployed and a signed build has completed an end-to-end upload test.
 

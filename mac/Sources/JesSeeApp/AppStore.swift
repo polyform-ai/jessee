@@ -35,6 +35,7 @@ final class AppStore: ObservableObject {
   private let configurationStore = ConfigurationStore()
   private let featureUsage = FeatureUsageRecorder(product: "jessee")
   private let polyformClient: PolyformClient?
+  private let polyformManagedAIAvailable: Bool
   private var workspace: CaptureWorkspace?
   private var processingTasks: [String: Task<Void, Never>] = [:]
   private var processingNotificationTasks: [String: Task<Void, Never>] = [:]
@@ -48,6 +49,7 @@ final class AppStore: ObservableObject {
     configuration = configurationStore.load()
     let configuredService = PolyformServiceConfiguration.configured()
     polyformClient = configuredService.map { PolyformClient(configuration: $0) }
+    polyformManagedAIAvailable = configuredService?.supportsManagedAI == true
     workflowSession = try? JesSeeKeychain.loadWorkflowSession()
     hasAPIKey = (try? JesSeeKeychain.loadAPIKey()) != nil
     if let session = workflowSession, session.expiresAt > Date() {
@@ -58,7 +60,7 @@ final class AppStore: ObservableObject {
       workflowSession = nil
       authenticationState = .signedOut
     }
-    if polyformClient == nil, configuration.aiProviderMode == .polyformCovered {
+    if !polyformManagedAIAvailable, configuration.aiProviderMode == .polyformCovered {
       configuration.aiProviderMode = hasAPIKey ? .bringYourOwnKey : nil
       configuration.setupCompleted = false
       try? configurationStore.save(configuration)
@@ -94,7 +96,12 @@ final class AppStore: ObservableObject {
   }
 
   var recentCaptures: [CaptureRecord] { Array(captures.prefix(4)) }
-  var isPolyformCoveredAvailable: Bool { polyformClient != nil }
+  var isPolyformCoveredAvailable: Bool { polyformManagedAIAvailable }
+  var isPublicPDFPublishingAvailable: Bool { polyformClient != nil }
+  var isSignedIntoPolyform: Bool {
+    if case .signedIn = authenticationState { return true }
+    return false
+  }
 
   func selectProvider(_ mode: AIProviderMode) {
     guard mode != .polyformCovered || isPolyformCoveredAvailable else { return }
@@ -199,8 +206,10 @@ final class AppStore: ObservableObject {
     try? JesSeeKeychain.removeWorkflowSession()
     workflowSession = nil
     authenticationState = .signedOut
-    configuration.setupCompleted = false
-    setupStep = 0
+    if configuration.aiProviderMode == .polyformCovered {
+      configuration.setupCompleted = false
+      setupStep = 0
+    }
     persistConfiguration()
     show(.success("Signed out."))
   }
