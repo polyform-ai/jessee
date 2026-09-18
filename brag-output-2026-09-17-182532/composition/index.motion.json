@@ -1,0 +1,19 @@
+{
+  "duration": 22.4,
+  "maxStaticSec": 2.2,
+  "assertions": [
+    { "kind": "appearsBy", "selector": "#hook-one", "bySec": 1.4 },
+    { "kind": "before", "a": "#hook-one", "b": "#hook-two" },
+    { "kind": "appearsBy", "selector": "#capture-window", "bySec": 5.4 },
+    { "kind": "before", "a": "#capture-line-one", "b": "#capture-line-two" },
+    { "kind": "appearsBy", "selector": ".editor-frame-shell", "bySec": 9.8 },
+    { "kind": "before", "a": "#editor-line-one", "b": "#editor-line-two" },
+    { "kind": "before", "a": "#pdf-card", "b": "#library-card" },
+    { "kind": "appearsBy", "selector": "#brand-line-one", "bySec": 19.4 },
+    { "kind": "before", "a": "#brand-line-one", "b": "#brand-url" },
+    { "kind": "staysInFrame", "selector": "#capture-window" },
+    { "kind": "staysInFrame", "selector": ".editor-frame-shell" },
+    { "kind": "staysInFrame", "selector": "#pdf-card" },
+    { "kind": "keepsMoving", "withinSelector": "#root" }
+  ]
+}
