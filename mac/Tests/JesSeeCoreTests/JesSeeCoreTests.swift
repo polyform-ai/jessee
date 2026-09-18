@@ -83,6 +83,7 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(PolyformServiceConfiguration.validatedHTTPSURL("http://example.test/workflow") == nil)
   #expect(PolyformServiceConfiguration.validatedHTTPSURL("https:///workflow") == nil)
   #expect(PolyformServiceConfiguration.validatedHTTPSURL("https://:443/workflow") == nil)
+  #expect(PolyformServiceConfiguration.validatedHTTPSURL("https://user@:443/workflow") == nil)
   #expect(PolyformServiceConfiguration.validatedHTTPSURL(nil) == nil)
 }
 

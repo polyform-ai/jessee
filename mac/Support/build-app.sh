@@ -12,14 +12,6 @@ if [[ "${JESSEE_DISTRIBUTION:-0}" == "1" && "$managed_ai_enabled" == "1" ]]; the
   exit 1
 fi
 
-is_valid_https_url() {
-  local value=$1
-  local remainder=${value#https://}
-  local host=${remainder%%/*}
-  [[ "$value" == https://* && -n "$host" && "$host" != :* \
-    && "$remainder" != *[[:space:]]* ]]
-}
-
 cd "$repo_dir"
 build_arguments=(-c "$configuration")
 if [[ "${JESSEE_DISTRIBUTION:-0}" == "1" ]]; then
@@ -75,8 +67,18 @@ if [[ "$managed_ai_enabled" == "1" ]]; then
     echo "Managed AI test builds require both JesSee workflow URLs." >&2
     exit 1
   fi
-  if ! is_valid_https_url "$JESSEE_TRANSCRIPTION_WORKFLOW_URL" \
-    || ! is_valid_https_url "$JESSEE_STORY_WORKFLOW_URL"
+  if ! swift -e '
+    import Foundation
+    let environment = ProcessInfo.processInfo.environment
+    let keys = ["JESSEE_TRANSCRIPTION_WORKFLOW_URL", "JESSEE_STORY_WORKFLOW_URL"]
+    let valid = keys.allSatisfy { key in
+      guard let value = environment[key], let url = URL(string: value),
+        url.scheme == "https", let host = url.host
+      else { return false }
+      return !host.isEmpty
+    }
+    if !valid { exit(1) }
+  '
   then
     echo "Managed AI workflow URLs must be valid HTTPS URLs." >&2
     exit 1
