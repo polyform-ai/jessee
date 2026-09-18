@@ -135,6 +135,7 @@ final class AppStore: ObservableObject {
       restoreCompletedSetupIfPossible(for: .bringYourOwnKey)
       persistConfiguration()
       show(.success("OpenAI key saved securely."))
+      await resumeFailedCapturesAfterCredentialChange()
       return true
     } catch {
       show(.error(error.localizedDescription))
@@ -176,7 +177,7 @@ final class AppStore: ObservableObject {
             persistConfiguration()
             if !configuration.setupCompleted { setupStep = max(setupStep, 1) }
             show(.success("Signed in to JesSee."))
-            await loadLibrary()
+            await resumeFailedCapturesAfterCredentialChange()
             return
           } catch PolyformClientError.approvalPending {
             try await Task.sleep(for: .seconds(2))
@@ -273,10 +274,6 @@ final class AppStore: ObservableObject {
     panel.allowedContentTypes = [.movie, .video]
     guard panel.runModal() == .OK, let url = panel.url else { return }
     Task { await addCapture(from: url, source: .importedVideo) }
-  }
-
-  func retry(_ record: CaptureRecord) {
-    startProcessing(record)
   }
 
   func reveal(_ record: CaptureRecord) {
@@ -446,18 +443,43 @@ final class AppStore: ObservableObject {
     guard processingTasks[record.id] == nil, let workspace else { return }
     let appStore = self
     let task = Task {
-      do {
-        let service = try await appStore.processingService()
-        let processor = CaptureProcessor(workspace: workspace, service: service)
-        _ = try await processor.process(
-          recordID: record.id,
-          includeScreenshotPixels: appStore.configuration.shareScreenshotsForStory
-        ) { updated in
-          await appStore.replace(updated)
+      var attempt = record.automaticProcessingAttempts ?? 0
+      while !Task.isCancelled, attempt < CaptureProcessingRetryPolicy.maximumAttempts {
+        attempt += 1
+        await appStore.markProcessingAttempt(record.id, attempt: attempt)
+        do {
+          let service = try await appStore.processingService()
+          let processor = CaptureProcessor(workspace: workspace, service: service)
+          _ = try await processor.process(
+            recordID: record.id,
+            includeScreenshotPixels: appStore.configuration.shareScreenshotsForStory
+          ) { updated in
+            await appStore.replace(updated)
+          }
+          await appStore.markProcessingComplete(record.id)
+          await appStore.captureFinished(record.id)
+          break
+        } catch is CancellationError {
+          break
+        } catch {
+          let visibleError = appStore.authenticationAwareError(error)
+          let shouldRetry =
+            CaptureProcessingRetryPolicy.shouldRetry(visibleError)
+            && attempt < CaptureProcessingRetryPolicy.maximumAttempts
+          if shouldRetry {
+            await appStore.markProcessingAttempt(record.id, attempt: attempt)
+            do {
+              try await Task.sleep(
+                for: CaptureProcessingRetryPolicy.delayAfterFailedAttempt(attempt))
+            } catch {
+              break
+            }
+            continue
+          }
+          await appStore.markProcessingFailed(record.id, error: visibleError)
+          appStore.show(.error(visibleError.localizedDescription))
+          break
         }
-        await appStore.captureFinished(record.id)
-      } catch {
-        appStore.show(.error(appStore.authenticationAwareError(error).localizedDescription))
       }
       appStore.finishProcessingLifecycle(record.id)
     }
@@ -473,13 +495,27 @@ final class AppStore: ObservableObject {
     do {
       captures = try await workspace.load()
       if isConfigured {
-        for capture in captures where capture.stage == .saved || capture.stage.isProcessing {
+        for capture in captures
+        where capture.stage == .saved || capture.stage.isProcessing
+          || (capture.stage == .failed
+            && (capture.automaticProcessingAttempts ?? 0)
+              < CaptureProcessingRetryPolicy.maximumAttempts)
+        {
           startProcessing(capture)
         }
       }
     } catch {
       show(.error("JesSee could not open this library: \(error.localizedDescription)"))
     }
+  }
+
+  private func resumeFailedCapturesAfterCredentialChange() async {
+    guard let workspace else { return }
+    for var record in await workspace.allRecords() where record.stage == .failed {
+      record.automaticProcessingAttempts = nil
+      try? await workspace.save(record)
+    }
+    await loadLibrary()
   }
 
   private func replace(_ record: CaptureRecord) {
@@ -489,6 +525,31 @@ final class AppStore: ObservableObject {
       captures.insert(record, at: 0)
     }
     captures.sort { $0.createdAt > $1.createdAt }
+  }
+
+  private func markProcessingAttempt(_ id: String, attempt: Int) async {
+    guard let workspace, var record = await workspace.record(id: id) else { return }
+    record.stage = .preparingAudio
+    record.automaticProcessingAttempts = attempt
+    record.error = nil
+    try? await workspace.save(record)
+    replace(record)
+  }
+
+  private func markProcessingComplete(_ id: String) async {
+    guard let workspace, var record = await workspace.record(id: id) else { return }
+    record.automaticProcessingAttempts = nil
+    try? await workspace.save(record)
+    replace(record)
+  }
+
+  private func markProcessingFailed(_ id: String, error: Error) async {
+    guard let workspace, var record = await workspace.record(id: id) else { return }
+    record.stage = .failed
+    record.automaticProcessingAttempts = CaptureProcessingRetryPolicy.maximumAttempts
+    record.error = error.localizedDescription
+    try? await workspace.save(record)
+    replace(record)
   }
 
   private func captureFinished(_ id: String) async {

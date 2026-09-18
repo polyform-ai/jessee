@@ -294,6 +294,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
   public var imageFilenames: [String]
   public var imageTimes: [String: Double]?
   public var recordingMarkups: [RecordingMarkupStroke]?
+  public var automaticProcessingAttempts: Int?
   public var error: String?
 
   public init(
@@ -315,6 +316,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     imageFilenames: [String] = [],
     imageTimes: [String: Double]? = nil,
     recordingMarkups: [RecordingMarkupStroke]? = nil,
+    automaticProcessingAttempts: Int? = nil,
     error: String? = nil
   ) {
     self.id = id
@@ -335,7 +337,43 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     self.imageFilenames = imageFilenames
     self.imageTimes = imageTimes
     self.recordingMarkups = recordingMarkups
+    self.automaticProcessingAttempts = automaticProcessingAttempts
     self.error = error
+  }
+}
+
+public enum CaptureProcessingRetryPolicy {
+  public static let maximumAttempts = 3
+
+  public static func shouldRetry(_ error: Error) -> Bool {
+    if error is CancellationError { return false }
+    if let error = error as? PolyformClientError {
+      switch error {
+      case .requestFailed(let status, _):
+        return status == 0 || status == 408 || status == 425 || status == 429
+          || (500...599).contains(status)
+      case .invalidResponse: return true
+      case .approvalPending, .refreshTooEarly, .authenticationRequired: return false
+      }
+    }
+    if let error = error as? JesSeeError {
+      switch error {
+      case .serviceUnavailable, .invalidResponse: return true
+      default: return false
+      }
+    }
+    if let error = error as? URLError {
+      return [
+        .cannotConnectToHost, .cannotFindHost, .dataNotAllowed, .dnsLookupFailed,
+        .internationalRoamingOff, .networkConnectionLost, .notConnectedToInternet,
+        .resourceUnavailable, .secureConnectionFailed, .timedOut,
+      ].contains(error.code)
+    }
+    return false
+  }
+
+  public static func delayAfterFailedAttempt(_ attempt: Int) -> Duration {
+    .seconds(attempt <= 1 ? 2 : 5)
   }
 }
 

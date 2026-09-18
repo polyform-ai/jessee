@@ -107,6 +107,43 @@ private struct WorkflowTestValue: Decodable, Equatable {
     ).supportsManagedAI == true)
 }
 
+@Test func automaticProcessingRetryPolicyOnlyRetriesRecoverableFailures() {
+  #expect(
+    CaptureProcessingRetryPolicy.shouldRetry(
+      PolyformClientError.requestFailed(503, "Unavailable")))
+  #expect(
+    CaptureProcessingRetryPolicy.shouldRetry(
+      PolyformClientError.requestFailed(429, "Slow down")))
+  #expect(
+    CaptureProcessingRetryPolicy.shouldRetry(
+      PolyformClientError.invalidResponse("Incomplete model result")))
+  #expect(
+    CaptureProcessingRetryPolicy.shouldRetry(
+      JesSeeError.serviceUnavailable("Temporary network issue")))
+  #expect(CaptureProcessingRetryPolicy.shouldRetry(URLError(.timedOut)))
+
+  #expect(
+    !CaptureProcessingRetryPolicy.shouldRetry(
+      PolyformClientError.requestFailed(400, "Bad request")))
+  #expect(
+    !CaptureProcessingRetryPolicy.shouldRetry(
+      PolyformClientError.authenticationRequired("Sign in")))
+  #expect(!CaptureProcessingRetryPolicy.shouldRetry(JesSeeError.signInRequired))
+  #expect(!CaptureProcessingRetryPolicy.shouldRetry(URLError(.badURL)))
+}
+
+@Test func captureRecordsFromEarlierBuildsDecodeWithoutRetryState() throws {
+  let original = CaptureRecord(
+    title: "Earlier capture", source: .recording, mediaFilename: "recording.mp4")
+  let encoded = try JesSeeJSON.encoder().encode(original)
+  var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+  object.removeValue(forKey: "automaticProcessingAttempts")
+  let legacy = try JSONSerialization.data(withJSONObject: object)
+
+  let decoded = try JesSeeJSON.decoder().decode(CaptureRecord.self, from: legacy)
+  #expect(decoded.automaticProcessingAttempts == nil)
+}
+
 @Suite(.serialized) struct PolyformClientTests {
 @Test func polyformClientUsesDocumentedSnakeCaseContracts() async throws {
   let configuration = URLSessionConfiguration.ephemeral

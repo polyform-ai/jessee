@@ -114,7 +114,7 @@ private struct HomeView: View {
       case .failed(let message):
         StatusCard(
           icon: "exclamationmark.triangle", title: "Recording did not start", detail: message,
-          action: recorder.dismissError)
+          actionTitle: "Back", action: recorder.dismissError)
       case .idle:
         StartCard(store: store)
       }
@@ -262,7 +262,6 @@ private struct CaptureRow: View {
       Menu {
         if record.pdfFilename != nil { Button("Open PDF") { store.openPDF(record) } }
         Button("Show in Finder") { store.reveal(record) }
-        if record.stage == .failed { Button("Try again") { store.retry(record) } }
       } label: {
         Image(systemName: "ellipsis").frame(width: 24, height: 24)
       }
@@ -553,13 +552,14 @@ private struct StatusCard: View {
   let icon: String
   let title: String
   let detail: String
+  var actionTitle: String = "Dismiss"
   var action: (() -> Void)? = nil
   var body: some View {
     VStack(spacing: 9) {
       Image(systemName: icon).font(.system(size: 28)).foregroundStyle(accent)
       Text(title).font(.headline)
       Text(detail).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
-      if let action { Button("Try again", action: action).buttonStyle(.bordered) }
+      if let action { Button(actionTitle, action: action).buttonStyle(.bordered) }
     }.frame(maxWidth: .infinity).padding(20).background(
       accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 16))
   }
@@ -658,48 +658,7 @@ private struct CaptureDetailView: View {
             .caption)
         }
         Spacer()
-        if record.pdfFilename != nil {
-          if record.publicPDFURL != nil {
-            Button {
-              store.copyPublicPDFLink(record)
-            } label: {
-              Label("Copy public link", systemImage: "link")
-            }
-            .disabled(store.publishingCaptureID != nil)
-            if store.isPublicPDFPublishingAvailable, store.isSignedIntoPolyform {
-              Button {
-                store.publishPDF(record)
-              } label: {
-                Label("Update link", systemImage: "arrow.triangle.2.circlepath")
-              }
-              .disabled(store.publishingCaptureID != nil)
-            }
-          } else if store.isPublicPDFPublishingAvailable, store.isSignedIntoPolyform {
-            Button {
-              store.publishPDF(record)
-            } label: {
-              if store.publishingCaptureID == record.id {
-                ProgressView().controlSize(.small)
-                Text("Creating link…")
-              } else {
-                Label("Generate public link", systemImage: "link.badge.plus")
-              }
-            }
-            .disabled(store.publishingCaptureID != nil)
-          } else if store.isPublicPDFPublishingAvailable {
-            Button {
-              openSettings()
-              NSApp.activate(ignoringOtherApps: true)
-            } label: {
-              Label("Sign in to share", systemImage: "person.badge.key")
-            }
-          }
-          Button("Open PDF") { store.openPDF(record) }.buttonStyle(.borderedProminent).tint(accent)
-        }
-        Button("Show in Finder") { store.reveal(record) }
-        if record.stage == .failed {
-          Button("Try again") { store.retry(record) }.buttonStyle(.borderedProminent).tint(accent)
-        }
+        EditorActionToolbar(store: store, record: record, openSettings: presentSettings)
       }
       .padding(.horizontal, 22).padding(.vertical, 14)
       Divider()
@@ -738,7 +697,8 @@ private struct CaptureDetailView: View {
       } else {
         ContentUnavailableView(
           "Story not ready", systemImage: "doc.badge.clock",
-          description: Text("Try processing this recording again."))
+          description: Text(
+            "JesSee retries temporary failures automatically. Check the message above for anything that needs your attention."))
       }
     }
     .task(id: "\(record.id):\(record.storyFilename ?? "")") {
@@ -756,6 +716,82 @@ private struct CaptureDetailView: View {
   }
   private var stageColor: Color {
     record.stage == .ready ? .green : record.stage == .failed ? .red : accent
+  }
+
+  private func presentSettings() {
+    openSettings()
+    NSApp.activate(ignoringOtherApps: true)
+  }
+}
+
+private struct EditorActionToolbar: View {
+  @ObservedObject var store: AppStore
+  let record: CaptureRecord
+  let openSettings: () -> Void
+
+  var body: some View {
+    HStack(spacing: 4) {
+      if record.pdfFilename != nil {
+        if record.publicPDFURL != nil {
+          EditorIconButton(title: "Copy public link", systemImage: "link") {
+            store.copyPublicPDFLink(record)
+          }
+          .disabled(store.publishingCaptureID != nil)
+          if store.isPublicPDFPublishingAvailable, store.isSignedIntoPolyform {
+            EditorIconButton(
+              title: "Update public link", systemImage: "arrow.triangle.2.circlepath"
+            ) {
+              store.publishPDF(record)
+            }
+            .disabled(store.publishingCaptureID != nil)
+          }
+        } else if store.isPublicPDFPublishingAvailable, store.isSignedIntoPolyform {
+          EditorIconButton(
+            title: store.publishingCaptureID == record.id
+              ? "Creating public link" : "Generate public link",
+            systemImage: "link.badge.plus",
+            isLoading: store.publishingCaptureID == record.id
+          ) {
+            store.publishPDF(record)
+          }
+          .disabled(store.publishingCaptureID != nil)
+        } else if store.isPublicPDFPublishingAvailable {
+          EditorIconButton(title: "Sign in to share", systemImage: "person.badge.key") {
+            openSettings()
+          }
+        }
+        EditorIconButton(title: "Open PDF", systemImage: "doc.richtext") {
+          store.openPDF(record)
+        }
+      }
+      EditorIconButton(title: "Show in Finder", systemImage: "folder") {
+        store.reveal(record)
+      }
+    }
+  }
+}
+
+private struct EditorIconButton: View {
+  let title: String
+  let systemImage: String
+  var isLoading = false
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      Group {
+        if isLoading {
+          ProgressView().controlSize(.small)
+        } else {
+          Image(systemName: systemImage)
+        }
+      }
+      .frame(width: 28, height: 28)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.borderless)
+    .help(title)
+    .accessibilityLabel(title)
   }
 }
 
