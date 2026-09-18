@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -8,6 +9,19 @@ const packageMetadata = JSON.parse(readFileSync(resolve("package.json"), "utf8")
 
 rmSync(websiteBuild, { recursive: true, force: true });
 cpSync(websiteSource, websiteBuild, { recursive: true });
+
+const builtStyles = readFileSync(resolve(websiteBuild, "styles.css"));
+const styleVersion = createHash("sha256").update(builtStyles).digest("hex").slice(0, 12);
+const builtIndexPath = resolve(websiteBuild, "index.html");
+const builtIndex = readFileSync(builtIndexPath, "utf8");
+const stylesheetReference = 'href="styles.css"';
+if (!builtIndex.includes(stylesheetReference)) {
+  throw new Error("Missing unversioned stylesheet reference in website/index.html.");
+}
+writeFileSync(
+  builtIndexPath,
+  builtIndex.replace(stylesheetReference, `href="styles.css?v=${styleVersion}"`)
+);
 
 if (!existsSync(showcasePdf)) {
   throw new Error("Missing output/pdf/jessee-explains-jessee.pdf. Run the visual showcase test before building the website.");
