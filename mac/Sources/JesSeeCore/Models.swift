@@ -41,6 +41,11 @@ public enum CaptureStage: String, Codable, Sendable, CaseIterable {
   }
 }
 
+public enum CaptureProcessingRecovery: String, Codable, Sendable, Equatable {
+  case polyformSignIn = "polyform_sign_in"
+  case openAIKey = "openai_key"
+}
+
 public struct TranscriptSegment: Codable, Sendable, Equatable, Identifiable {
   public var id: Int
   public var start: Double
@@ -294,6 +299,11 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
   public var imageFilenames: [String]
   public var imageTimes: [String: Double]?
   public var recordingMarkups: [RecordingMarkupStroke]?
+  public var automaticProcessingAttempts: Int?
+  public var automaticProcessingRetryAt: Date?
+  public var processingRetryPolicyVersion: Int?
+  public var processingProviderMode: AIProviderMode?
+  public var processingRecovery: CaptureProcessingRecovery?
   public var error: String?
 
   public init(
@@ -315,6 +325,11 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     imageFilenames: [String] = [],
     imageTimes: [String: Double]? = nil,
     recordingMarkups: [RecordingMarkupStroke]? = nil,
+    automaticProcessingAttempts: Int? = nil,
+    automaticProcessingRetryAt: Date? = nil,
+    processingRetryPolicyVersion: Int? = nil,
+    processingProviderMode: AIProviderMode? = nil,
+    processingRecovery: CaptureProcessingRecovery? = nil,
     error: String? = nil
   ) {
     self.id = id
@@ -335,7 +350,77 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     self.imageFilenames = imageFilenames
     self.imageTimes = imageTimes
     self.recordingMarkups = recordingMarkups
+    self.automaticProcessingAttempts = automaticProcessingAttempts
+    self.automaticProcessingRetryAt = automaticProcessingRetryAt
+    self.processingRetryPolicyVersion = processingRetryPolicyVersion
+    self.processingProviderMode = processingProviderMode
+    self.processingRecovery = processingRecovery
     self.error = error
+  }
+}
+
+public enum CaptureProcessingRetryPolicy {
+  public static let currentVersion = 2
+  public static let maximumAttempts = 6
+  public static let legacyMaximumAttempts = 3
+
+  public static func shouldRetry(_ error: Error) -> Bool {
+    if error is CancellationError { return false }
+    if let error = error as? PolyformClientError {
+      switch error {
+      case .requestFailed(let status, _):
+        return status == 0 || status == 408 || status == 425 || status == 429
+          || (500...599).contains(status)
+      case .invalidResponse: return true
+      case .approvalPending, .refreshTooEarly, .authenticationRequired: return false
+      }
+    }
+    if let error = error as? JesSeeError {
+      switch error {
+      case .requestFailed(let status, _):
+        return status == 408 || status == 425 || status == 429 || (500...599).contains(status)
+      case .serviceUnavailable, .invalidResponse: return true
+      default: return false
+      }
+    }
+    if let error = error as? URLError {
+      return [
+        .cannotConnectToHost, .cannotFindHost, .dataNotAllowed, .dnsLookupFailed,
+        .internationalRoamingOff, .networkConnectionLost, .notConnectedToInternet,
+        .resourceUnavailable, .secureConnectionFailed, .timedOut,
+      ].contains(error.code)
+    }
+    return false
+  }
+
+  public static func delaySecondsAfterFailedAttempt(_ attempt: Int) -> TimeInterval {
+    switch attempt {
+    case ...1: 2
+    case 2: 5
+    case 3: 60
+    case 4: 5 * 60
+    default: 30 * 60
+    }
+  }
+
+  public static func shouldResumeLegacyExhausted(_ record: CaptureRecord) -> Bool {
+    record.stage == .failed && record.processingRecovery == nil
+      && record.processingRetryPolicyVersion == nil
+      && record.automaticProcessingAttempts == legacyMaximumAttempts
+  }
+
+  public static func shouldResume(
+    _ record: CaptureRecord, after recovery: CaptureProcessingRecovery
+  ) -> Bool {
+    record.stage == .failed && record.processingRecovery == recovery
+  }
+
+  public static func recovery(for mode: AIProviderMode?) -> CaptureProcessingRecovery? {
+    switch mode {
+    case .polyformCovered: .polyformSignIn
+    case .bringYourOwnKey: .openAIKey
+    case nil: nil
+    }
   }
 }
 
@@ -439,6 +524,7 @@ public enum JesSeeError: LocalizedError, Equatable {
   case sourceUnavailable(String)
   case mediaHasNoAudio
   case audioTooLarge
+  case requestFailed(Int, String)
   case invalidResponse(String)
   case recordingFailed(String)
 
@@ -456,6 +542,8 @@ public enum JesSeeError: LocalizedError, Equatable {
     case .sourceUnavailable(let path): "The source video is no longer available at \(path)."
     case .mediaHasNoAudio: "This video does not contain an audio track to transcribe."
     case .audioTooLarge: "The prepared audio is too large to transcribe in one request."
+    case .requestFailed(let status, let detail):
+      "The AI service rejected the request (\(status)). \(detail)"
     case .invalidResponse(let message): message
     case .recordingFailed(let message): "Recording failed: \(message)"
     }

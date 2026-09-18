@@ -107,6 +107,123 @@ private struct WorkflowTestValue: Decodable, Equatable {
     ).supportsManagedAI == true)
 }
 
+@Test func automaticProcessingRetryPolicyOnlyRetriesRecoverableFailures() {
+  #expect(
+    CaptureProcessingRetryPolicy.shouldRetry(
+      PolyformClientError.requestFailed(503, "Unavailable")))
+  #expect(
+    CaptureProcessingRetryPolicy.shouldRetry(
+      PolyformClientError.requestFailed(429, "Slow down")))
+  #expect(
+    CaptureProcessingRetryPolicy.shouldRetry(
+      PolyformClientError.invalidResponse("Incomplete model result")))
+  #expect(
+    CaptureProcessingRetryPolicy.shouldRetry(
+      JesSeeError.serviceUnavailable("Temporary network issue")))
+  #expect(
+    CaptureProcessingRetryPolicy.shouldRetry(
+      JesSeeError.requestFailed(503, "Unavailable")))
+  #expect(CaptureProcessingRetryPolicy.shouldRetry(URLError(.timedOut)))
+
+  #expect(
+    !CaptureProcessingRetryPolicy.shouldRetry(
+      PolyformClientError.requestFailed(400, "Bad request")))
+  #expect(
+    !CaptureProcessingRetryPolicy.shouldRetry(
+      PolyformClientError.authenticationRequired("Sign in")))
+  #expect(!CaptureProcessingRetryPolicy.shouldRetry(JesSeeError.signInRequired))
+  #expect(
+    !CaptureProcessingRetryPolicy.shouldRetry(
+      JesSeeError.requestFailed(400, "Bad request")))
+  #expect(!CaptureProcessingRetryPolicy.shouldRetry(URLError(.badURL)))
+}
+
+@Test func captureRecordsFromEarlierBuildsDecodeWithoutRetryState() throws {
+  let original = CaptureRecord(
+    title: "Earlier capture", source: .recording, mediaFilename: "recording.mp4")
+  let encoded = try JesSeeJSON.encoder().encode(original)
+  var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+  object.removeValue(forKey: "automaticProcessingAttempts")
+  object.removeValue(forKey: "automaticProcessingRetryAt")
+  object.removeValue(forKey: "processingRetryPolicyVersion")
+  object.removeValue(forKey: "processingProviderMode")
+  object.removeValue(forKey: "processingRecovery")
+  let legacy = try JSONSerialization.data(withJSONObject: object)
+
+  let decoded = try JesSeeJSON.decoder().decode(CaptureRecord.self, from: legacy)
+  #expect(decoded.automaticProcessingAttempts == nil)
+  #expect(decoded.automaticProcessingRetryAt == nil)
+  #expect(decoded.processingRetryPolicyVersion == nil)
+  #expect(decoded.processingProviderMode == nil)
+}
+
+@Test func captureRecordPersistsTheProviderThatOwnsProcessing() throws {
+  let retryAt = Date(timeIntervalSince1970: 1_800_000_000)
+  let original = CaptureRecord(
+    title: "Pinned capture", source: .recording, stage: .creatingStory,
+    mediaFilename: "recording.mp4", automaticProcessingAttempts: 1,
+    automaticProcessingRetryAt: retryAt,
+    processingRetryPolicyVersion: CaptureProcessingRetryPolicy.currentVersion,
+    processingProviderMode: .polyformCovered)
+
+  let encoded = try JesSeeJSON.encoder().encode(original)
+  let decoded = try JesSeeJSON.decoder().decode(CaptureRecord.self, from: encoded)
+
+  #expect(decoded.processingProviderMode == AIProviderMode.polyformCovered)
+  #expect(decoded.automaticProcessingRetryAt == retryAt)
+  #expect(
+    decoded.processingRetryPolicyVersion == CaptureProcessingRetryPolicy.currentVersion)
+}
+
+@Test func credentialRecoveryOnlyResumesMatchingFailedCaptures() {
+  let polyformFailure = CaptureRecord(
+    title: "Needs sign-in", source: .recording, stage: .failed,
+    mediaFilename: "recording.mp4", automaticProcessingAttempts: 1,
+    processingRecovery: .polyformSignIn)
+  let keyFailure = CaptureRecord(
+    title: "Needs a key", source: .recording, stage: .failed,
+    mediaFilename: "recording.mp4", automaticProcessingAttempts: 1,
+    processingRecovery: .openAIKey)
+  let permanentFailure = CaptureRecord(
+    title: "Missing audio", source: .recording, stage: .failed,
+    mediaFilename: "recording.mp4", automaticProcessingAttempts: 1)
+
+  #expect(
+    CaptureProcessingRetryPolicy.shouldResume(polyformFailure, after: .polyformSignIn))
+  #expect(!CaptureProcessingRetryPolicy.shouldResume(polyformFailure, after: .openAIKey))
+  #expect(CaptureProcessingRetryPolicy.shouldResume(keyFailure, after: .openAIKey))
+  #expect(!CaptureProcessingRetryPolicy.shouldResume(permanentFailure, after: .openAIKey))
+  #expect(
+    CaptureProcessingRetryPolicy.recovery(for: .polyformCovered) == .polyformSignIn)
+  #expect(
+    CaptureProcessingRetryPolicy.recovery(for: .bringYourOwnKey) == .openAIKey)
+  #expect(CaptureProcessingRetryPolicy.recovery(for: nil) == nil)
+}
+
+@Test func automaticProcessingUsesBoundedImmediateAndDelayedRecovery() {
+  #expect(CaptureProcessingRetryPolicy.maximumAttempts == 6)
+  #expect(CaptureProcessingRetryPolicy.delaySecondsAfterFailedAttempt(1) == 2)
+  #expect(CaptureProcessingRetryPolicy.delaySecondsAfterFailedAttempt(2) == 5)
+  #expect(CaptureProcessingRetryPolicy.delaySecondsAfterFailedAttempt(3) == 60)
+  #expect(CaptureProcessingRetryPolicy.delaySecondsAfterFailedAttempt(4) == 300)
+  #expect(CaptureProcessingRetryPolicy.delaySecondsAfterFailedAttempt(5) == 1_800)
+
+  let oldExhausted = CaptureRecord(
+    title: "Older failure", source: .recording, stage: .failed,
+    mediaFilename: "recording.mp4", automaticProcessingAttempts: 3)
+  let currentExhausted = CaptureRecord(
+    title: "Current failure", source: .recording, stage: .failed,
+    mediaFilename: "recording.mp4", automaticProcessingAttempts: 6,
+    processingRetryPolicyVersion: CaptureProcessingRetryPolicy.currentVersion)
+  let currentThirdAttemptFailure = CaptureRecord(
+    title: "Current terminal failure", source: .recording, stage: .failed,
+    mediaFilename: "recording.mp4", automaticProcessingAttempts: 3,
+    processingRetryPolicyVersion: CaptureProcessingRetryPolicy.currentVersion)
+  #expect(CaptureProcessingRetryPolicy.shouldResumeLegacyExhausted(oldExhausted))
+  #expect(!CaptureProcessingRetryPolicy.shouldResumeLegacyExhausted(currentExhausted))
+  #expect(!CaptureProcessingRetryPolicy.shouldResumeLegacyExhausted(currentThirdAttemptFailure))
+}
+
 @Suite(.serialized) struct PolyformClientTests {
 @Test func polyformClientUsesDocumentedSnakeCaseContracts() async throws {
   let configuration = URLSessionConfiguration.ephemeral
@@ -344,6 +461,50 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect((systemContent.first?["text"] as? String)?.contains("refinement pass 2") == true)
   let userContent = try #require(input.last?["content"] as? [[String: Any]])
   #expect(userContent.contains(where: { $0["type"] as? String == "input_image" }))
+}
+
+@Test func directOpenAIPreservesHTTPStatusForRetryClassification() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [StubURLProtocol.self]
+  let client = DirectOpenAIClient(session: URLSession(configuration: configuration))
+  StubURLProtocol.prepare([.init(status: 400, data: Data("Bad request".utf8))])
+  let transcript = TranscriptDocument(text: "Explain this", segments: [], words: [])
+  let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+    UUID().uuidString, isDirectory: true)
+  try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: temporary) }
+
+  var capturedError: Error?
+  do {
+    _ = try await client.createStory(
+      transcript: transcript, frames: [], captureDirectory: temporary, apiKey: "key")
+  } catch {
+    capturedError = error
+  }
+  #expect(capturedError as? JesSeeError == .requestFailed(400, "Bad request"))
+}
+
+@Test func directOpenAIMalformedSuccessBecomesRetryableInvalidResponse() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [StubURLProtocol.self]
+  let client = DirectOpenAIClient(session: URLSession(configuration: configuration))
+  StubURLProtocol.prepare([.init(status: 200, data: Data("[]".utf8))])
+  let transcript = TranscriptDocument(text: "Explain this", segments: [], words: [])
+  let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+    UUID().uuidString, isDirectory: true)
+  try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: temporary) }
+
+  var capturedError: Error?
+  do {
+    _ = try await client.createStory(
+      transcript: transcript, frames: [], captureDirectory: temporary, apiKey: "key")
+  } catch {
+    capturedError = error
+  }
+  #expect(
+    capturedError as? JesSeeError
+      == .invalidResponse("Story creation returned incomplete data."))
 }
 }
 
@@ -724,13 +885,18 @@ private struct WorkflowTestValue: Decodable, Equatable {
 
   let workspace = CaptureWorkspace(rootURL: temporary)
   _ = try await workspace.load()
-  let record = try await workspace.importMedia(from: source, source: .importedVideo)
+  let record = try await workspace.importMedia(
+    from: source, source: .importedVideo, processingProviderMode: .polyformCovered)
   #expect(FileManager.default.fileExists(atPath: workspace.mediaURL(for: record).path))
+  #expect(record.processingProviderMode == .polyformCovered)
+  #expect(
+    record.processingRetryPolicyVersion == CaptureProcessingRetryPolicy.currentVersion)
 
   let reloaded = CaptureWorkspace(rootURL: temporary)
   let history = try await reloaded.load()
   #expect(history.count == 1)
   #expect(history.first?.title == "walkthrough")
+  #expect(history.first?.processingProviderMode == .polyformCovered)
 }
 
 @Test @MainActor func rendererCreatesOneLongPDFAndEditableHTML() throws {

@@ -135,6 +135,7 @@ final class AppStore: ObservableObject {
       restoreCompletedSetupIfPossible(for: .bringYourOwnKey)
       persistConfiguration()
       show(.success("OpenAI key saved securely."))
+      await resumeFailedCaptures(recoverableBy: .openAIKey)
       return true
     } catch {
       show(.error(error.localizedDescription))
@@ -176,7 +177,7 @@ final class AppStore: ObservableObject {
             persistConfiguration()
             if !configuration.setupCompleted { setupStep = max(setupStep, 1) }
             show(.success("Signed in to JesSee."))
-            await loadLibrary()
+            await resumeFailedCaptures(recoverableBy: .polyformSignIn)
             return
           } catch PolyformClientError.approvalPending {
             try await Task.sleep(for: .seconds(2))
@@ -222,8 +223,12 @@ final class AppStore: ObservableObject {
     panel.canChooseFiles = false
     panel.canCreateDirectories = true
     guard panel.runModal() == .OK, let url = panel.url else { return false }
+    let selectedWorkspace = CaptureWorkspace(rootURL: url)
+    if workspace?.rootURL != selectedWorkspace.rootURL {
+      cancelProcessingForWorkspaceChange()
+    }
     configuration.outputFolderPath = url.path
-    workspace = CaptureWorkspace(rootURL: url)
+    workspace = selectedWorkspace
     persistConfiguration()
     Task { await loadLibrary() }
     show(.success("Your JesSee Library will be saved here."))
@@ -273,10 +278,6 @@ final class AppStore: ObservableObject {
     panel.allowedContentTypes = [.movie, .video]
     guard panel.runModal() == .OK, let url = panel.url else { return }
     Task { await addCapture(from: url, source: .importedVideo) }
-  }
-
-  func retry(_ record: CaptureRecord) {
-    startProcessing(record)
   }
 
   func reveal(_ record: CaptureRecord) {
@@ -428,6 +429,7 @@ final class AppStore: ObservableObject {
       let record = try await workspace.importMedia(
         from: url,
         source: source,
+        processingProviderMode: configuration.aiProviderMode,
         recordingMarkups: recordingMarkups)
       if deleteSourceAfterImport { try? FileManager.default.removeItem(at: url) }
       captures = await workspace.allRecords()
@@ -443,21 +445,81 @@ final class AppStore: ObservableObject {
   }
 
   private func startProcessing(_ record: CaptureRecord, notifyStarted: Bool = false) {
-    guard processingTasks[record.id] == nil, let workspace else { return }
+    guard processingTasks[record.id] == nil, let processingWorkspace = workspace else { return }
+    let provider = record.processingProviderMode ?? configuration.aiProviderMode
     let appStore = self
     let task = Task {
-      do {
-        let service = try await appStore.processingService()
-        let processor = CaptureProcessor(workspace: workspace, service: service)
-        _ = try await processor.process(
-          recordID: record.id,
-          includeScreenshotPixels: appStore.configuration.shareScreenshotsForStory
-        ) { updated in
-          await appStore.replace(updated)
+      var failedAttempts = record.automaticProcessingAttempts ?? 0
+      var retryAt = record.automaticProcessingRetryAt
+      guard failedAttempts < CaptureProcessingRetryPolicy.maximumAttempts else {
+        await appStore.markProcessingExhausted(record.id, in: processingWorkspace)
+        appStore.finishProcessingLifecycle(record.id)
+        return
+      }
+      while !Task.isCancelled, failedAttempts < CaptureProcessingRetryPolicy.maximumAttempts {
+        if let retryAt {
+          let delay = retryAt.timeIntervalSinceNow
+          if delay > 0 {
+            do {
+              try await Task.sleep(for: .seconds(delay))
+            } catch {
+              break
+            }
+          }
         }
-        await appStore.captureFinished(record.id)
-      } catch {
-        appStore.show(.error(appStore.authenticationAwareError(error).localizedDescription))
+        await appStore.markProcessingActive(
+          record.id, failedAttempts: failedAttempts, provider: provider,
+          in: processingWorkspace)
+        if Task.isCancelled { break }
+        retryAt = nil
+        var attemptedCredential = appStore.credentialIdentity(for: provider)
+        do {
+          let context = try await appStore.processingService(for: provider)
+          attemptedCredential = context.credential
+          try Task.checkCancellation()
+          let processor = CaptureProcessor(
+            workspace: processingWorkspace, service: context.service)
+          _ = try await processor.process(
+            recordID: record.id,
+            includeScreenshotPixels: appStore.configuration.shareScreenshotsForStory
+          ) { updated in
+            await appStore.replace(updated, from: processingWorkspace)
+          }
+          try Task.checkCancellation()
+          await appStore.markProcessingComplete(record.id, in: processingWorkspace)
+          await appStore.captureFinished(record.id, in: processingWorkspace)
+          break
+        } catch is CancellationError {
+          break
+        } catch {
+          if appStore.hasRepairedCredential(
+            after: attemptedCredential, for: provider, error: error)
+          {
+            continue
+          }
+          let visibleError = appStore.authenticationAwareError(error)
+          failedAttempts += 1
+          let shouldRetry =
+            CaptureProcessingRetryPolicy.shouldRetry(visibleError)
+            && failedAttempts < CaptureProcessingRetryPolicy.maximumAttempts
+          if shouldRetry {
+            let nextRetryAt = Date().addingTimeInterval(
+              CaptureProcessingRetryPolicy.delaySecondsAfterFailedAttempt(failedAttempts))
+            retryAt = nextRetryAt
+            await appStore.markProcessingWaiting(
+              record.id, failedAttempts: failedAttempts, provider: provider,
+              retryAt: nextRetryAt, in: processingWorkspace)
+            continue
+          }
+          await appStore.markProcessingFailed(
+            record.id,
+            failedAttempts: failedAttempts,
+            recovery: appStore.credentialRecovery(for: visibleError, provider: provider),
+            error: visibleError,
+            in: processingWorkspace)
+          appStore.show(.error(visibleError.localizedDescription))
+          break
+        }
       }
       appStore.finishProcessingLifecycle(record.id)
     }
@@ -472,14 +534,33 @@ final class AppStore: ObservableObject {
     }
     do {
       captures = try await workspace.load()
-      if isConfigured {
-        for capture in captures where capture.stage == .saved || capture.stage.isProcessing {
+      for capture in captures where canProcess(capture) {
+        if capture.stage == .saved || capture.stage.isProcessing
+          || (capture.stage == .failed && capture.automaticProcessingAttempts == nil)
+          || CaptureProcessingRetryPolicy.shouldResumeLegacyExhausted(capture)
+        {
           startProcessing(capture)
         }
       }
     } catch {
       show(.error("JesSee could not open this library: \(error.localizedDescription)"))
     }
+  }
+
+  private func resumeFailedCaptures(recoverableBy recovery: CaptureProcessingRecovery) async {
+    guard let workspace, hasCredential(for: recovery) else { return }
+    for var record in await workspace.allRecords()
+    where CaptureProcessingRetryPolicy.shouldResume(record, after: recovery)
+    {
+      record.stage = .saved
+      record.automaticProcessingAttempts = 0
+      record.automaticProcessingRetryAt = nil
+      record.processingRetryPolicyVersion = CaptureProcessingRetryPolicy.currentVersion
+      record.processingRecovery = nil
+      record.error = nil
+      try? await workspace.save(record)
+    }
+    await loadLibrary()
   }
 
   private func replace(_ record: CaptureRecord) {
@@ -491,15 +572,95 @@ final class AppStore: ObservableObject {
     captures.sort { $0.createdAt > $1.createdAt }
   }
 
-  private func captureFinished(_ id: String) async {
-    await loadLibrary()
+  private func replace(_ record: CaptureRecord, from sourceWorkspace: CaptureWorkspace) {
+    guard isCurrentWorkspace(sourceWorkspace) else { return }
+    replace(record)
+  }
+
+  private func markProcessingActive(
+    _ id: String, failedAttempts: Int, provider: AIProviderMode?,
+    in processingWorkspace: CaptureWorkspace
+  ) async {
+    guard var record = await processingWorkspace.record(id: id) else { return }
+    record.stage = .preparingAudio
+    record.automaticProcessingAttempts = failedAttempts
+    record.automaticProcessingRetryAt = nil
+    record.processingRetryPolicyVersion = CaptureProcessingRetryPolicy.currentVersion
+    record.processingProviderMode = provider
+    record.processingRecovery = nil
+    record.error = nil
+    try? await processingWorkspace.save(record)
+    replace(record, from: processingWorkspace)
+  }
+
+  private func markProcessingWaiting(
+    _ id: String, failedAttempts: Int, provider: AIProviderMode?, retryAt: Date,
+    in processingWorkspace: CaptureWorkspace
+  ) async {
+    guard var record = await processingWorkspace.record(id: id) else { return }
+    record.automaticProcessingAttempts = failedAttempts
+    record.automaticProcessingRetryAt = retryAt
+    record.processingRetryPolicyVersion = CaptureProcessingRetryPolicy.currentVersion
+    record.processingProviderMode = provider
+    record.processingRecovery = nil
+    record.error = nil
+    try? await processingWorkspace.save(record)
+    replace(record, from: processingWorkspace)
+  }
+
+  private func markProcessingComplete(_ id: String, in processingWorkspace: CaptureWorkspace) async {
+    guard var record = await processingWorkspace.record(id: id) else { return }
+    record.automaticProcessingAttempts = nil
+    record.automaticProcessingRetryAt = nil
+    record.processingRetryPolicyVersion = CaptureProcessingRetryPolicy.currentVersion
+    record.processingProviderMode = nil
+    record.processingRecovery = nil
+    try? await processingWorkspace.save(record)
+    replace(record, from: processingWorkspace)
+  }
+
+  private func markProcessingFailed(
+    _ id: String,
+    failedAttempts: Int,
+    recovery: CaptureProcessingRecovery?,
+    error: Error,
+    in processingWorkspace: CaptureWorkspace
+  ) async {
+    guard var record = await processingWorkspace.record(id: id) else { return }
+    record.stage = .failed
+    record.automaticProcessingAttempts = failedAttempts
+    record.automaticProcessingRetryAt = nil
+    record.processingRetryPolicyVersion = CaptureProcessingRetryPolicy.currentVersion
+    record.processingRecovery = recovery
+    record.error = error.localizedDescription
+    try? await processingWorkspace.save(record)
+    replace(record, from: processingWorkspace)
+  }
+
+  private func markProcessingExhausted(
+    _ id: String, in processingWorkspace: CaptureWorkspace
+  ) async {
+    guard var record = await processingWorkspace.record(id: id) else { return }
+    record.stage = .failed
+    record.automaticProcessingAttempts = CaptureProcessingRetryPolicy.maximumAttempts
+    record.automaticProcessingRetryAt = nil
+    record.processingRetryPolicyVersion = CaptureProcessingRetryPolicy.currentVersion
+    record.processingRecovery = nil
+    record.error = record.error ?? "JesSee could not finish processing after several attempts."
+    try? await processingWorkspace.save(record)
+    replace(record, from: processingWorkspace)
+  }
+
+  private func captureFinished(_ id: String, in processingWorkspace: CaptureWorkspace) async {
+    if isCurrentWorkspace(processingWorkspace) { await loadLibrary() }
     recordUsage(.storyCreated, feature: "story_creation")
     let center = UNUserNotificationCenter.current()
     center.removeDeliveredNotifications(withIdentifiers: ["processing-\(id)"])
     _ = try? await center.requestAuthorization(options: [.alert, .sound])
     let content = UNMutableNotificationContent()
     content.title = "Your JesSee story is ready"
-    content.body = captures.first(where: { $0.id == id })?.title ?? "Open the library to review it."
+    let completedRecord = await processingWorkspace.record(id: id)
+    content.body = completedRecord?.title ?? "Open the library to review it."
     try? await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
   }
 
@@ -532,6 +693,21 @@ final class AppStore: ObservableObject {
     let center = UNUserNotificationCenter.current()
     center.removePendingNotificationRequests(withIdentifiers: ["processing-\(id)"])
     center.removeDeliveredNotifications(withIdentifiers: ["processing-\(id)"])
+  }
+
+  private func cancelProcessingForWorkspaceChange() {
+    for (id, task) in processingTasks {
+      task.cancel()
+      processingNotificationTasks[id]?.cancel()
+      processingNotificationTasks[id] = nil
+      let center = UNUserNotificationCenter.current()
+      center.removePendingNotificationRequests(withIdentifiers: ["processing-\(id)"])
+      center.removeDeliveredNotifications(withIdentifiers: ["processing-\(id)"])
+    }
+  }
+
+  private func isCurrentWorkspace(_ candidate: CaptureWorkspace) -> Bool {
+    workspace?.rootURL == candidate.rootURL
   }
 
   private func persistConfiguration() {
@@ -582,6 +758,12 @@ final class AppStore: ObservableObject {
       } catch PolyformClientError.refreshTooEarly {
         // The local clock can enter the refresh window slightly before the server.
       } catch PolyformClientError.authenticationRequired {
+        if let current = workflowSession,
+          current.grantID != session.grantID,
+          current.expiresAt > Date()
+        {
+          return current.accessToken
+        }
         signOutAfterAuthenticationFailure()
         throw JesSeeError.signInRequired
       } catch is CancellationError {
@@ -597,18 +779,87 @@ final class AppStore: ObservableObject {
     return session.accessToken
   }
 
-  private func processingService() async throws -> StoryProcessingService {
-    switch configuration.aiProviderMode {
+  private func processingService(for provider: AIProviderMode?) async throws
+    -> ProcessingServiceContext
+  {
+    switch provider {
     case .polyformCovered:
       guard let polyformClient else { throw JesSeeError.serviceNotConfigured }
-      return .polyform(client: polyformClient, accessToken: try await accessToken())
+      let token = try await accessToken()
+      return ProcessingServiceContext(
+        service: .polyform(client: polyformClient, accessToken: token),
+        credential: .polyform(token))
     case .bringYourOwnKey:
       guard let apiKey = try JesSeeKeychain.loadAPIKey() else {
         throw JesSeeError.missingAPIKey
       }
-      return .openAI(client: DirectOpenAIClient(), apiKey: apiKey)
+      return ProcessingServiceContext(
+        service: .openAI(client: DirectOpenAIClient(), apiKey: apiKey),
+        credential: .openAI(apiKey))
     case nil:
       throw JesSeeError.invalidResponse("Choose how JesSee should cover AI processing first.")
+    }
+  }
+
+  private func credentialIdentity(for provider: AIProviderMode?) -> ProcessingCredentialIdentity? {
+    switch provider {
+    case .polyformCovered:
+      return workflowSession.map { .polyform($0.accessToken) }
+    case .bringYourOwnKey:
+      do {
+        guard let apiKey = try JesSeeKeychain.loadAPIKey() else { return nil }
+        return .openAI(apiKey)
+      } catch {
+        return nil
+      }
+    case nil:
+      return nil
+    }
+  }
+
+  private func hasRepairedCredential(
+    after attemptedCredential: ProcessingCredentialIdentity?,
+    for provider: AIProviderMode?,
+    error: Error
+  ) -> Bool {
+    let isCredentialFailure: Bool = switch provider {
+    case .bringYourOwnKey:
+      error as? JesSeeError == .invalidAPIKey
+    case .polyformCovered:
+      if let clientError = error as? PolyformClientError,
+        case .authenticationRequired = clientError
+      {
+        true
+      } else {
+        error as? JesSeeError == .signInRequired
+      }
+    case nil:
+      false
+    }
+    guard isCredentialFailure, let currentCredential = credentialIdentity(for: provider) else {
+      return false
+    }
+    return currentCredential != attemptedCredential
+  }
+
+  private func canProcess(_ record: CaptureRecord) -> Bool {
+    guard let provider = record.processingProviderMode ?? configuration.aiProviderMode else {
+      return false
+    }
+    switch provider {
+    case .polyformCovered:
+      return polyformManagedAIAvailable && polyformClient != nil && workflowSession != nil
+    case .bringYourOwnKey:
+      return hasAPIKey
+    }
+  }
+
+  private func hasCredential(for recovery: CaptureProcessingRecovery) -> Bool {
+    switch recovery {
+    case .polyformSignIn:
+      return polyformManagedAIAvailable && polyformClient != nil && workflowSession != nil
+    case .openAIKey:
+      return hasAPIKey
     }
   }
 
@@ -647,6 +898,18 @@ final class AppStore: ObservableObject {
     return error
   }
 
+  private func credentialRecovery(
+    for error: Error, provider: AIProviderMode?
+  ) -> CaptureProcessingRecovery? {
+    guard let error = error as? JesSeeError else { return nil }
+    switch (provider, error) {
+    case (.polyformCovered, .signInRequired): return .polyformSignIn
+    case (.bringYourOwnKey, .missingAPIKey), (.bringYourOwnKey, .invalidAPIKey):
+      return .openAIKey
+    default: return nil
+    }
+  }
+
   private func restoreCompletedSetupIfPossible(for mode: AIProviderMode) {
     guard configuration.aiProviderMode == mode,
       !configuration.outputFolderPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -667,6 +930,16 @@ final class AppStore: ObservableObject {
       if self?.notice == value { self?.notice = nil }
     }
   }
+}
+
+private struct ProcessingServiceContext {
+  var service: StoryProcessingService
+  var credential: ProcessingCredentialIdentity
+}
+
+private enum ProcessingCredentialIdentity: Equatable {
+  case polyform(String)
+  case openAI(String)
 }
 
 private final class JesSeeNotificationDelegate: NSObject, UNUserNotificationCenterDelegate,

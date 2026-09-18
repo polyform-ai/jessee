@@ -29,6 +29,7 @@ public actor CaptureWorkspace {
   public func importMedia(
     from sourceURL: URL,
     source: CaptureSource,
+    processingProviderMode: AIProviderMode? = nil,
     recordingMarkups: [RecordingMarkupStroke]? = nil
   ) throws -> CaptureRecord {
     guard FileManager.default.fileExists(atPath: sourceURL.path) else {
@@ -55,7 +56,9 @@ public actor CaptureWorkspace {
       title: fallbackTitle,
       source: source,
       mediaFilename: filename,
-      recordingMarkups: recordingMarkups
+      recordingMarkups: recordingMarkups,
+      processingRetryPolicyVersion: CaptureProcessingRetryPolicy.currentVersion,
+      processingProviderMode: processingProviderMode
     )
     try save(record)
     return record

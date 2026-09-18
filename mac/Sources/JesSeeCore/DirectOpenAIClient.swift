@@ -64,7 +64,8 @@ public struct DirectOpenAIClient: Sendable {
     request.httpBody = body
 
     let data = try await checkedData(for: request, operation: "Transcription")
-    let payload = try JSONDecoder().decode(DirectTranscriptionPayload.self, from: data)
+    let payload: DirectTranscriptionPayload = try decodeResponse(
+      from: data, operation: "Transcription")
     return TranscriptDocument(
       text: payload.text, language: payload.language, duration: payload.duration,
       segments: (payload.segments ?? []).enumerated().map { index, segment in
@@ -127,11 +128,12 @@ public struct DirectOpenAIClient: Sendable {
     request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
     let data = try await checkedData(for: request, operation: "Story creation")
-    let response = try JSONDecoder().decode(DirectResponsesPayload.self, from: data)
+    let response: DirectResponsesPayload = try decodeResponse(
+      from: data, operation: "Story creation")
     guard let text = response.outputText, let json = Self.jsonData(from: text) else {
       throw JesSeeError.invalidResponse("JesSee received an incomplete story from OpenAI.")
     }
-    let draft = try JSONDecoder().decode(StoryDraft.self, from: json)
+    let draft: StoryDraft = try decodeResponse(from: json, operation: "Story creation")
     let eligibleFrames = attachedFrames.isEmpty ? frames : attachedFrames
     return StoryRefinement.document(from: draft, eligibleFrames: eligibleFrames)
   }
@@ -192,24 +194,37 @@ public struct DirectOpenAIClient: Sendable {
     request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
     let data = try await checkedData(for: request, operation: "Story refinement")
-    let response = try JSONDecoder().decode(DirectResponsesPayload.self, from: data)
+    let response: DirectResponsesPayload = try decodeResponse(
+      from: data, operation: "Story refinement")
     guard let text = response.outputText, let json = Self.jsonData(from: text) else {
       throw JesSeeError.invalidResponse("JesSee received an incomplete refined story from OpenAI.")
     }
-    let draft = try JSONDecoder().decode(StoryDraft.self, from: json)
+    let draft: StoryDraft = try decodeResponse(from: json, operation: "Story refinement")
     let eligibleFrames = attachedFrames.isEmpty ? frames : attachedFrames
     return StoryRefinement.document(from: draft, eligibleFrames: eligibleFrames)
   }
 
   private func checkedData(for request: URLRequest, operation: String) async throws -> Data {
     let (data, response) = try await session.data(for: request)
-    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-      let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+    guard let http = response as? HTTPURLResponse else {
+      throw JesSeeError.serviceUnavailable("\(operation) returned an unreadable response.")
+    }
+    guard (200..<300).contains(http.statusCode) else {
+      if http.statusCode == 401 || http.statusCode == 403 { throw JesSeeError.invalidAPIKey }
       let message = String(data: data, encoding: .utf8) ?? "Unknown service error"
-      throw JesSeeError.serviceUnavailable(
-        "\(operation) failed (\(status)): \(message.prefix(280))")
+      throw JesSeeError.requestFailed(http.statusCode, String(message.prefix(280)))
     }
     return data
+  }
+
+  private func decodeResponse<Value: Decodable>(
+    from data: Data, operation: String
+  ) throws -> Value {
+    do {
+      return try JSONDecoder().decode(Value.self, from: data)
+    } catch {
+      throw JesSeeError.invalidResponse("\(operation) returned incomplete data.")
+    }
   }
 
   static func storyUserMessage(
