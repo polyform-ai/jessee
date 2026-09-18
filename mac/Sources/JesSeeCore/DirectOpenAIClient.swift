@@ -131,21 +131,74 @@ public struct DirectOpenAIClient: Sendable {
     guard let text = response.outputText, let json = Self.jsonData(from: text) else {
       throw JesSeeError.invalidResponse("JesSee received an incomplete story from OpenAI.")
     }
-    let draft = try JSONDecoder().decode(DirectStoryDraft.self, from: json)
+    let draft = try JSONDecoder().decode(StoryDraft.self, from: json)
     let eligibleFrames = attachedFrames.isEmpty ? frames : attachedFrames
-    return StoryDocument(
-      title: draft.title, sourceURL: PolyformClient.normalizedWebURL(draft.sourceURL),
-      summary: draft.summary, keyPoints: draft.keyPoints,
-      steps: draft.steps.map { step in
-        let frame = PolyformClient.selectedFrame(
-          requestedSeconds: step.screenshotTimeSeconds,
-          stepEndSeconds: step.endSeconds,
-          frames: eligibleFrames)
-        return StoryStep(
-          startSeconds: step.startSeconds, endSeconds: step.endSeconds, title: step.title,
-          narrative: step.narrative, transcript: step.transcript,
-          imageFilename: frame?.filename)
-      })
+    return StoryRefinement.document(from: draft, eligibleFrames: eligibleFrames)
+  }
+
+  public func refineStory(
+    _ story: StoryDocument,
+    transcript: TranscriptDocument,
+    frames: [CapturedFrame],
+    captureDirectory: URL,
+    round: Int,
+    apiKey: String
+  ) async throws -> StoryDocument {
+    let imageAttachments = frames.compactMap { frame -> (CapturedFrame, Data)? in
+      let imageURL = captureDirectory.appendingPathComponent(frame.filename)
+      guard let data = try? Data(contentsOf: imageURL) else { return nil }
+      return (frame, data)
+    }
+    let attachedFrames = imageAttachments.map(\.0)
+    let includedImageFilenames = Set(attachedFrames.map(\.filename))
+    var userContent: [[String: Any]] = [
+      [
+        "type": "input_text",
+        "text": try StoryRefinement.userMessage(
+          story: story,
+          transcript: transcript,
+          frames: frames,
+          includedImageFilenames: includedImageFilenames,
+          round: round),
+      ]
+    ]
+    for (frame, data) in imageAttachments {
+      userContent.append([
+        "type": "input_text",
+        "text":
+          "Nearby screenshot candidate at exactly \(frame.seconds) seconds. Return this exact value as screenshotTimeSeconds when this image best proves a step.",
+      ])
+      userContent.append([
+        "type": "input_image", "image_url": "data:image/jpeg;base64,\(data.base64EncodedString())",
+        "detail": "high",
+      ])
+    }
+
+    let payload: [String: Any] = [
+      "model": Self.storyModel,
+      "reasoning": ["effort": "medium"],
+      "input": [
+        [
+          "role": "system",
+          "content": [["type": "input_text", "text": StoryRefinement.prompt(round: round)]],
+        ],
+        ["role": "user", "content": userContent],
+      ],
+    ]
+    var request = URLRequest(url: baseURL.appendingPathComponent("responses"))
+    request.httpMethod = "POST"
+    request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+
+    let data = try await checkedData(for: request, operation: "Story refinement")
+    let response = try JSONDecoder().decode(DirectResponsesPayload.self, from: data)
+    guard let text = response.outputText, let json = Self.jsonData(from: text) else {
+      throw JesSeeError.invalidResponse("JesSee received an incomplete refined story from OpenAI.")
+    }
+    let draft = try JSONDecoder().decode(StoryDraft.self, from: json)
+    let eligibleFrames = attachedFrames.isEmpty ? frames : attachedFrames
+    return StoryRefinement.document(from: draft, eligibleFrames: eligibleFrames)
   }
 
   private func checkedData(for request: URLRequest, operation: String) async throws -> Data {
@@ -211,22 +264,6 @@ private struct DirectTranscriptionPayload: Decodable {
   var duration: Double?
   var segments: [Segment]?
   var words: [Word]?
-}
-
-private struct DirectStoryDraft: Decodable {
-  struct Step: Decodable {
-    var startSeconds: Double
-    var endSeconds: Double
-    var screenshotTimeSeconds: Double?
-    var title: String
-    var narrative: String
-    var transcript: String
-  }
-  var title: String
-  var sourceURL: String?
-  var summary: String
-  var keyPoints: [String]
-  var steps: [Step]
 }
 
 private struct DirectResponsesPayload: Decodable {
