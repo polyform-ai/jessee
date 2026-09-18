@@ -37,6 +37,7 @@ struct MenuPopoverView: View {
 private struct HeaderView: View {
   @ObservedObject var store: AppStore
   let openLibrary: () -> Void
+  @Environment(\.openSettings) private var openSettings
   @State private var hoveredAction: String?
 
   var body: some View {
@@ -59,7 +60,7 @@ private struct HeaderView: View {
           Button(action: SoftwareUpdateController.shared.checkForUpdates) {
             Image(systemName: "arrow.triangle.2.circlepath")
           }.jesseeHoverHelp("Check for Updates", onChange: showAction)
-          Button(action: store.openSettings) { Image(systemName: "gearshape") }
+          Button(action: presentSettings) { Image(systemName: "gearshape") }
             .jesseeHoverHelp("Settings", onChange: showAction)
           Button {
             NSApp.terminate(nil)
@@ -82,6 +83,11 @@ private struct HeaderView: View {
 
   private func showAction(_ message: String?) {
     withAnimation(.easeOut(duration: 0.1)) { hoveredAction = message }
+  }
+
+  private func presentSettings() {
+    openSettings()
+    NSApp.activate(ignoringOtherApps: true)
   }
 }
 
@@ -322,30 +328,44 @@ private struct ProviderChoiceStep: View {
       Text(
         store.isPolyformCoveredAvailable
           ? "Both options create the same editable story and PDF."
-          : "Bring your own OpenAI key to create editable stories and PDFs."
+          : "Choose Bring Your Own Key now. Polyform Covered will be selectable when available."
       )
         .font(.caption).foregroundStyle(.secondary)
-      if store.isPolyformCoveredAvailable {
-        providerButton(
-          title: "Polyform Covered",
-          detail: "Sign in by email. Polyform covers transcription and AI costs.",
-          icon: "heart.fill", mode: .polyformCovered)
-      } else {
-        Label("Polyform Covered is temporarily unavailable", systemImage: "clock")
-          .font(.caption).foregroundStyle(.secondary)
-      }
+      AIProviderModeSelector(
+        selection: store.configuration.aiProviderMode,
+        isPolyformCoveredAvailable: store.isPolyformCoveredAvailable,
+        onSelect: store.selectProvider)
+    }
+  }
+}
+
+private struct AIProviderModeSelector: View {
+  let selection: AIProviderMode?
+  let isPolyformCoveredAvailable: Bool
+  let onSelect: (AIProviderMode) -> Void
+
+  var body: some View {
+    VStack(spacing: 8) {
+      providerButton(
+        title: "Polyform Covered",
+        detail: isPolyformCoveredAvailable
+          ? "Sign in by email. Polyform covers transcription and AI costs."
+          : "Temporarily unavailable in this version.",
+        icon: "heart.fill", mode: .polyformCovered,
+        isAvailable: isPolyformCoveredAvailable)
       providerButton(
         title: "Bring Your Own Key",
         detail: "Use your own OpenAI API key, saved securely in this Mac's Keychain.",
-        icon: "key.fill", mode: .bringYourOwnKey)
+        icon: "key.fill", mode: .bringYourOwnKey, isAvailable: true)
     }
   }
 
   private func providerButton(
-    title: String, detail: String, icon: String, mode: AIProviderMode
+    title: String, detail: String, icon: String, mode: AIProviderMode, isAvailable: Bool
   ) -> some View {
-    Button {
-      store.selectProvider(mode)
+    let isSelected = selection == mode
+    return Button {
+      onSelect(mode)
     } label: {
       HStack(alignment: .top, spacing: 11) {
         Image(systemName: icon).foregroundStyle(mode == .polyformCovered ? signal : accent)
@@ -356,13 +376,22 @@ private struct ProviderChoiceStep: View {
             .fixedSize(horizontal: false, vertical: true)
         }
         Spacer()
-        Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+          .foregroundStyle(isSelected ? accent : Color.secondary.opacity(0.45))
       }
       .padding(12).contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .background(accent.opacity(0.055), in: RoundedRectangle(cornerRadius: 11))
-    .overlay(RoundedRectangle(cornerRadius: 11).stroke(accent.opacity(0.16)))
+    .background(
+      (isSelected ? accent.opacity(0.1) : accent.opacity(0.035)),
+      in: RoundedRectangle(cornerRadius: 11))
+    .overlay(
+      RoundedRectangle(cornerRadius: 11)
+        .stroke(isSelected ? accent.opacity(0.5) : accent.opacity(0.14)))
+    .disabled(!isAvailable)
+    .opacity(isAvailable ? 1 : 0.62)
+    .accessibilityLabel(title)
+    .accessibilityValue(isSelected ? "Selected" : isAvailable ? "Available" : "Unavailable")
   }
 }
 
@@ -726,23 +755,10 @@ struct SettingsView: View {
   var body: some View {
     Form {
       Section("AI processing") {
-        if store.isPolyformCoveredAvailable {
-          Picker(
-            "Plan",
-            selection: Binding(
-              get: { store.configuration.aiProviderMode ?? .polyformCovered },
-              set: { store.changeProviderFromSettings($0) }
-            )
-          ) {
-            Text("Polyform Covered").tag(AIProviderMode.polyformCovered)
-            Text("Bring Your Own Key").tag(AIProviderMode.bringYourOwnKey)
-          }
-          .pickerStyle(.segmented)
-        } else {
-          LabeledContent("Plan", value: "Bring Your Own Key")
-          Text("Polyform Covered is temporarily unavailable while its managed service is finalized.")
-            .font(.caption).foregroundStyle(.secondary)
-        }
+        AIProviderModeSelector(
+          selection: store.configuration.aiProviderMode,
+          isPolyformCoveredAvailable: store.isPolyformCoveredAvailable,
+          onSelect: store.changeProviderFromSettings)
 
         if store.isPolyformCoveredAvailable,
           store.configuration.aiProviderMode == .polyformCovered

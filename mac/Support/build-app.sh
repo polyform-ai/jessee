@@ -5,6 +5,12 @@ repo_dir=${0:A:h:h:h}
 configuration=${1:-release}
 output_dir="$repo_dir/mac/build"
 app_dir="$output_dir/JesSee.app"
+managed_ai_enabled=${JESSEE_MANAGED_AI_ENABLED:-0}
+
+if [[ "${JESSEE_DISTRIBUTION:-0}" == "1" && "$managed_ai_enabled" == "1" ]]; then
+  echo "Managed AI is disabled for distribution builds." >&2
+  exit 1
+fi
 
 cd "$repo_dir"
 build_arguments=(-c "$configuration")
@@ -45,8 +51,6 @@ if [[ -n "${JESSEE_SPARKLE_PUBLIC_KEY:-}" ]]; then
   /usr/libexec/PlistBuddy -c "Set :SUPublicEDKey $JESSEE_SPARKLE_PUBLIC_KEY" "$app_dir/Contents/Info.plist"
 fi
 runtime_settings=(
-  "PFTranscriptionWorkflowURL:JESSEE_TRANSCRIPTION_WORKFLOW_URL"
-  "PFStoryWorkflowURL:JESSEE_STORY_WORKFLOW_URL"
   "PFGA4MeasurementID:JESSEE_GA4_MEASUREMENT_ID"
   "PFGA4APISecret:JESSEE_GA4_API_SECRET"
 )
@@ -58,6 +62,31 @@ for setting in "${runtime_settings[@]}"; do
     /usr/libexec/PlistBuddy -c "Add :$plist_key string $value" "$app_dir/Contents/Info.plist"
   fi
 done
+if [[ "$managed_ai_enabled" == "1" ]]; then
+  if [[ -z "${JESSEE_TRANSCRIPTION_WORKFLOW_URL:-}" || -z "${JESSEE_STORY_WORKFLOW_URL:-}" ]]; then
+    echo "Managed AI test builds require both JesSee workflow URLs." >&2
+    exit 1
+  fi
+  if ! swift -e '
+    import Foundation
+    let environment = ProcessInfo.processInfo.environment
+    let keys = ["JESSEE_TRANSCRIPTION_WORKFLOW_URL", "JESSEE_STORY_WORKFLOW_URL"]
+    let valid = keys.allSatisfy { key in
+      guard let value = environment[key], let url = URL(string: value),
+        url.scheme == "https", let host = url.host
+      else { return false }
+      return !host.isEmpty
+    }
+    if !valid { exit(1) }
+  '
+  then
+    echo "Managed AI workflow URLs must be valid HTTPS URLs." >&2
+    exit 1
+  fi
+  /usr/libexec/PlistBuddy -c "Add :PFTranscriptionWorkflowURL string $JESSEE_TRANSCRIPTION_WORKFLOW_URL" "$app_dir/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Add :PFStoryWorkflowURL string $JESSEE_STORY_WORKFLOW_URL" "$app_dir/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set :PFManagedAIEnabled true" "$app_dir/Contents/Info.plist"
+fi
 
 iconset=$(mktemp -d)/JesSee.iconset
 mkdir -p "$iconset"

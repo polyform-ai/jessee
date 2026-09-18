@@ -29,21 +29,25 @@ public struct PolyformServiceConfiguration: Sendable, Equatable {
       let apiBaseValue = bundle.object(forInfoDictionaryKey: apiBaseInfoKey) as? String,
       let apiBase = URL(string: apiBaseValue), apiBase.scheme == "https",
       let appKey = bundle.object(forInfoDictionaryKey: appKeyInfoKey) as? String,
-      !appKey.isEmpty
+      !appKey.isEmpty,
+      let transcriptionWorkflowURL = validatedHTTPSURL(
+        bundle.object(forInfoDictionaryKey: transcriptionURLInfoKey)),
+      let storyWorkflowURL = validatedHTTPSURL(
+        bundle.object(forInfoDictionaryKey: storyURLInfoKey))
     else { return nil }
     return Self(
       apiBase: apiBase, appKey: appKey,
-      transcriptionWorkflowURL: optionalHTTPSURL(
-        bundle.object(forInfoDictionaryKey: transcriptionURLInfoKey)),
-      storyWorkflowURL: optionalHTTPSURL(bundle.object(forInfoDictionaryKey: storyURLInfoKey)))
+      transcriptionWorkflowURL: transcriptionWorkflowURL,
+      storyWorkflowURL: storyWorkflowURL)
   }
 
   public func authURL(_ action: String) -> URL {
     apiBase.appending(path: "workflow-auth/\(appKey)/\(action)")
   }
 
-  private static func optionalHTTPSURL(_ value: Any?) -> URL? {
-    guard let value = value as? String, let url = URL(string: value), url.scheme == "https"
+  static func validatedHTTPSURL(_ value: Any?) -> URL? {
+    guard let value = value as? String, let url = URL(string: value), url.scheme == "https",
+      let host = url.host, !host.isEmpty
     else { return nil }
     return url
   }
@@ -507,18 +511,20 @@ struct WorkflowResponse<Result: Decodable>: Decodable {
     private enum CodingKeys: String, CodingKey { case result }
   }
 
-  private struct NestedOutputJSON<Value: Decodable>: Decodable {
-    var outputJSON: Value
+  private struct NestedWorkflowOutput<Value: Decodable>: Decodable {
+    var value: Value
 
     private enum CodingKeys: String, CodingKey {
+      case output
       case snakeCase = "output_json"
       case camelCase = "outputJson"
     }
 
     init(from decoder: Decoder) throws {
       let container = try decoder.container(keyedBy: CodingKeys.self)
-      outputJSON =
-        try container.decodeIfPresent(Value.self, forKey: .snakeCase)
+      value =
+        try container.decodeIfPresent(Value.self, forKey: .output)
+        ?? container.decodeIfPresent(Value.self, forKey: .snakeCase)
         ?? container.decode(Value.self, forKey: .camelCase)
     }
   }
@@ -531,17 +537,17 @@ struct WorkflowResponse<Result: Decodable>: Decodable {
     } else if let nested = try? container.decode(NestedResult.self, forKey: .result) {
       result = nested.result
     } else if let nested = try? container.decode(
-      NestedOutputJSON<Result>.self, forKey: .result)
+      NestedWorkflowOutput<Result>.self, forKey: .result)
     {
-      result = nested.outputJSON
+      result = nested.value
     } else if let text = try? container.decode(String.self, forKey: .result) {
       result = try Self.decodeJSONText(text, codingPath: container.codingPath)
     } else if let nested = try? container.decode(NestedTextResult.self, forKey: .result) {
       result = try Self.decodeJSONText(nested.result, codingPath: container.codingPath)
     } else if let nested = try? container.decode(
-      NestedOutputJSON<String>.self, forKey: .result)
+      NestedWorkflowOutput<String>.self, forKey: .result)
     {
-      result = try Self.decodeJSONText(nested.outputJSON, codingPath: container.codingPath)
+      result = try Self.decodeJSONText(nested.value, codingPath: container.codingPath)
     } else {
       result = try container.decode(NestedResult.self, forKey: .result).result
     }

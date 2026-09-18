@@ -403,11 +403,6 @@ final class AppStore: ObservableObject {
     show(.success("Public PDF link copied."))
   }
 
-  func openSettings() {
-    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-    NSApp.activate(ignoringOtherApps: true)
-  }
-
   func clearNotice() { notice = nil }
 
   private func addCapture(
