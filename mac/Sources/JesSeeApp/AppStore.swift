@@ -432,8 +432,10 @@ final class AppStore: ObservableObject {
         processingProviderMode: configuration.aiProviderMode,
         recordingMarkups: recordingMarkups)
       if deleteSourceAfterImport { try? FileManager.default.removeItem(at: url) }
+      guard isCurrentWorkspace(workspace) else { return }
       captures = await workspace.allRecords()
-      startProcessing(record, notifyStarted: true)
+      guard isCurrentWorkspace(workspace) else { return }
+      startProcessing(record, in: workspace, notifyStarted: true)
       recordUsage(
         .captureAdded,
         feature: source == .recording ? "screen_recording" : "video_import",
@@ -444,8 +446,11 @@ final class AppStore: ObservableObject {
     }
   }
 
-  private func startProcessing(_ record: CaptureRecord, notifyStarted: Bool = false) {
-    guard processingTasks[record.id] == nil, let processingWorkspace = workspace else { return }
+  private func startProcessing(
+    _ record: CaptureRecord, in processingWorkspace: CaptureWorkspace,
+    notifyStarted: Bool = false
+  ) {
+    guard processingTasks[record.id] == nil else { return }
     let provider = record.processingProviderMode ?? configuration.aiProviderMode
     let appStore = self
     let task = Task {
@@ -537,12 +542,14 @@ final class AppStore: ObservableObject {
       return
     }
     do {
-      captures = try await workspace.load()
-      for capture in captures
+      let loadedCaptures = try await workspace.load()
+      guard isCurrentWorkspace(workspace) else { return }
+      captures = loadedCaptures
+      for capture in loadedCaptures
       where canProcess(capture)
         && CaptureProcessingRetryPolicy.shouldStartProcessing(capture)
       {
-        startProcessing(capture)
+        startProcessing(capture, in: workspace)
       }
     } catch {
       show(.error("JesSee could not open this library: \(error.localizedDescription)"))
@@ -699,10 +706,11 @@ final class AppStore: ObservableObject {
     center.removeDeliveredNotifications(withIdentifiers: ["processing-\(id)"])
     guard isCurrentWorkspace(processingWorkspace),
       let record = await processingWorkspace.record(id: id),
+      isCurrentWorkspace(processingWorkspace),
       canProcess(record),
       CaptureProcessingRetryPolicy.shouldStartProcessing(record)
     else { return }
-    startProcessing(record)
+    startProcessing(record, in: processingWorkspace)
   }
 
   private func cancelProcessingForWorkspaceChange() {
