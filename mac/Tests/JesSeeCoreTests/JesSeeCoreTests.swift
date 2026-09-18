@@ -138,6 +138,38 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(!CaptureProcessingRetryPolicy.shouldRetry(URLError(.badURL)))
 }
 
+@Test func cancelledTasksDoNotClassifyWrappedNetworkFailures() {
+  #expect(
+    !CaptureProcessingRetryPolicy.shouldClassifyFailure(
+      URLError(.cancelled), taskIsCancelled: true))
+  #expect(
+    !CaptureProcessingRetryPolicy.shouldClassifyFailure(
+      PolyformClientError.requestFailed(0, "cancelled"), taskIsCancelled: true))
+  #expect(
+    !CaptureProcessingRetryPolicy.shouldClassifyFailure(
+      CancellationError(), taskIsCancelled: false))
+  #expect(
+    CaptureProcessingRetryPolicy.shouldClassifyFailure(
+      URLError(.timedOut), taskIsCancelled: false))
+}
+
+@Test func interruptedProcessingRemainsEligibleForAutomaticHandoff() {
+  let interrupted = CaptureRecord(
+    title: "Interrupted", source: .recording, stage: .transcribing,
+    mediaFilename: "recording.mp4", automaticProcessingAttempts: 1)
+  let complete = CaptureRecord(
+    title: "Complete", source: .recording, stage: .ready,
+    mediaFilename: "recording.mp4")
+  let terminal = CaptureRecord(
+    title: "Terminal", source: .recording, stage: .failed,
+    mediaFilename: "recording.mp4", automaticProcessingAttempts: 6,
+    processingRetryPolicyVersion: CaptureProcessingRetryPolicy.currentVersion)
+
+  #expect(CaptureProcessingRetryPolicy.shouldStartProcessing(interrupted))
+  #expect(!CaptureProcessingRetryPolicy.shouldStartProcessing(complete))
+  #expect(!CaptureProcessingRetryPolicy.shouldStartProcessing(terminal))
+}
+
 @Test func captureRecordsFromEarlierBuildsDecodeWithoutRetryState() throws {
   let original = CaptureRecord(
     title: "Earlier capture", source: .recording, mediaFilename: "recording.mp4")
