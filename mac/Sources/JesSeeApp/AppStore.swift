@@ -618,8 +618,10 @@ final class AppStore: ObservableObject {
     try? JesSeeKeychain.removeWorkflowSession()
     workflowSession = nil
     authenticationState = .signedOut
-    configuration.setupCompleted = false
-    setupStep = 0
+    if configuration.aiProviderMode == .polyformCovered {
+      configuration.setupCompleted = false
+      setupStep = 0
+    }
     persistConfiguration()
   }
 
