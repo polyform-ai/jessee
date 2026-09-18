@@ -7,11 +7,6 @@ output_dir="$repo_dir/mac/build"
 app_dir="$output_dir/JesSee.app"
 managed_ai_enabled=${JESSEE_MANAGED_AI_ENABLED:-0}
 
-if [[ "${JESSEE_DISTRIBUTION:-0}" == "1" && "$managed_ai_enabled" == "1" ]]; then
-  echo "Managed AI is disabled for distribution builds." >&2
-  exit 1
-fi
-
 cd "$repo_dir"
 build_arguments=(-c "$configuration")
 if [[ "${JESSEE_DISTRIBUTION:-0}" == "1" ]]; then

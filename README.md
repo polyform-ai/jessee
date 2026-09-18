@@ -15,7 +15,7 @@ Use it for:
 
 ## What the Mac app includes
 
-- A guided Bring Your Own Key setup, plus output folder and microphone access
+- A guided choice between Polyform Covered and Bring Your Own Key, plus output folder and microphone access
 - Menu-bar recording for any selected window, app, or display
 - A live timer, microphone meter, drawing and highlighting controls
 - Global recording shortcuts, including `⌥S` to stop and process
@@ -24,10 +24,10 @@ Use it for:
 - A local library with processing state, retry, replay, and editable history
 - A Tiptap-based visual editor for headings, paragraphs, lists, callouts, image choice, and image markup
 - One continuous PDF plus an HTML copy, captions, transcript, screenshots, narration, and original video in a folder you control
-- Retained, feature-gated Polyform workflow and public-link integration for a later release
+- Authenticated Polyform workflows for covered AI processing and public PDF links
 - Signed updates through Sparkle
 
-JesSee requires macOS 15 or newer. The current release uses **Bring Your Own Key**: your OpenAI API key is stored in the Mac Keychain, and narration and selected screenshots are sent directly to OpenAI. Recordings, screenshots, generated files, and PDFs remain in the output folder you choose. The Polyform Covered and public-link implementation remains in the codebase but is disabled until the managed service is ready for a signed end-to-end release test.
+JesSee requires macOS 15 or newer. **Polyform Covered** lets you sign in by email while Polyform covers transcription and AI costs. **Bring Your Own Key** stores your OpenAI API key in the Mac Keychain and sends narration and selected screenshots directly to OpenAI. Recordings, screenshots, generated files, and PDFs remain in the output folder you choose. Public PDF links use the same optional Polyform sign-in.
 
 Anonymous feature-usage sharing is optional and off by default. When enabled, JesSee sends completed feature names, app version, counts, and a random installation ID directly to GA4. It never includes media, narration, story text, filenames, email, or API keys. See [Feature usage events](docs/FEATURE_USAGE_EVENTS.md) for the exact contract.
 

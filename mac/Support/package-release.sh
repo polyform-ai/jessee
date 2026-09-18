@@ -46,10 +46,23 @@ notary_submit() {
 
 cd "$repo_dir"
 JESSEE_DISTRIBUTION=1 \
-  JESSEE_MANAGED_AI_ENABLED=0 \
+  JESSEE_MANAGED_AI_ENABLED=1 \
   JESSEE_VERSION="$version" \
   JESSEE_BUILD_NUMBER="$build_number" \
   mac/Support/build-app.sh release
+
+info_plist="$app_dir/Contents/Info.plist"
+if [[ "$(/usr/libexec/PlistBuddy -c 'Print :PFManagedAIEnabled' "$info_plist")" != "true" ]]; then
+  echo "The release app was built without Polyform Covered enabled." >&2
+  exit 1
+fi
+for workflow_key in PFTranscriptionWorkflowURL PFStoryWorkflowURL; do
+  workflow_url=$(/usr/libexec/PlistBuddy -c "Print :$workflow_key" "$info_plist")
+  if [[ "$workflow_url" != https://* ]]; then
+    echo "The release app is missing a valid $workflow_key value." >&2
+    exit 1
+  fi
+done
 
 mkdir -p "$updates_dir" "$installers_dir"
 rm -f "$archive_path" "$dmg_path" "$notes_path" "$appcast_path" "$updates_dir"/*.delta(N)
