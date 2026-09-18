@@ -39,7 +39,9 @@ struct StoryWebEditor: NSViewRepresentable {
     return webView
   }
 
-  func updateNSView(_ webView: WKWebView, context: Context) {}
+  func updateNSView(_ webView: WKWebView, context: Context) {
+    context.coordinator.onAction = onAction
+  }
 
   static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
     webView.configuration.userContentController.removeScriptMessageHandler(forName: "storyEditor")
@@ -97,7 +99,7 @@ struct StoryWebEditor: NSViewRepresentable {
   @MainActor
   final class Coordinator: NSObject, WKScriptMessageHandler {
     weak var webView: WKWebView?
-    let onAction: (StoryDocument, String, @escaping (Bool, String, String?) -> Void) -> Void
+    var onAction: (StoryDocument, String, @escaping (Bool, String, String?) -> Void) -> Void
 
     init(
       onAction: @escaping (StoryDocument, String, @escaping (Bool, String, String?) -> Void) -> Void

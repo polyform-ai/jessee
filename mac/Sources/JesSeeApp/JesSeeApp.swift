@@ -34,9 +34,15 @@ struct JesSeeMacApp: App {
 
 private struct RecorderMenuIcon: View {
   @ObservedObject var store: AppStore
+  @ObservedObject private var recorder: RecordingCoordinator
   @Environment(\.openWindow) private var openWindow
   @Environment(\.openSettings) private var openSettings
   @State private var handledLaunchRequest = false
+
+  init(store: AppStore) {
+    self.store = store
+    self._recorder = ObservedObject(wrappedValue: store.recorder)
+  }
 
   var body: some View {
     Group {
@@ -71,5 +77,4 @@ private struct RecorderMenuIcon: View {
     }
   }
 
-  private var recorder: RecordingCoordinator { store.recorder }
 }

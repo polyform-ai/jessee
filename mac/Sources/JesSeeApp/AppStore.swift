@@ -331,7 +331,7 @@ final class AppStore: ObservableObject {
       try await workspace.write(story, filename: "story.json", for: record)
       let rendered = try DocumentRenderer.render(
         story: story, in: workspace.directoryURL(for: record))
-      var updated = record
+      var updated = await workspace.record(id: record.id) ?? record
       updated.title = story.title
       updated.storyFilename = "story.json"
       updated.htmlFilename = rendered.html
