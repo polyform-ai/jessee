@@ -87,6 +87,26 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(PolyformServiceConfiguration.validatedHTTPSURL(nil) == nil)
 }
 
+@Test func polyformAuthConfigurationDoesNotRequireManagedAI() {
+  let apiBase = URL(string: "https://api.example.test")!
+  let transcription = URL(string: "https://api.example.test/transcription")!
+  let story = URL(string: "https://api.example.test/story")!
+
+  #expect(
+    PolyformServiceConfiguration(apiBase: apiBase, appKey: "app-key").supportsManagedAI
+      == false)
+  #expect(
+    PolyformServiceConfiguration(
+      apiBase: apiBase, appKey: "app-key", transcriptionWorkflowURL: transcription,
+      storyWorkflowURL: story, managedAIEnabled: false
+    ).supportsManagedAI == false)
+  #expect(
+    PolyformServiceConfiguration(
+      apiBase: apiBase, appKey: "app-key", transcriptionWorkflowURL: transcription,
+      storyWorkflowURL: story
+    ).supportsManagedAI == true)
+}
+
 @Suite(.serialized) struct PolyformClientTests {
 @Test func polyformClientUsesDocumentedSnakeCaseContracts() async throws {
   let configuration = URLSessionConfiguration.ephemeral

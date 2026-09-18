@@ -35,7 +35,8 @@ struct JesSeeMacApp: App {
 private struct RecorderMenuIcon: View {
   @ObservedObject var recorder: RecordingCoordinator
   @Environment(\.openWindow) private var openWindow
-  @State private var openedRequestedLibrary = false
+  @Environment(\.openSettings) private var openSettings
+  @State private var handledLaunchRequest = false
 
   var body: some View {
     Group {
@@ -49,11 +50,16 @@ private struct RecorderMenuIcon: View {
       }
     }
     .task {
-      guard !openedRequestedLibrary,
-        ProcessInfo.processInfo.arguments.contains("--open-library")
-      else { return }
-      openedRequestedLibrary = true
-      openWindow(id: "library")
+      guard !handledLaunchRequest else { return }
+      if ProcessInfo.processInfo.arguments.contains("--open-settings") {
+        handledLaunchRequest = true
+        openSettings()
+      } else if ProcessInfo.processInfo.arguments.contains("--open-library") {
+        handledLaunchRequest = true
+        openWindow(id: "library")
+      } else {
+        return
+      }
       NSApp.activate(ignoringOtherApps: true)
     }
   }
