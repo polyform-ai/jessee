@@ -356,6 +356,7 @@ private struct RecordingHUDView: View {
               .font(.system(size: 12, weight: .bold))
             Text("⌥S").font(.system(size: 9, weight: .bold)).opacity(0.82)
           }
+          .fixedSize(horizontal: true, vertical: false)
         }
         .buttonStyle(.borderedProminent).tint(.red).disabled(model.isStopping)
         .jesseeHoverHelp("Stop and process · ⌥S", onChange: showControl)
