@@ -2,7 +2,7 @@
 
 JesSee uses one Polyform workflow-auth group for email-approved access to transcription, story creation, and optional public PDF uploads. The Mac app uses PKCE, stores the returned bearer session in Keychain, and rotates the session through the workflow-auth refresh endpoint.
 
-> Release status: managed AI is retained but disabled. `PFManagedAIEnabled` is `false`, signed releases do not inject the workflow URLs, and the app offers Bring Your Own Key for AI processing. Polyform email authentication remains available for opt-in public PDF links; enable Polyform Covered AI only after the workflow and signed end-to-end checks below are complete.
+> Release status: Polyform Covered is enabled in signed releases. The release workflow injects the transcription and story workflow URLs, while Polyform email authentication also supports opt-in public PDF links. Bring Your Own Key remains available as a separate mode.
 
 These are production configuration steps; they are not performed by the app repository.
 
@@ -67,16 +67,16 @@ If a refinement call fails, JesSee keeps the latest complete story instead of di
 
 ## Release configuration
 
-Before enabling Polyform Covered in a future signed release, add these repository secrets:
+Signed releases require these repository secrets:
 
 - `TRANSCRIPTION_WORKFLOW_URL`
 - `STORY_WORKFLOW_URL`
 - `GA4_MEASUREMENT_ID`
 - `GA4_API_SECRET`
 
-When the feature gate is enabled, the workflow URLs are injected into the signed app bundle. The current release requires only the GA4 values for direct Measurement Protocol event ingestion; they are not user identity or authorization secrets.
+The workflow URLs are injected into the signed app bundle with the managed-AI feature gate enabled. The GA4 values support direct Measurement Protocol event ingestion; they are not user identity or authorization secrets.
 
-For local end-to-end testing, build the app with `JESSEE_MANAGED_AI_ENABLED=1` plus both `JESSEE_TRANSCRIPTION_WORKFLOW_URL` and `JESSEE_STORY_WORKFLOW_URL`. The build fails if managed mode is requested without both workflows. The committed Info.plist and signed release workflow continue to leave managed mode off by default.
+For local end-to-end testing, build the app with `JESSEE_MANAGED_AI_ENABLED=1` plus both `JESSEE_TRANSCRIPTION_WORKFLOW_URL` and `JESSEE_STORY_WORKFLOW_URL`. The build fails if managed mode is requested without both workflows. The committed Info.plist remains safe for ordinary local builds, while the signed release workflow explicitly enables managed mode and injects both URLs.
 
 ## Public PDFs
 

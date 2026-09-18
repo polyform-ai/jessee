@@ -48,6 +48,8 @@ jobs:
           APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
           GA4_MEASUREMENT_ID: ${{ secrets.GA4_MEASUREMENT_ID }}
           GA4_API_SECRET: ${{ secrets.GA4_API_SECRET }}
+          TRANSCRIPTION_WORKFLOW_URL: ${{ secrets.TRANSCRIPTION_WORKFLOW_URL }}
+          STORY_WORKFLOW_URL: ${{ secrets.STORY_WORKFLOW_URL }}
         shell: bash
         run: |
           set -euo pipefail
@@ -63,6 +65,10 @@ jobs:
           fi
           if [[ -z "$GA4_MEASUREMENT_ID" || -z "$GA4_API_SECRET" ]]; then
             echo "Configure both GA4 runtime values before preparing a release." >&2
+            exit 1
+          fi
+          if [[ -z "$TRANSCRIPTION_WORKFLOW_URL" || -z "$STORY_WORKFLOW_URL" ]]; then
+            echo "Configure both managed AI workflow URLs before preparing a release." >&2
             exit 1
           fi
           latest_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
@@ -131,6 +137,8 @@ jobs:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
           JESSEE_GA4_MEASUREMENT_ID: ${{ secrets.GA4_MEASUREMENT_ID }}
           JESSEE_GA4_API_SECRET: ${{ secrets.GA4_API_SECRET }}
+          JESSEE_TRANSCRIPTION_WORKFLOW_URL: ${{ secrets.TRANSCRIPTION_WORKFLOW_URL }}
+          JESSEE_STORY_WORKFLOW_URL: ${{ secrets.STORY_WORKFLOW_URL }}
         run: mac/Support/package-release.sh "${{ inputs.version }}" "${{ inputs.build_number }}"
 
       - name: Create the reviewable draft release
