@@ -573,7 +573,7 @@ final class AppStore: ObservableObject {
   }
 
   private func replace(_ record: CaptureRecord, from sourceWorkspace: CaptureWorkspace) {
-    guard workspace === sourceWorkspace else { return }
+    guard isCurrentWorkspace(sourceWorkspace) else { return }
     replace(record)
   }
 
@@ -652,7 +652,7 @@ final class AppStore: ObservableObject {
   }
 
   private func captureFinished(_ id: String, in processingWorkspace: CaptureWorkspace) async {
-    if workspace === processingWorkspace { await loadLibrary() }
+    if isCurrentWorkspace(processingWorkspace) { await loadLibrary() }
     recordUsage(.storyCreated, feature: "story_creation")
     let center = UNUserNotificationCenter.current()
     center.removeDeliveredNotifications(withIdentifiers: ["processing-\(id)"])
@@ -696,11 +696,18 @@ final class AppStore: ObservableObject {
   }
 
   private func cancelProcessingForWorkspaceChange() {
-    let captureIDs = Array(processingTasks.keys)
-    for id in captureIDs {
-      processingTasks[id]?.cancel()
-      finishProcessingLifecycle(id)
+    for (id, task) in processingTasks {
+      task.cancel()
+      processingNotificationTasks[id]?.cancel()
+      processingNotificationTasks[id] = nil
+      let center = UNUserNotificationCenter.current()
+      center.removePendingNotificationRequests(withIdentifiers: ["processing-\(id)"])
+      center.removeDeliveredNotifications(withIdentifiers: ["processing-\(id)"])
     }
+  }
+
+  private func isCurrentWorkspace(_ candidate: CaptureWorkspace) -> Bool {
+    workspace?.rootURL == candidate.rootURL
   }
 
   private func persistConfiguration() {
