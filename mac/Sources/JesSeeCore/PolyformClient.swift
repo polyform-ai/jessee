@@ -507,6 +507,22 @@ struct WorkflowResponse<Result: Decodable>: Decodable {
     private enum CodingKeys: String, CodingKey { case result }
   }
 
+  private struct NestedOutputJSON<Value: Decodable>: Decodable {
+    var outputJSON: Value
+
+    private enum CodingKeys: String, CodingKey {
+      case snakeCase = "output_json"
+      case camelCase = "outputJson"
+    }
+
+    init(from decoder: Decoder) throws {
+      let container = try decoder.container(keyedBy: CodingKeys.self)
+      outputJSON =
+        try container.decodeIfPresent(Value.self, forKey: .snakeCase)
+        ?? container.decode(Value.self, forKey: .camelCase)
+    }
+  }
+
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     success = try container.decode(Bool.self, forKey: .success)
@@ -514,10 +530,18 @@ struct WorkflowResponse<Result: Decodable>: Decodable {
       result = direct
     } else if let nested = try? container.decode(NestedResult.self, forKey: .result) {
       result = nested.result
+    } else if let nested = try? container.decode(
+      NestedOutputJSON<Result>.self, forKey: .result)
+    {
+      result = nested.outputJSON
     } else if let text = try? container.decode(String.self, forKey: .result) {
       result = try Self.decodeJSONText(text, codingPath: container.codingPath)
     } else if let nested = try? container.decode(NestedTextResult.self, forKey: .result) {
       result = try Self.decodeJSONText(nested.result, codingPath: container.codingPath)
+    } else if let nested = try? container.decode(
+      NestedOutputJSON<String>.self, forKey: .result)
+    {
+      result = try Self.decodeJSONText(nested.outputJSON, codingPath: container.codingPath)
     } else {
       result = try container.decode(NestedResult.self, forKey: .result).result
     }

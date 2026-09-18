@@ -38,7 +38,7 @@ Create a light protected AI wrapper that accepts this JSON contract:
 
 The wrapper owns the provider and model choice. Use the current quality model with medium reasoning, pass `user_input`, `prompt`, `attachments`, and `output_json` into the AI call, and return the parsed structured value under `result`:
 
-JesSee also accepts a JSON string, including a Markdown-fenced JSON response, inside the wrapper's ordinary `result.result` output. The Polyform workflow does not need a parsing or transformation node.
+JesSee accepts the structured story directly under `result`, under the wrapper's ordinary `result.result` output, or under the AI block's named `result.output_json` output. Any of those nested values may also be a JSON string, including a Markdown-fenced JSON response. The Polyform workflow does not need a parsing or transformation node.
 
 ```json
 {
