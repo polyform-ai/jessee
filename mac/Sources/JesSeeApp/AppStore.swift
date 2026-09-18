@@ -8,10 +8,12 @@ import SwiftUI
 final class AppStore: ObservableObject {
   private struct ProcessingTaskKey: Hashable {
     var workspaceID: ObjectIdentifier
+    var workspaceRootURL: URL
     var captureID: String
 
     init(workspace: CaptureWorkspace, captureID: String) {
       workspaceID = ObjectIdentifier(workspace)
+      workspaceRootURL = workspace.rootURL
       self.captureID = captureID
     }
   }
@@ -466,7 +468,9 @@ final class AppStore: ObservableObject {
     notifyStarted: Bool = false
   ) {
     let taskKey = ProcessingTaskKey(workspace: processingWorkspace, captureID: record.id)
-    guard processingTasks[taskKey] == nil else { return }
+    guard processingTasks[taskKey] == nil,
+      !hasObsoleteProcessingOwner(for: processingWorkspace)
+    else { return }
     let provider = record.processingProviderMode ?? configuration.aiProviderMode
     let appStore = self
     let task = Task {
@@ -750,6 +754,13 @@ final class AppStore: ObservableObject {
 
   private func isCurrentWorkspaceLocation(_ candidate: CaptureWorkspace) -> Bool {
     workspace?.rootURL == candidate.rootURL
+  }
+
+  private func hasObsoleteProcessingOwner(for candidate: CaptureWorkspace) -> Bool {
+    let workspaceID = ObjectIdentifier(candidate)
+    return processingTasks.keys.contains {
+      $0.workspaceRootURL == candidate.rootURL && $0.workspaceID != workspaceID
+    }
   }
 
   private func processingNotificationIdentifier(for taskKey: ProcessingTaskKey) -> String {
