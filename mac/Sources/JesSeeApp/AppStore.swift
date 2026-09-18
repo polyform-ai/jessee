@@ -453,7 +453,7 @@ final class AppStore: ObservableObject {
       var retryAt = record.automaticProcessingRetryAt
       guard failedAttempts < CaptureProcessingRetryPolicy.maximumAttempts else {
         await appStore.markProcessingExhausted(record.id, in: processingWorkspace)
-        appStore.finishProcessingLifecycle(record.id)
+        await appStore.finishProcessingLifecycle(record.id, in: processingWorkspace)
         return
       }
       while !Task.isCancelled, failedAttempts < CaptureProcessingRetryPolicy.maximumAttempts {
@@ -492,6 +492,10 @@ final class AppStore: ObservableObject {
         } catch is CancellationError {
           break
         } catch {
+          guard
+            CaptureProcessingRetryPolicy.shouldClassifyFailure(
+              error, taskIsCancelled: Task.isCancelled)
+          else { break }
           if appStore.hasRepairedCredential(
             after: attemptedCredential, for: provider, error: error)
           {
@@ -521,7 +525,7 @@ final class AppStore: ObservableObject {
           break
         }
       }
-      appStore.finishProcessingLifecycle(record.id)
+      await appStore.finishProcessingLifecycle(record.id, in: processingWorkspace)
     }
     processingTasks[record.id] = task
     if notifyStarted { notifyProcessingStarted(record) }
@@ -534,13 +538,11 @@ final class AppStore: ObservableObject {
     }
     do {
       captures = try await workspace.load()
-      for capture in captures where canProcess(capture) {
-        if capture.stage == .saved || capture.stage.isProcessing
-          || (capture.stage == .failed && capture.automaticProcessingAttempts == nil)
-          || CaptureProcessingRetryPolicy.shouldResumeLegacyExhausted(capture)
-        {
-          startProcessing(capture)
-        }
+      for capture in captures
+      where canProcess(capture)
+        && CaptureProcessingRetryPolicy.shouldStartProcessing(capture)
+      {
+        startProcessing(capture)
       }
     } catch {
       show(.error("JesSee could not open this library: \(error.localizedDescription)"))
@@ -686,13 +688,21 @@ final class AppStore: ObservableObject {
     }
   }
 
-  private func finishProcessingLifecycle(_ id: String) {
+  private func finishProcessingLifecycle(
+    _ id: String, in processingWorkspace: CaptureWorkspace
+  ) async {
     processingTasks[id] = nil
     processingNotificationTasks[id]?.cancel()
     processingNotificationTasks[id] = nil
     let center = UNUserNotificationCenter.current()
     center.removePendingNotificationRequests(withIdentifiers: ["processing-\(id)"])
     center.removeDeliveredNotifications(withIdentifiers: ["processing-\(id)"])
+    guard isCurrentWorkspace(processingWorkspace),
+      let record = await processingWorkspace.record(id: id),
+      canProcess(record),
+      CaptureProcessingRetryPolicy.shouldStartProcessing(record)
+    else { return }
+    startProcessing(record)
   }
 
   private func cancelProcessingForWorkspaceChange() {

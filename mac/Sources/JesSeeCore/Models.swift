@@ -393,6 +393,16 @@ public enum CaptureProcessingRetryPolicy {
     return false
   }
 
+  public static func shouldClassifyFailure(_ error: Error, taskIsCancelled: Bool) -> Bool {
+    !taskIsCancelled && !(error is CancellationError)
+  }
+
+  public static func shouldStartProcessing(_ record: CaptureRecord) -> Bool {
+    record.stage == .saved || record.stage.isProcessing
+      || (record.stage == .failed && record.automaticProcessingAttempts == nil)
+      || shouldResumeLegacyExhausted(record)
+  }
+
   public static func delaySecondsAfterFailedAttempt(_ attempt: Int) -> TimeInterval {
     switch attempt {
     case ...1: 2
