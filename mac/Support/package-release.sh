@@ -46,6 +46,7 @@ notary_submit() {
 
 cd "$repo_dir"
 JESSEE_DISTRIBUTION=1 \
+  JESSEE_MANAGED_AI_ENABLED=0 \
   JESSEE_VERSION="$version" \
   JESSEE_BUILD_NUMBER="$build_number" \
   mac/Support/build-app.sh release

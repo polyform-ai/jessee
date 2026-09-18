@@ -29,21 +29,25 @@ public struct PolyformServiceConfiguration: Sendable, Equatable {
       let apiBaseValue = bundle.object(forInfoDictionaryKey: apiBaseInfoKey) as? String,
       let apiBase = URL(string: apiBaseValue), apiBase.scheme == "https",
       let appKey = bundle.object(forInfoDictionaryKey: appKeyInfoKey) as? String,
-      !appKey.isEmpty
+      !appKey.isEmpty,
+      let transcriptionWorkflowURL = validatedHTTPSURL(
+        bundle.object(forInfoDictionaryKey: transcriptionURLInfoKey)),
+      let storyWorkflowURL = validatedHTTPSURL(
+        bundle.object(forInfoDictionaryKey: storyURLInfoKey))
     else { return nil }
     return Self(
       apiBase: apiBase, appKey: appKey,
-      transcriptionWorkflowURL: optionalHTTPSURL(
-        bundle.object(forInfoDictionaryKey: transcriptionURLInfoKey)),
-      storyWorkflowURL: optionalHTTPSURL(bundle.object(forInfoDictionaryKey: storyURLInfoKey)))
+      transcriptionWorkflowURL: transcriptionWorkflowURL,
+      storyWorkflowURL: storyWorkflowURL)
   }
 
   public func authURL(_ action: String) -> URL {
     apiBase.appending(path: "workflow-auth/\(appKey)/\(action)")
   }
 
-  private static func optionalHTTPSURL(_ value: Any?) -> URL? {
-    guard let value = value as? String, let url = URL(string: value), url.scheme == "https"
+  static func validatedHTTPSURL(_ value: Any?) -> URL? {
+    guard let value = value as? String, let url = URL(string: value), url.scheme == "https",
+      url.host != nil
     else { return nil }
     return url
   }

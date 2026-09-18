@@ -76,6 +76,15 @@ private struct WorkflowTestValue: Decodable, Equatable {
   var text: String
 }
 
+@Test func managedWorkflowURLsRequireHTTPSAndAHost() {
+  #expect(
+    PolyformServiceConfiguration.validatedHTTPSURL("https://example.test/workflow")?.host
+      == "example.test")
+  #expect(PolyformServiceConfiguration.validatedHTTPSURL("http://example.test/workflow") == nil)
+  #expect(PolyformServiceConfiguration.validatedHTTPSURL("https:///workflow") == nil)
+  #expect(PolyformServiceConfiguration.validatedHTTPSURL(nil) == nil)
+}
+
 @Suite(.serialized) struct PolyformClientTests {
 @Test func polyformClientUsesDocumentedSnakeCaseContracts() async throws {
   let configuration = URLSessionConfiguration.ephemeral
