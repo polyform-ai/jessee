@@ -6,6 +6,16 @@ import SwiftUI
 
 @MainActor
 final class AppStore: ObservableObject {
+  private struct ProcessingTaskKey: Hashable {
+    var workspaceID: ObjectIdentifier
+    var captureID: String
+
+    init(workspace: CaptureWorkspace, captureID: String) {
+      workspaceID = ObjectIdentifier(workspace)
+      self.captureID = captureID
+    }
+  }
+
   enum Notice: Equatable {
     case success(String)
     case error(String)
@@ -37,8 +47,8 @@ final class AppStore: ObservableObject {
   private let polyformClient: PolyformClient?
   private let polyformManagedAIAvailable: Bool
   private var workspace: CaptureWorkspace?
-  private var processingTasks: [String: Task<Void, Never>] = [:]
-  private var processingNotificationTasks: [String: Task<Void, Never>] = [:]
+  private var processingTasks: [ProcessingTaskKey: Task<Void, Never>] = [:]
+  private var processingNotificationTasks: [ProcessingTaskKey: Task<Void, Never>] = [:]
   private var refreshTask: Task<WorkflowAuthSession, Error>?
   private var signInTask: Task<Void, Never>?
   private var workflowSession: WorkflowAuthSession?
@@ -224,9 +234,14 @@ final class AppStore: ObservableObject {
     panel.canCreateDirectories = true
     guard panel.runModal() == .OK, let url = panel.url else { return false }
     let selectedWorkspace = CaptureWorkspace(rootURL: url)
-    if workspace?.rootURL != selectedWorkspace.rootURL {
-      cancelProcessingForWorkspaceChange()
+    if let workspace, workspace.rootURL == selectedWorkspace.rootURL {
+      configuration.outputFolderPath = url.path
+      persistConfiguration()
+      Task { await loadLibrary() }
+      show(.success("Your JesSee Library will be saved here."))
+      return true
     }
+    cancelProcessingForWorkspaceChange()
     configuration.outputFolderPath = url.path
     workspace = selectedWorkspace
     persistConfiguration()
@@ -450,7 +465,8 @@ final class AppStore: ObservableObject {
     _ record: CaptureRecord, in processingWorkspace: CaptureWorkspace,
     notifyStarted: Bool = false
   ) {
-    guard processingTasks[record.id] == nil else { return }
+    let taskKey = ProcessingTaskKey(workspace: processingWorkspace, captureID: record.id)
+    guard processingTasks[taskKey] == nil else { return }
     let provider = record.processingProviderMode ?? configuration.aiProviderMode
     let appStore = self
     let task = Task {
@@ -458,7 +474,7 @@ final class AppStore: ObservableObject {
       var retryAt = record.automaticProcessingRetryAt
       guard failedAttempts < CaptureProcessingRetryPolicy.maximumAttempts else {
         await appStore.markProcessingExhausted(record.id, in: processingWorkspace)
-        await appStore.finishProcessingLifecycle(record.id, in: processingWorkspace)
+        await appStore.finishProcessingLifecycle(taskKey, in: processingWorkspace)
         return
       }
       while !Task.isCancelled, failedAttempts < CaptureProcessingRetryPolicy.maximumAttempts {
@@ -530,10 +546,10 @@ final class AppStore: ObservableObject {
           break
         }
       }
-      await appStore.finishProcessingLifecycle(record.id, in: processingWorkspace)
+      await appStore.finishProcessingLifecycle(taskKey, in: processingWorkspace)
     }
-    processingTasks[record.id] = task
-    if notifyStarted { notifyProcessingStarted(record) }
+    processingTasks[taskKey] = task
+    if notifyStarted { notifyProcessingStarted(record, in: processingWorkspace) }
   }
 
   private func loadLibrary() async {
@@ -664,7 +680,10 @@ final class AppStore: ObservableObject {
     if isCurrentWorkspace(processingWorkspace) { await loadLibrary() }
     recordUsage(.storyCreated, feature: "story_creation")
     let center = UNUserNotificationCenter.current()
-    center.removeDeliveredNotifications(withIdentifiers: ["processing-\(id)"])
+    let taskKey = ProcessingTaskKey(workspace: processingWorkspace, captureID: id)
+    let notificationID = processingNotificationIdentifier(for: taskKey)
+    center.removePendingNotificationRequests(withIdentifiers: [notificationID])
+    center.removeDeliveredNotifications(withIdentifiers: [notificationID])
     _ = try? await center.requestAuthorization(options: [.alert, .sound])
     let content = UNMutableNotificationContent()
     content.title = "Your JesSee story is ready"
@@ -673,59 +692,68 @@ final class AppStore: ObservableObject {
     try? await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
   }
 
-  private func notifyProcessingStarted(_ record: CaptureRecord) {
-    processingNotificationTasks[record.id]?.cancel()
-    processingNotificationTasks[record.id] = Task { [weak self] in
+  private func notifyProcessingStarted(
+    _ record: CaptureRecord, in processingWorkspace: CaptureWorkspace
+  ) {
+    let taskKey = ProcessingTaskKey(workspace: processingWorkspace, captureID: record.id)
+    let notificationID = processingNotificationIdentifier(for: taskKey)
+    processingNotificationTasks[taskKey]?.cancel()
+    processingNotificationTasks[taskKey] = Task { [weak self] in
       let center = UNUserNotificationCenter.current()
       guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else {
         return
       }
-      guard !Task.isCancelled, self?.processingTasks[record.id] != nil else { return }
+      guard !Task.isCancelled, self?.processingTasks[taskKey] != nil else { return }
       let content = UNMutableNotificationContent()
       content.title = "JesSee is processing your recording"
       content.body = "You can keep working. JesSee will notify you when the story is ready."
       content.sound = .default
       try? await center.add(
         UNNotificationRequest(
-          identifier: "processing-\(record.id)", content: content, trigger: nil))
-      if Task.isCancelled || self?.processingTasks[record.id] == nil {
-        center.removePendingNotificationRequests(withIdentifiers: ["processing-\(record.id)"])
-        center.removeDeliveredNotifications(withIdentifiers: ["processing-\(record.id)"])
+          identifier: notificationID, content: content, trigger: nil))
+      if Task.isCancelled || self?.processingTasks[taskKey] == nil {
+        center.removePendingNotificationRequests(withIdentifiers: [notificationID])
+        center.removeDeliveredNotifications(withIdentifiers: [notificationID])
       }
     }
   }
 
   private func finishProcessingLifecycle(
-    _ id: String, in processingWorkspace: CaptureWorkspace
+    _ taskKey: ProcessingTaskKey, in processingWorkspace: CaptureWorkspace
   ) async {
-    processingTasks[id] = nil
-    processingNotificationTasks[id]?.cancel()
-    processingNotificationTasks[id] = nil
+    processingTasks[taskKey] = nil
+    processingNotificationTasks[taskKey]?.cancel()
+    processingNotificationTasks[taskKey] = nil
     let center = UNUserNotificationCenter.current()
-    center.removePendingNotificationRequests(withIdentifiers: ["processing-\(id)"])
-    center.removeDeliveredNotifications(withIdentifiers: ["processing-\(id)"])
-    guard isCurrentWorkspace(processingWorkspace),
-      let record = await processingWorkspace.record(id: id),
-      isCurrentWorkspace(processingWorkspace),
-      canProcess(record),
-      CaptureProcessingRetryPolicy.shouldStartProcessing(record)
-    else { return }
-    startProcessing(record, in: processingWorkspace)
+    let notificationID = processingNotificationIdentifier(for: taskKey)
+    center.removePendingNotificationRequests(withIdentifiers: [notificationID])
+    center.removeDeliveredNotifications(withIdentifiers: [notificationID])
+    guard isCurrentWorkspaceLocation(processingWorkspace) else { return }
+    await loadLibrary()
   }
 
   private func cancelProcessingForWorkspaceChange() {
-    for (id, task) in processingTasks {
+    for (taskKey, task) in processingTasks {
       task.cancel()
-      processingNotificationTasks[id]?.cancel()
-      processingNotificationTasks[id] = nil
+      processingNotificationTasks[taskKey]?.cancel()
+      processingNotificationTasks[taskKey] = nil
       let center = UNUserNotificationCenter.current()
-      center.removePendingNotificationRequests(withIdentifiers: ["processing-\(id)"])
-      center.removeDeliveredNotifications(withIdentifiers: ["processing-\(id)"])
+      let notificationID = processingNotificationIdentifier(for: taskKey)
+      center.removePendingNotificationRequests(withIdentifiers: [notificationID])
+      center.removeDeliveredNotifications(withIdentifiers: [notificationID])
     }
   }
 
   private func isCurrentWorkspace(_ candidate: CaptureWorkspace) -> Bool {
+    workspace === candidate
+  }
+
+  private func isCurrentWorkspaceLocation(_ candidate: CaptureWorkspace) -> Bool {
     workspace?.rootURL == candidate.rootURL
+  }
+
+  private func processingNotificationIdentifier(for taskKey: ProcessingTaskKey) -> String {
+    "processing-\(taskKey.captureID)-\(taskKey.workspaceID.hashValue)"
   }
 
   private func persistConfiguration() {
