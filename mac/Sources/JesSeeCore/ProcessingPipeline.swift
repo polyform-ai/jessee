@@ -153,13 +153,10 @@ public struct CaptureProcessor: Sendable {
       record.error = nil
       try await update(&record, stage: .ready, onProgress: onProgress)
       return record
-    } catch is CancellationError {
-      throw CancellationError()
     } catch {
-      record.stage = .failed
-      record.error = error.localizedDescription
-      try? await workspace.save(record)
-      await onProgress?(record)
+      // AppStore owns retry classification and persists the failed-attempt count, recovery
+      // requirement, and visible error together. Leaving the latest processing stage here also
+      // makes an interruption before that atomic update safely resumable on the next launch.
       throw error
     }
   }

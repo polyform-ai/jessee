@@ -121,6 +121,11 @@ final class AppStore: ObservableObject {
     setupStep = configuration.pendingSetupStep(
       hasPolyformSession: workflowSession != nil, hasAPIKey: hasAPIKey)
     persistConfiguration()
+    if credentialAvailable,
+      let recovery = CaptureProcessingRetryPolicy.recovery(for: mode)
+    {
+      Task { await resumeFailedCaptures(recoverableBy: recovery) }
+    }
   }
 
   func saveAPIKey(_ value: String) async -> Bool {
@@ -518,7 +523,9 @@ final class AppStore: ObservableObject {
   }
 
   private func resumeFailedCaptures(recoverableBy recovery: CaptureProcessingRecovery) async {
-    guard let workspace else { return }
+    guard let workspace,
+      CaptureProcessingRetryPolicy.recovery(for: configuration.aiProviderMode) == recovery
+    else { return }
     for var record in await workspace.allRecords()
     where CaptureProcessingRetryPolicy.shouldResume(record, after: recovery)
     {

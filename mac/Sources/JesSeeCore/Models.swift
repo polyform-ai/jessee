@@ -391,6 +391,14 @@ public enum CaptureProcessingRetryPolicy {
   ) -> Bool {
     record.stage == .failed && record.processingRecovery == recovery
   }
+
+  public static func recovery(for mode: AIProviderMode?) -> CaptureProcessingRecovery? {
+    switch mode {
+    case .polyformCovered: .polyformSignIn
+    case .bringYourOwnKey: .openAIKey
+    case nil: nil
+    }
+  }
 }
 
 public enum AIProviderMode: String, Codable, Sendable, Equatable, CaseIterable {

@@ -169,6 +169,11 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(!CaptureProcessingRetryPolicy.shouldResume(polyformFailure, after: .openAIKey))
   #expect(CaptureProcessingRetryPolicy.shouldResume(keyFailure, after: .openAIKey))
   #expect(!CaptureProcessingRetryPolicy.shouldResume(permanentFailure, after: .openAIKey))
+  #expect(
+    CaptureProcessingRetryPolicy.recovery(for: .polyformCovered) == .polyformSignIn)
+  #expect(
+    CaptureProcessingRetryPolicy.recovery(for: .bringYourOwnKey) == .openAIKey)
+  #expect(CaptureProcessingRetryPolicy.recovery(for: nil) == nil)
 }
 
 @Suite(.serialized) struct PolyformClientTests {
