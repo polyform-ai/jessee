@@ -126,6 +126,9 @@ let showAllFrames = false;
 let drawingMode: AnnotationKind | undefined;
 let draftAnnotations: Annotation[] = [];
 let dragStart: { x: number; y: number } | undefined;
+let editRevision = 0;
+let pendingSaveRevision: number | undefined;
+let pendingAction: BridgeMessage["type"] | undefined;
 
 const StoryImage = TiptapNode.create({
   name: "storyImage",
@@ -216,9 +219,21 @@ updateToolbar();
 if (payload.publicPDFURL) showPublicLink(payload.publicPDFURL);
 
 window.jesseeDidSave = (success, message, publicURL) => {
-  setStatus(message, !success);
-  setPublishing(false);
-  if (success) document.body.classList.remove("is-dirty");
+  const savedRevision = pendingSaveRevision;
+  const completedAction = pendingAction;
+  pendingSaveRevision = undefined;
+  pendingAction = undefined;
+  setActionPending();
+  const hasNewerEdits = savedRevision !== undefined && savedRevision !== editRevision;
+  setStatus(
+    success && hasNewerEdits
+      ? completedAction === "saveAndPublishPDF"
+        ? "Link copied · New edits not saved"
+        : "Earlier version saved · New edits not saved"
+      : message,
+    !success
+  );
+  if (success && !hasNewerEdits) document.body.classList.remove("is-dirty");
   if (success && publicURL) showPublicLink(publicURL, "Copied");
 };
 
@@ -302,11 +317,13 @@ function updateToolbar(): void {
 }
 
 function markDirty(): void {
+  editRevision += 1;
   document.body.classList.add("is-dirty");
   setStatus("Unsaved changes");
 }
 
 function send(type: BridgeMessage["type"]): void {
+  if (pendingAction) return;
   const sourceInput = mustFind<HTMLInputElement>("#sourceURL");
   const sourceValue = sourceInput.value.trim();
   const sourceURL = normalizeSourceURL(sourceValue);
@@ -323,7 +340,9 @@ function send(type: BridgeMessage["type"]): void {
       ? "Saving…"
       : type === "saveAndOpenPDF" ? "Updating PDF…" : "Generating public link…"
   );
-  if (type === "saveAndPublishPDF") setPublishing(true);
+  pendingSaveRevision = editRevision;
+  pendingAction = type;
+  setActionPending(type);
   const message: BridgeMessage = { type, story: serializeStory() };
   const bridge = window.webkit?.messageHandlers?.storyEditor;
   if (bridge) bridge.postMessage(message);
@@ -340,10 +359,12 @@ function setStatus(message: string, error = false): void {
   status.classList.toggle("error", error);
 }
 
-function setPublishing(isPublishing: boolean): void {
-  const button = mustFind<HTMLButtonElement>("#getLink");
-  button.disabled = isPublishing;
-  button.textContent = isPublishing ? "Generating…" : "Get link";
+function setActionPending(action?: BridgeMessage["type"]): void {
+  for (const id of ["saveStory", "openPDF", "getLink"]) {
+    mustFind<HTMLButtonElement>(`#${id}`).disabled = action !== undefined;
+  }
+  mustFind<HTMLButtonElement>("#getLink").textContent =
+    action === "saveAndPublishPDF" ? "Generating…" : "Get link";
 }
 
 function showPublicLink(publicURL: string, status = ""): void {
