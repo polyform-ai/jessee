@@ -635,7 +635,7 @@ private struct WorkflowTestValue: Decodable, Equatable {
       == [8, 10, 12, 28, 30, 32])
 }
 
-@Test func refinementFrameSearchClampsToTheRecordingAndStaysBounded() {
+@Test func refinementFrameSearchKeepsPairedEvidenceForLongStories() {
   let frames = (0..<10).map {
     CapturedFrame(seconds: Double($0) * 10, filename: "frame-\($0).jpg")
   }
@@ -646,13 +646,15 @@ private struct WorkflowTestValue: Decodable, Equatable {
         startSeconds: frame.seconds, endSeconds: frame.seconds, title: frame.filename,
         narrative: "Step", transcript: "", imageFilename: frame.filename)
     })
-  let candidates = StoryRefinement.candidateTimes(
-    for: story, frames: frames, duration: 91, maximum: 18)
+  let candidates = StoryRefinement.candidateTimes(for: story, frames: frames, duration: 91)
 
-  #expect(candidates.count == 18)
+  #expect(candidates.count == 29)
   #expect(candidates.allSatisfy { $0 >= 0 && $0 < 91 })
-  #expect(candidates.contains(0))
-  #expect(candidates.contains(90))
+  for frame in frames {
+    #expect(candidates.contains(max(0, frame.seconds - 2)))
+    #expect(candidates.contains(frame.seconds))
+    #expect(candidates.contains(min(90.95, frame.seconds + 2)))
+  }
 }
 
 @Test func storyPlanningKeepsMarkedScreenshotsInTheVisualSet() {

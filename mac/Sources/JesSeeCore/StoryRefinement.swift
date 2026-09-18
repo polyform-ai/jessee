@@ -58,10 +58,9 @@ enum StoryRefinement {
     for story: StoryDocument,
     frames: [CapturedFrame],
     duration: Double,
-    offsets: [Double] = nearbyOffsets,
-    maximum: Int = 18
+    offsets: [Double] = nearbyOffsets
   ) -> [Double] {
-    guard duration > 0, maximum > 0, !story.steps.isEmpty else { return [] }
+    guard duration > 0, !story.steps.isEmpty else { return [] }
     let timeByFilename = Dictionary(uniqueKeysWithValues: frames.map { ($0.filename, $0.seconds) })
     let lastTime = max(0, duration - 0.05)
     let anchors = story.steps.map { step in
@@ -79,10 +78,7 @@ enum StoryRefinement {
         }
       }
     }
-    let effectiveMaximum = max(maximum, centers.count)
-    let remaining = max(0, effectiveMaximum - centers.count)
-    let selectedNeighbors = evenlySampled(neighbors.sorted(), count: remaining)
-    return Array((centers + selectedNeighbors).sorted().prefix(effectiveMaximum))
+    return (centers + neighbors).sorted()
   }
 
   static func selectedFrames(for story: StoryDocument, in frames: [CapturedFrame])
@@ -161,14 +157,5 @@ enum StoryRefinement {
 
   private static func appendUnique(_ time: Double, to values: inout [Double]) {
     if !values.contains(where: { abs($0 - time) < 0.35 }) { values.append(time) }
-  }
-
-  private static func evenlySampled(_ values: [Double], count: Int) -> [Double] {
-    guard count > 0, values.count > count else { return count > 0 ? values : [] }
-    guard count > 1 else { return [values[values.count / 2]] }
-    return (0..<count).map { index in
-      let position = Double(index) * Double(values.count - 1) / Double(count - 1)
-      return values[Int(position.rounded())]
-    }
   }
 }
