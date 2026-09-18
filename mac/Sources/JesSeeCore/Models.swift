@@ -41,6 +41,11 @@ public enum CaptureStage: String, Codable, Sendable, CaseIterable {
   }
 }
 
+public enum CaptureProcessingRecovery: String, Codable, Sendable, Equatable {
+  case polyformSignIn = "polyform_sign_in"
+  case openAIKey = "openai_key"
+}
+
 public struct TranscriptSegment: Codable, Sendable, Equatable, Identifiable {
   public var id: Int
   public var start: Double
@@ -295,6 +300,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
   public var imageTimes: [String: Double]?
   public var recordingMarkups: [RecordingMarkupStroke]?
   public var automaticProcessingAttempts: Int?
+  public var processingRecovery: CaptureProcessingRecovery?
   public var error: String?
 
   public init(
@@ -317,6 +323,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     imageTimes: [String: Double]? = nil,
     recordingMarkups: [RecordingMarkupStroke]? = nil,
     automaticProcessingAttempts: Int? = nil,
+    processingRecovery: CaptureProcessingRecovery? = nil,
     error: String? = nil
   ) {
     self.id = id
@@ -338,6 +345,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     self.imageTimes = imageTimes
     self.recordingMarkups = recordingMarkups
     self.automaticProcessingAttempts = automaticProcessingAttempts
+    self.processingRecovery = processingRecovery
     self.error = error
   }
 }
@@ -358,6 +366,8 @@ public enum CaptureProcessingRetryPolicy {
     }
     if let error = error as? JesSeeError {
       switch error {
+      case .requestFailed(let status, _):
+        return status == 408 || status == 425 || status == 429 || (500...599).contains(status)
       case .serviceUnavailable, .invalidResponse: return true
       default: return false
       }
@@ -374,6 +384,12 @@ public enum CaptureProcessingRetryPolicy {
 
   public static func delayAfterFailedAttempt(_ attempt: Int) -> Duration {
     .seconds(attempt <= 1 ? 2 : 5)
+  }
+
+  public static func shouldResume(
+    _ record: CaptureRecord, after recovery: CaptureProcessingRecovery
+  ) -> Bool {
+    record.stage == .failed && record.processingRecovery == recovery
   }
 }
 
@@ -477,6 +493,7 @@ public enum JesSeeError: LocalizedError, Equatable {
   case sourceUnavailable(String)
   case mediaHasNoAudio
   case audioTooLarge
+  case requestFailed(Int, String)
   case invalidResponse(String)
   case recordingFailed(String)
 
@@ -494,6 +511,8 @@ public enum JesSeeError: LocalizedError, Equatable {
     case .sourceUnavailable(let path): "The source video is no longer available at \(path)."
     case .mediaHasNoAudio: "This video does not contain an audio track to transcribe."
     case .audioTooLarge: "The prepared audio is too large to transcribe in one request."
+    case .requestFailed(let status, let detail):
+      "The AI service rejected the request (\(status)). \(detail)"
     case .invalidResponse(let message): message
     case .recordingFailed(let message): "Recording failed: \(message)"
     }

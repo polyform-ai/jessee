@@ -120,6 +120,9 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(
     CaptureProcessingRetryPolicy.shouldRetry(
       JesSeeError.serviceUnavailable("Temporary network issue")))
+  #expect(
+    CaptureProcessingRetryPolicy.shouldRetry(
+      JesSeeError.requestFailed(503, "Unavailable")))
   #expect(CaptureProcessingRetryPolicy.shouldRetry(URLError(.timedOut)))
 
   #expect(
@@ -129,6 +132,9 @@ private struct WorkflowTestValue: Decodable, Equatable {
     !CaptureProcessingRetryPolicy.shouldRetry(
       PolyformClientError.authenticationRequired("Sign in")))
   #expect(!CaptureProcessingRetryPolicy.shouldRetry(JesSeeError.signInRequired))
+  #expect(
+    !CaptureProcessingRetryPolicy.shouldRetry(
+      JesSeeError.requestFailed(400, "Bad request")))
   #expect(!CaptureProcessingRetryPolicy.shouldRetry(URLError(.badURL)))
 }
 
@@ -138,10 +144,31 @@ private struct WorkflowTestValue: Decodable, Equatable {
   let encoded = try JesSeeJSON.encoder().encode(original)
   var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
   object.removeValue(forKey: "automaticProcessingAttempts")
+  object.removeValue(forKey: "processingRecovery")
   let legacy = try JSONSerialization.data(withJSONObject: object)
 
   let decoded = try JesSeeJSON.decoder().decode(CaptureRecord.self, from: legacy)
   #expect(decoded.automaticProcessingAttempts == nil)
+}
+
+@Test func credentialRecoveryOnlyResumesMatchingFailedCaptures() {
+  let polyformFailure = CaptureRecord(
+    title: "Needs sign-in", source: .recording, stage: .failed,
+    mediaFilename: "recording.mp4", automaticProcessingAttempts: 1,
+    processingRecovery: .polyformSignIn)
+  let keyFailure = CaptureRecord(
+    title: "Needs a key", source: .recording, stage: .failed,
+    mediaFilename: "recording.mp4", automaticProcessingAttempts: 1,
+    processingRecovery: .openAIKey)
+  let permanentFailure = CaptureRecord(
+    title: "Missing audio", source: .recording, stage: .failed,
+    mediaFilename: "recording.mp4", automaticProcessingAttempts: 1)
+
+  #expect(
+    CaptureProcessingRetryPolicy.shouldResume(polyformFailure, after: .polyformSignIn))
+  #expect(!CaptureProcessingRetryPolicy.shouldResume(polyformFailure, after: .openAIKey))
+  #expect(CaptureProcessingRetryPolicy.shouldResume(keyFailure, after: .openAIKey))
+  #expect(!CaptureProcessingRetryPolicy.shouldResume(permanentFailure, after: .openAIKey))
 }
 
 @Suite(.serialized) struct PolyformClientTests {
@@ -381,6 +408,50 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect((systemContent.first?["text"] as? String)?.contains("refinement pass 2") == true)
   let userContent = try #require(input.last?["content"] as? [[String: Any]])
   #expect(userContent.contains(where: { $0["type"] as? String == "input_image" }))
+}
+
+@Test func directOpenAIPreservesHTTPStatusForRetryClassification() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [StubURLProtocol.self]
+  let client = DirectOpenAIClient(session: URLSession(configuration: configuration))
+  StubURLProtocol.prepare([.init(status: 400, data: Data("Bad request".utf8))])
+  let transcript = TranscriptDocument(text: "Explain this", segments: [], words: [])
+  let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+    UUID().uuidString, isDirectory: true)
+  try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: temporary) }
+
+  var capturedError: Error?
+  do {
+    _ = try await client.createStory(
+      transcript: transcript, frames: [], captureDirectory: temporary, apiKey: "key")
+  } catch {
+    capturedError = error
+  }
+  #expect(capturedError as? JesSeeError == .requestFailed(400, "Bad request"))
+}
+
+@Test func directOpenAIMalformedSuccessBecomesRetryableInvalidResponse() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [StubURLProtocol.self]
+  let client = DirectOpenAIClient(session: URLSession(configuration: configuration))
+  StubURLProtocol.prepare([.init(status: 200, data: Data("[]".utf8))])
+  let transcript = TranscriptDocument(text: "Explain this", segments: [], words: [])
+  let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+    UUID().uuidString, isDirectory: true)
+  try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: temporary) }
+
+  var capturedError: Error?
+  do {
+    _ = try await client.createStory(
+      transcript: transcript, frames: [], captureDirectory: temporary, apiKey: "key")
+  } catch {
+    capturedError = error
+  }
+  #expect(
+    capturedError as? JesSeeError
+      == .invalidResponse("Story creation returned incomplete data."))
 }
 }
 

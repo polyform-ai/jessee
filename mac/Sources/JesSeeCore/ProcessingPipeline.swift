@@ -153,6 +153,8 @@ public struct CaptureProcessor: Sendable {
       record.error = nil
       try await update(&record, stage: .ready, onProgress: onProgress)
       return record
+    } catch is CancellationError {
+      throw CancellationError()
     } catch {
       record.stage = .failed
       record.error = error.localizedDescription
