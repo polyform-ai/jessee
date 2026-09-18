@@ -96,10 +96,12 @@ This release is signed by Polyform, notarized by Apple, and can update itself fr
 - Record with a visible timer and live microphone level.
 - Draw, highlight, undo, clear, redo, or stop directly from the floating controls.
 - Press Option-S from anywhere to stop and process the recording.
-- Get an immediate notification that processing has started, then another when the story is ready.
+- Finish onboarding with a clear confirmation before JesSee moves into the menu bar.
+- Get an immediate transcription notification, then another when the finished story opens for review.
 - Open Recent stories and See all directly in the Library editor without losing your place.
 - Let JesSee prioritize marked evidence while preserving useful screenshots from across the full recording.
 - Edit rich text, choose alternate screenshots, add highlights or redactions, retain a webpage source link, and export one continuous PDF.
+- Generate and copy a public PDF link directly beside the editor's save controls.
 - Use the refreshed JesSee identity across the native app and website.
 EOF
 fi

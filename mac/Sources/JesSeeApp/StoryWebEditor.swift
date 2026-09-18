@@ -11,6 +11,7 @@ struct StoryWebEditor: NSViewRepresentable {
   struct Payload: Encodable {
     var story: StoryDocument
     var frames: [Frame]
+    var publicPDFURL: String?
   }
 
   struct BridgeMessage: Decodable {
@@ -21,9 +22,9 @@ struct StoryWebEditor: NSViewRepresentable {
   let story: StoryDocument
   let record: CaptureRecord
   let directoryURL: URL
-  let onSave: (StoryDocument, Bool, @escaping (Bool, String) -> Void) -> Void
+  let onAction: (StoryDocument, String, @escaping (Bool, String, String?) -> Void) -> Void
 
-  func makeCoordinator() -> Coordinator { Coordinator(onSave: onSave) }
+  func makeCoordinator() -> Coordinator { Coordinator(onAction: onAction) }
 
   func makeNSView(context: Context) -> WKWebView {
     let controller = WKUserContentController()
@@ -38,7 +39,9 @@ struct StoryWebEditor: NSViewRepresentable {
     return webView
   }
 
-  func updateNSView(_ webView: WKWebView, context: Context) {}
+  func updateNSView(_ webView: WKWebView, context: Context) {
+    context.coordinator.onAction = onAction
+  }
 
   static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
     webView.configuration.userContentController.removeScriptMessageHandler(forName: "storyEditor")
@@ -63,7 +66,7 @@ struct StoryWebEditor: NSViewRepresentable {
         seconds: record.imageTimes?[filename]
           ?? fallbackFrameTime(index: index, count: record.imageFilenames.count))
     }
-    let payload = Payload(story: story, frames: frames)
+    let payload = Payload(story: story, frames: frames, publicPDFURL: record.publicPDFURL)
     guard let data = try? JesSeeJSON.encoder().encode(payload),
       let json = String(data: data, encoding: .utf8)
     else { return }
@@ -96,10 +99,12 @@ struct StoryWebEditor: NSViewRepresentable {
   @MainActor
   final class Coordinator: NSObject, WKScriptMessageHandler {
     weak var webView: WKWebView?
-    let onSave: (StoryDocument, Bool, @escaping (Bool, String) -> Void) -> Void
+    var onAction: (StoryDocument, String, @escaping (Bool, String, String?) -> Void) -> Void
 
-    init(onSave: @escaping (StoryDocument, Bool, @escaping (Bool, String) -> Void) -> Void) {
-      self.onSave = onSave
+    init(
+      onAction: @escaping (StoryDocument, String, @escaping (Bool, String, String?) -> Void) -> Void
+    ) {
+      self.onAction = onAction
     }
 
     func userContentController(
@@ -110,16 +115,20 @@ struct StoryWebEditor: NSViewRepresentable {
         let data = try? JSONSerialization.data(withJSONObject: message.body),
         let value = try? JesSeeJSON.decoder().decode(BridgeMessage.self, from: data)
       else {
-        complete(success: false, message: "JesSee could not read the editor changes.")
+        complete(
+          success: false, message: "JesSee could not read the editor changes.", publicURL: nil)
         return
       }
-      onSave(value.story, value.type == "saveAndOpenPDF") { [weak self] success, status in
-        Task { @MainActor in self?.complete(success: success, message: status) }
+      onAction(value.story, value.type) { [weak self] success, status, publicURL in
+        Task { @MainActor in
+          self?.complete(success: success, message: status, publicURL: publicURL)
+        }
       }
     }
 
-    private func complete(success: Bool, message: String) {
-      guard let data = try? JSONSerialization.data(withJSONObject: [success, message]),
+    private func complete(success: Bool, message: String, publicURL: String?) {
+      let arguments: [Any] = [success, message, publicURL ?? NSNull()]
+      guard let data = try? JSONSerialization.data(withJSONObject: arguments),
         let arguments = String(data: data, encoding: .utf8)
       else { return }
       webView?.evaluateJavaScript("window.jesseeDidSave(...\(arguments))")

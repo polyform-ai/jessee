@@ -44,17 +44,18 @@ interface Frame {
 interface EditorPayload {
   story: Story;
   frames: Frame[];
+  publicPDFURL?: string;
 }
 
 interface BridgeMessage {
-  type: "save" | "saveAndOpenPDF";
+  type: "save" | "saveAndOpenPDF" | "saveAndPublishPDF";
   story: Story;
 }
 
 declare global {
   interface Window {
     __JESSEE_EDITOR__: EditorPayload;
-    jesseeDidSave?: (success: boolean, message: string) => void;
+    jesseeDidSave?: (success: boolean, message: string, publicURL?: string) => void;
     webkit?: {
       messageHandlers?: {
         storyEditor?: { postMessage: (message: BridgeMessage) => void };
@@ -125,6 +126,9 @@ let showAllFrames = false;
 let drawingMode: AnnotationKind | undefined;
 let draftAnnotations: Annotation[] = [];
 let dragStart: { x: number; y: number } | undefined;
+let editRevision = 0;
+let pendingSaveRevision: number | undefined;
+let pendingAction: BridgeMessage["type"] | undefined;
 
 const StoryImage = TiptapNode.create({
   name: "storyImage",
@@ -212,10 +216,25 @@ editor = new Editor({
 });
 bindShellEvents();
 updateToolbar();
+if (payload.publicPDFURL) showPublicLink(payload.publicPDFURL);
 
-window.jesseeDidSave = (success, message) => {
-  setStatus(message, !success);
-  if (success) document.body.classList.remove("is-dirty");
+window.jesseeDidSave = (success, message, publicURL) => {
+  const savedRevision = pendingSaveRevision;
+  const completedAction = pendingAction;
+  pendingSaveRevision = undefined;
+  pendingAction = undefined;
+  setActionPending();
+  const hasNewerEdits = savedRevision !== undefined && savedRevision !== editRevision;
+  setStatus(
+    success && hasNewerEdits
+      ? completedAction === "saveAndPublishPDF"
+        ? "Link copied · New edits not saved"
+        : "Earlier version saved · New edits not saved"
+      : message,
+    !success
+  );
+  if (success && !hasNewerEdits) document.body.classList.remove("is-dirty");
+  if (success && publicURL) showPublicLink(publicURL, "Copied");
 };
 
 function renderShell(): void {
@@ -223,7 +242,10 @@ function renderShell(): void {
     <div class="editor-app">
       <header class="editor-header">
         <div><p class="kicker">Visual story editor</p><h1>Shape the story before you share it</h1><p>Edit like a document, then choose and mark up the strongest screenshot for each step.</p></div>
-        <div class="header-actions"><span id="saveStatus">Saved</span><button class="button secondary" id="saveStory">Save</button><button class="button primary" id="openPDF">Save & open PDF</button></div>
+        <div class="header-sharing">
+          <div class="header-actions"><span id="saveStatus">Saved</span><button class="button secondary" id="saveStory">Save</button><button class="button primary" id="openPDF">Save & open PDF</button><button class="button secondary" id="getLink" data-tooltip="Generate public link" title="Generate public link">Get link</button></div>
+          <div class="public-link-row" id="publicLinkRow" hidden><span class="public-link-value" id="publicLink"></span><span id="publicLinkStatus"></span></div>
+        </div>
       </header>
       <nav class="editor-toolbar" aria-label="Text formatting">
         ${tool("paragraph", "Text", true)}${tool("bold", "<strong>B</strong>")}${tool("italic", "<em>I</em>")}${tool("bulletList", "• Bullets", true)}${tool("orderedList", "1. List", true)}${tool("blockquote", "Callout", true)}<span class="divider"></span>${tool("undo", "↶")}${tool("redo", "↷")}<span class="toolbar-tip">Click anywhere to write · select text to format</span>
@@ -242,6 +264,7 @@ function bindShellEvents(): void {
   });
   mustFind<HTMLButtonElement>("#saveStory").addEventListener("click", () => send("save"));
   mustFind<HTMLButtonElement>("#openPDF").addEventListener("click", () => send("saveAndOpenPDF"));
+  mustFind<HTMLButtonElement>("#getLink").addEventListener("click", () => send("saveAndPublishPDF"));
   mustFind<HTMLButtonElement>("#addStep").addEventListener("click", addStep);
   mustFind<HTMLInputElement>("#sourceURL").addEventListener("input", (event) => {
     (event.currentTarget as HTMLInputElement).setCustomValidity("");
@@ -294,11 +317,13 @@ function updateToolbar(): void {
 }
 
 function markDirty(): void {
+  editRevision += 1;
   document.body.classList.add("is-dirty");
   setStatus("Unsaved changes");
 }
 
 function send(type: BridgeMessage["type"]): void {
+  if (pendingAction) return;
   const sourceInput = mustFind<HTMLInputElement>("#sourceURL");
   const sourceValue = sourceInput.value.trim();
   const sourceURL = normalizeSourceURL(sourceValue);
@@ -310,17 +335,44 @@ function send(type: BridgeMessage["type"]): void {
   }
   sourceInput.setCustomValidity("");
   if (sourceURL) sourceInput.value = sourceURL;
-  setStatus(type === "save" ? "Saving…" : "Updating PDF…");
+  setStatus(
+    type === "save"
+      ? "Saving…"
+      : type === "saveAndOpenPDF" ? "Updating PDF…" : "Generating public link…"
+  );
+  pendingSaveRevision = editRevision;
+  pendingAction = type;
+  setActionPending(type);
   const message: BridgeMessage = { type, story: serializeStory() };
   const bridge = window.webkit?.messageHandlers?.storyEditor;
   if (bridge) bridge.postMessage(message);
-  else window.jesseeDidSave?.(true, "Preview saved");
+  else window.jesseeDidSave?.(
+    true,
+    type === "saveAndPublishPDF" ? "Copied" : "Preview saved",
+    type === "saveAndPublishPDF" ? "https://example.com/jessee-preview.pdf" : undefined
+  );
 }
 
 function setStatus(message: string, error = false): void {
   const status = mustFind<HTMLElement>("#saveStatus");
   status.textContent = message;
   status.classList.toggle("error", error);
+}
+
+function setActionPending(action?: BridgeMessage["type"]): void {
+  for (const id of ["saveStory", "openPDF", "getLink"]) {
+    mustFind<HTMLButtonElement>(`#${id}`).disabled = action !== undefined;
+  }
+  mustFind<HTMLButtonElement>("#getLink").textContent =
+    action === "saveAndPublishPDF" ? "Generating…" : "Get link";
+}
+
+function showPublicLink(publicURL: string, status = ""): void {
+  const row = mustFind<HTMLElement>("#publicLinkRow");
+  const link = mustFind<HTMLElement>("#publicLink");
+  link.textContent = publicURL;
+  mustFind<HTMLElement>("#publicLinkStatus").textContent = status;
+  row.hidden = false;
 }
 
 function addStep(): void {

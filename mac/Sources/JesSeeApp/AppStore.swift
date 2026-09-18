@@ -37,6 +37,7 @@ final class AppStore: ObservableObject {
   @Published private(set) var publishingCaptureID: String?
   @Published private(set) var hasAPIKey: Bool
   @Published private(set) var isTestingAPIKey = false
+  @Published private(set) var readyCaptureID: String?
   @Published var setupStep = 0
   @Published var selectedCaptureID: String?
   @Published private(set) var microphoneAllowed =
@@ -330,7 +331,7 @@ final class AppStore: ObservableObject {
       try await workspace.write(story, filename: "story.json", for: record)
       let rendered = try DocumentRenderer.render(
         story: story, in: workspace.directoryURL(for: record))
-      var updated = record
+      var updated = await workspace.record(id: record.id) ?? record
       updated.title = story.title
       updated.storyFilename = "story.json"
       updated.htmlFilename = rendered.html
@@ -355,82 +356,83 @@ final class AppStore: ObservableObject {
     workspace?.directoryURL(for: record)
   }
 
-  func publishPDF(_ record: CaptureRecord) {
-    guard publishingCaptureID == nil else { return }
+  func publishPDF(recordID: String) async -> String? {
+    guard publishingCaptureID == nil,
+      let record = captures.first(where: { $0.id == recordID })
+    else { return nil }
     publishingCaptureID = record.id
-    Task { [weak self] in
-      guard let self else { return }
-      defer { publishingCaptureID = nil }
-      do {
-        guard let workspace, let filename = record.pdfFilename else {
-          throw JesSeeError.invalidResponse("Create the PDF before publishing it.")
-        }
-        let upload = try await withPolyformAuthentication { client, token in
-          try await client.publishPDF(
-            at: workspace.directoryURL(for: record).appendingPathComponent(filename),
-            accessToken: token)
-        }
-        guard let publicURL = upload.publicURL else {
-          throw JesSeeError.invalidResponse("Polyform did not return a public PDF link.")
-        }
-        var updated = await workspace.record(id: record.id) ?? record
-        let cleanupIDs = ([updated.publicPDFUploadID].compactMap { $0 }
-          + (updated.publicPDFCleanupUploadIDs ?? []))
-          .filter { $0 != upload.id }
-          .reduce(into: [String]()) { result, id in
-            if !result.contains(id) { result.append(id) }
-          }
-        updated.publicPDFUploadID = upload.id
-        updated.publicPDFURL = publicURL.absoluteString
-        updated.publicPDFCleanupUploadIDs = cleanupIDs.isEmpty ? nil : cleanupIDs
-        do {
-          try await workspace.save(updated)
-        } catch {
-          do {
-            try await withPolyformAuthentication { client, token in
-              try await client.deleteUpload(id: upload.id, accessToken: token)
-            }
-          } catch let rollbackError {
-            throw JesSeeError.serviceUnavailable(
-              "JesSee could not save or roll back the new public PDF. Upload \(upload.id) may need cleanup: \(rollbackError.localizedDescription)")
-          }
-          throw error
-        }
-        replace(updated)
-
-        var failedCleanupIDs: [String] = []
-        for uploadID in cleanupIDs {
-          do {
-            try await withPolyformAuthentication { client, token in
-              try await client.deleteUpload(id: uploadID, accessToken: token)
-            }
-          } catch {
-            failedCleanupIDs.append(uploadID)
-          }
-        }
-        updated.publicPDFCleanupUploadIDs = failedCleanupIDs.isEmpty ? nil : failedCleanupIDs
-        try await workspace.save(updated)
-        replace(updated)
-        if !failedCleanupIDs.isEmpty {
-          throw JesSeeError.serviceUnavailable(
-            "The new public link is ready, but JesSee could not retire a previous upload. Use Update link to retry cleanup.")
-        }
-        copyToPasteboard(publicURL.absoluteString)
-        recordUsage(.pdfPublished, feature: "public_pdf")
-        show(.success("Public PDF link copied."))
-      } catch {
-        show(.error(authenticationAwareError(error).localizedDescription))
+    defer { publishingCaptureID = nil }
+    do {
+      guard let workspace, let filename = record.pdfFilename else {
+        throw JesSeeError.invalidResponse("Create the PDF before publishing it.")
       }
+      let upload = try await withPolyformAuthentication { client, token in
+        try await client.publishPDF(
+          at: workspace.directoryURL(for: record).appendingPathComponent(filename),
+          accessToken: token)
+      }
+      guard let publicURL = upload.publicURL else {
+        throw JesSeeError.invalidResponse("Polyform did not return a public PDF link.")
+      }
+      var updated = await workspace.record(id: record.id) ?? record
+      let cleanupIDs = ([updated.publicPDFUploadID].compactMap { $0 }
+        + (updated.publicPDFCleanupUploadIDs ?? []))
+        .filter { $0 != upload.id }
+        .reduce(into: [String]()) { result, id in
+          if !result.contains(id) { result.append(id) }
+        }
+      updated.publicPDFUploadID = upload.id
+      updated.publicPDFURL = publicURL.absoluteString
+      updated.publicPDFCleanupUploadIDs = cleanupIDs.isEmpty ? nil : cleanupIDs
+      do {
+        try await workspace.save(updated)
+      } catch {
+        do {
+          try await withPolyformAuthentication { client, token in
+            try await client.deleteUpload(id: upload.id, accessToken: token)
+          }
+        } catch let rollbackError {
+          throw JesSeeError.serviceUnavailable(
+            "JesSee could not save or roll back the new public PDF. Upload \(upload.id) may need cleanup: \(rollbackError.localizedDescription)")
+        }
+        throw error
+      }
+      replace(updated)
+
+      var failedCleanupIDs: [String] = []
+      for uploadID in cleanupIDs {
+        do {
+          try await withPolyformAuthentication { client, token in
+            try await client.deleteUpload(id: uploadID, accessToken: token)
+          }
+        } catch {
+          failedCleanupIDs.append(uploadID)
+        }
+      }
+      updated.publicPDFCleanupUploadIDs = failedCleanupIDs.isEmpty ? nil : failedCleanupIDs
+      try await workspace.save(updated)
+      replace(updated)
+      copyToPasteboard(publicURL.absoluteString)
+      recordUsage(.pdfPublished, feature: "public_pdf")
+      if failedCleanupIDs.isEmpty {
+        show(.success("Public PDF link copied."))
+      } else {
+        show(
+          .error(
+            "The new public link was copied, but JesSee could not retire a previous upload. Use Get link to retry cleanup."))
+      }
+      return publicURL.absoluteString
+    } catch {
+      show(.error(authenticationAwareError(error).localizedDescription))
+      return nil
     }
   }
 
-  func copyPublicPDFLink(_ record: CaptureRecord) {
-    guard let value = record.publicPDFURL else { return }
-    copyToPasteboard(value)
-    show(.success("Public PDF link copied."))
-  }
-
   func clearNotice() { notice = nil }
+
+  func consumeReadyCapture(_ id: String) {
+    if readyCaptureID == id { readyCaptureID = nil }
+  }
 
   private func addCapture(
     from url: URL,
@@ -457,7 +459,7 @@ final class AppStore: ObservableObject {
         .captureAdded,
         feature: source == .recording ? "screen_recording" : "video_import",
         source: source.rawValue)
-      show(.success("Saved to your library. Processing will continue in the background."))
+      show(.success("Saved to your library. JesSee is transcribing it now."))
     } catch {
       show(.error(error.localizedDescription))
     }
@@ -681,7 +683,11 @@ final class AppStore: ObservableObject {
   }
 
   private func captureFinished(_ id: String, in processingWorkspace: CaptureWorkspace) async {
-    if isCurrentWorkspace(processingWorkspace) { await loadLibrary() }
+    if isCurrentWorkspace(processingWorkspace) {
+      await loadLibrary()
+      selectedCaptureID = id
+      readyCaptureID = id
+    }
     recordUsage(.storyCreated, feature: "story_creation")
     let center = UNUserNotificationCenter.current()
     let taskKey = ProcessingTaskKey(workspace: processingWorkspace, captureID: id)
@@ -693,6 +699,7 @@ final class AppStore: ObservableObject {
     content.title = "Your JesSee story is ready"
     let completedRecord = await processingWorkspace.record(id: id)
     content.body = completedRecord?.title ?? "Open the library to review it."
+    content.sound = .default
     try? await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
   }
 
@@ -709,8 +716,8 @@ final class AppStore: ObservableObject {
       }
       guard !Task.isCancelled, self?.processingTasks[taskKey] != nil else { return }
       let content = UNMutableNotificationContent()
-      content.title = "JesSee is processing your recording"
-      content.body = "You can keep working. JesSee will notify you when the story is ready."
+      content.title = "JesSee is transcribing your recording"
+      content.body = "You can keep working while JesSee transcribes, chooses visuals, and builds the story."
       content.sound = .default
       try? await center.add(
         UNNotificationRequest(

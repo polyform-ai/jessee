@@ -10,7 +10,7 @@ struct JesSeeMacApp: App {
     MenuBarExtra {
       MenuPopoverView(store: store)
     } label: {
-      RecorderMenuIcon(recorder: store.recorder)
+      RecorderMenuIcon(store: store)
     }
     .menuBarExtraStyle(.window)
 
@@ -33,10 +33,16 @@ struct JesSeeMacApp: App {
 }
 
 private struct RecorderMenuIcon: View {
-  @ObservedObject var recorder: RecordingCoordinator
+  @ObservedObject var store: AppStore
+  @ObservedObject private var recorder: RecordingCoordinator
   @Environment(\.openWindow) private var openWindow
   @Environment(\.openSettings) private var openSettings
   @State private var handledLaunchRequest = false
+
+  init(store: AppStore) {
+    self.store = store
+    self._recorder = ObservedObject(wrappedValue: store.recorder)
+  }
 
   var body: some View {
     Group {
@@ -62,5 +68,13 @@ private struct RecorderMenuIcon: View {
       }
       NSApp.activate(ignoringOtherApps: true)
     }
+    .onChange(of: store.readyCaptureID) { _, captureID in
+      guard let captureID else { return }
+      store.selectedCaptureID = captureID
+      openWindow(id: "library")
+      NSApp.activate(ignoringOtherApps: true)
+      store.consumeReadyCapture(captureID)
+    }
   }
+
 }
