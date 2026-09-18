@@ -88,7 +88,8 @@ public enum MediaTools {
     times: [Double],
     to directoryURL: URL,
     maximumWidth: CGFloat = 1920,
-    recordingMarkups: [RecordingMarkupStroke] = []
+    recordingMarkups: [RecordingMarkupStroke] = [],
+    filenamePrefix: String = "frame"
   ) async throws -> [CapturedFrame] {
     try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
     let asset = AVURLAsset(url: mediaURL)
@@ -108,7 +109,7 @@ public enum MediaTools {
       else {
         continue
       }
-      let filename = String(format: "frame-%03d.jpg", index + 1)
+      let filename = String(format: "%@-%03d.jpg", filenamePrefix, index + 1)
       try data.write(to: directoryURL.appendingPathComponent(filename), options: .atomic)
       frames.append(
         CapturedFrame(

@@ -61,6 +61,10 @@ JesSee accepts the structured story directly under `result`, under the wrapper's
 
 The prompt should select `screenshot_time_seconds` only from the supplied screenshot options, prefer marked-up or stable result states, avoid loading/blank transition frames, and return the visible webpage URL only when it can be read confidently.
 
+JesSee uses this same light wrapper for a bounded visual-review loop. It first requests a complete draft, then makes up to two refinement calls. Each refinement sends the full current story and transcript in `user_input`, attaches newly extracted screenshots from two seconds before, at, and two seconds after each selected visual, and requests the same `output_json` shape. The wrapper should continue to pass these values directly to the AI model; it does not need story-specific parsing or branching.
+
+If a refinement call fails, JesSee keeps the latest complete story instead of discarding the capture. When screenshot sharing is off, JesSee skips visual refinement and keeps the first text-only result.
+
 ## Release configuration
 
 Before enabling Polyform Covered in a future signed release, add these repository secrets:
