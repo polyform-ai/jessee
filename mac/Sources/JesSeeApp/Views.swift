@@ -294,7 +294,8 @@ struct SetupView: View {
             APIKeyStep(store: store)
           }
         case 2: FolderStep(store: store)
-        default: MicrophoneStep(store: store, onFinished: onFinished)
+        case 3: MicrophoneStep(store: store)
+        default: SetupCompleteStep(store: store, onFinished: onFinished)
         }
       }
       .padding(16).background(
@@ -524,27 +525,49 @@ private struct FolderStep: View {
 
 private struct MicrophoneStep: View {
   @ObservedObject var store: AppStore
-  var onFinished: (() -> Void)?
   var body: some View {
     VStack(alignment: .leading, spacing: 11) {
       Label("Enable your microphone", systemImage: "mic").font(.headline)
       Text("JesSee needs your narration to understand the screenshots and build the story.").font(
         .caption
       ).foregroundStyle(.secondary)
-      Button(store.microphoneAllowed ? "Finish setup" : "Enable microphone") {
+      Button(store.microphoneAllowed ? "Continue" : "Enable microphone") {
         Task {
           if store.microphoneAllowed {
-            store.finishSetup()
-            onFinished?()
+            store.setupStep = 4
           } else if await store.requestMicrophone() {
-            store.finishSetup()
-            onFinished?()
+            store.setupStep = 4
           } else {
             store.openMicrophoneSettings()
           }
         }
       }.buttonStyle(.borderedProminent).tint(accent)
     }
+  }
+}
+
+private struct SetupCompleteStep: View {
+  @ObservedObject var store: AppStore
+  var onFinished: (() -> Void)?
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 13) {
+      Image(systemName: "checkmark.circle.fill")
+        .font(.system(size: 42, weight: .semibold))
+        .foregroundStyle(.green)
+      Text("Congrats, you're all ready to use JesSee.")
+        .font(.title3.weight(.bold))
+      Text(
+        "JesSee now lives in your menu bar. Start a recording, explain what matters, and press ⌥S when you're ready for JesSee to build the story."
+      )
+      .font(.subheadline).foregroundStyle(.secondary)
+      Button("Start using JesSee") {
+        store.finishSetup()
+        onFinished?()
+      }
+      .buttonStyle(.borderedProminent).tint(accent).controlSize(.large)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 }
 
@@ -658,7 +681,7 @@ private struct CaptureDetailView: View {
             .caption)
         }
         Spacer()
-        EditorActionToolbar(store: store, record: record, openSettings: presentSettings)
+        EditorActionToolbar(store: store, record: record)
       }
       .padding(.horizontal, 22).padding(.vertical, 14)
       Divider()
@@ -674,18 +697,35 @@ private struct CaptureDetailView: View {
         let directory = store.captureDirectory(for: record)
       {
         StoryWebEditor(story: loadedStory.document, record: record, directoryURL: directory) {
-          updatedStory, shouldOpenPDF, completion in
+          updatedStory, action, completion in
           Task {
             let saved = await store.saveStory(updatedStory, for: record)
             if saved {
               self.loadedStory = LoadedStory(recordID: record.id, document: updatedStory)
-              if shouldOpenPDF { store.openPDF(recordID: record.id) }
+              if action == "saveAndOpenPDF" {
+                store.openPDF(recordID: record.id)
+                completion(true, "PDF updated and opened", nil)
+              } else if action == "saveAndPublishPDF" {
+                guard store.isPublicPDFPublishingAvailable else {
+                  completion(false, "Public links are unavailable in this build.", nil)
+                  return
+                }
+                guard store.isSignedIntoPolyform else {
+                  completion(false, "Sign in with Polyform in Settings to generate a link.", nil)
+                  presentSettings()
+                  return
+                }
+                if let publicURL = await store.publishPDF(recordID: record.id) {
+                  completion(true, "Copied", publicURL)
+                } else {
+                  completion(false, "JesSee could not generate the public link.", nil)
+                }
+              } else {
+                completion(true, "Saved", nil)
+              }
+            } else {
+              completion(false, "JesSee could not save these changes.", nil)
             }
-            completion(
-              saved,
-              saved
-                ? (shouldOpenPDF ? "PDF updated and opened" : "Saved")
-                : "JesSee could not save these changes.")
           }
         }
         .id(record.id)
@@ -727,39 +767,10 @@ private struct CaptureDetailView: View {
 private struct EditorActionToolbar: View {
   @ObservedObject var store: AppStore
   let record: CaptureRecord
-  let openSettings: () -> Void
 
   var body: some View {
     HStack(spacing: 4) {
       if record.pdfFilename != nil {
-        if record.publicPDFURL != nil {
-          EditorIconButton(title: "Copy public link", systemImage: "link") {
-            store.copyPublicPDFLink(record)
-          }
-          .disabled(store.publishingCaptureID != nil)
-          if store.isPublicPDFPublishingAvailable, store.isSignedIntoPolyform {
-            EditorIconButton(
-              title: "Update public link", systemImage: "arrow.triangle.2.circlepath"
-            ) {
-              store.publishPDF(record)
-            }
-            .disabled(store.publishingCaptureID != nil)
-          }
-        } else if store.isPublicPDFPublishingAvailable, store.isSignedIntoPolyform {
-          EditorIconButton(
-            title: store.publishingCaptureID == record.id
-              ? "Creating public link" : "Generate public link",
-            systemImage: "link.badge.plus",
-            isLoading: store.publishingCaptureID == record.id
-          ) {
-            store.publishPDF(record)
-          }
-          .disabled(store.publishingCaptureID != nil)
-        } else if store.isPublicPDFPublishingAvailable {
-          EditorIconButton(title: "Sign in to share", systemImage: "person.badge.key") {
-            openSettings()
-          }
-        }
         EditorIconButton(title: "Open PDF", systemImage: "doc.richtext") {
           store.openPDF(record)
         }
@@ -774,18 +785,11 @@ private struct EditorActionToolbar: View {
 private struct EditorIconButton: View {
   let title: String
   let systemImage: String
-  var isLoading = false
   let action: () -> Void
 
   var body: some View {
     Button(action: action) {
-      Group {
-        if isLoading {
-          ProgressView().controlSize(.small)
-        } else {
-          Image(systemName: systemImage)
-        }
-      }
+      Image(systemName: systemImage)
       .frame(width: 28, height: 28)
       .contentShape(Rectangle())
     }

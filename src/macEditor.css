@@ -14,10 +14,15 @@ button { font: inherit; }
 .kicker { margin: 0 0 5px; color: #5a52ff; font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 .editor-header h1 { margin: 0; font-size: 26px; letter-spacing: -.025em; }
 .editor-header p:last-child { margin: 7px 0 0; color: #686774; font-size: 13px; }
-.header-actions { display: flex; align-items: center; gap: 9px; white-space: nowrap; }
+.header-sharing { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; }
+.header-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 9px; }
 #saveStatus { color: #777582; font-size: 12px; margin-right: 3px; }
 #saveStatus.error { color: #bf2d36; }
 body.is-dirty #saveStatus { color: #9a6100; }
+.public-link-row { max-width: 430px; display: flex; align-items: center; justify-content: flex-end; gap: 8px; font-size: 11px; }
+.public-link-row[hidden] { display: none; }
+.public-link-value { min-width: 0; overflow: hidden; color: #5148ef; text-overflow: ellipsis; white-space: nowrap; user-select: text; }
+.public-link-row span { flex: 0 0 auto; color: #178447; font-weight: 700; }
 .button, .tool, .segmented button, .markup-tools button, .icon, .arrow { border: 1px solid #d8d6e1; background: #fff; color: #232229; border-radius: 9px; cursor: pointer; }
 [data-tooltip] { position: relative; }
 [data-tooltip]::after {
@@ -114,7 +119,8 @@ button:disabled { opacity: .38; cursor: default; }
 @media (max-width: 760px) {
   .editor-app { padding: 18px 14px 35px; }
   .editor-header { align-items: flex-start; flex-direction: column; }
-  .header-actions { width: 100%; }
+  .header-sharing, .header-actions { width: 100%; align-items: flex-start; justify-content: flex-start; }
+  .public-link-row { max-width: 100%; justify-content: flex-start; }
   [data-story-overview], [data-story-step] { padding-left: 28px; padding-right: 28px; }
   .toolbar-tip { display: none; }
 }

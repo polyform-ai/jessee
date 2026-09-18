@@ -351,8 +351,11 @@ private struct RecordingHUDView: View {
           redo()
         }
         Button(action: stop) {
-          Label(model.isStopping ? "Finishing…" : "Stop", systemImage: "stop.fill")
-            .font(.system(size: 12, weight: .bold))
+          VStack(spacing: 1) {
+            Label(model.isStopping ? "Finishing…" : "Stop", systemImage: "stop.fill")
+              .font(.system(size: 12, weight: .bold))
+            Text("⌥S").font(.system(size: 8, weight: .bold)).opacity(0.82)
+          }
         }
         .buttonStyle(.borderedProminent).tint(.red).disabled(model.isStopping)
         .jesseeHoverHelp("Stop and process · ⌥S", onChange: showControl)
