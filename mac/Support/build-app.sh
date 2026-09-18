@@ -58,6 +58,13 @@ for setting in "${runtime_settings[@]}"; do
     /usr/libexec/PlistBuddy -c "Add :$plist_key string $value" "$app_dir/Contents/Info.plist"
   fi
 done
+if [[ "${JESSEE_MANAGED_AI_ENABLED:-0}" == "1" ]]; then
+  if [[ -z "${JESSEE_TRANSCRIPTION_WORKFLOW_URL:-}" || -z "${JESSEE_STORY_WORKFLOW_URL:-}" ]]; then
+    echo "Managed AI test builds require both JesSee workflow URLs." >&2
+    exit 1
+  fi
+  /usr/libexec/PlistBuddy -c "Set :PFManagedAIEnabled true" "$app_dir/Contents/Info.plist"
+fi
 
 iconset=$(mktemp -d)/JesSee.iconset
 mkdir -p "$iconset"

@@ -235,6 +235,12 @@ private struct WorkflowTestValue: Decodable, Equatable {
     WorkflowResponse<WorkflowTestValue>.self,
     from: Data(
       #"{"success":true,"result":{"output_json":"```json\n{\"text\":\"hello\"}\n```"}}"#.utf8))
+  let output = try decoder.decode(
+    WorkflowResponse<WorkflowTestValue>.self,
+    from: Data(#"{"success":true,"result":{"output":{"text":"hello"}}}"#.utf8))
+  let outputText = try decoder.decode(
+    WorkflowResponse<WorkflowTestValue>.self,
+    from: Data(#"{"success":true,"result":{"output":"{\"text\":\"hello\"}"}}"#.utf8))
 
   let productionDecoder = JSONDecoder()
   productionDecoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -247,6 +253,8 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(wrappedJSONText.result == direct.result)
   #expect(outputJSON.result == direct.result)
   #expect(outputJSONText.result == direct.result)
+  #expect(output.result == direct.result)
+  #expect(outputText.result == direct.result)
   #expect(productionOutputJSON.result == direct.result)
 }
 

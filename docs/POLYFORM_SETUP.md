@@ -72,6 +72,8 @@ Before enabling Polyform Covered in a future signed release, add these repositor
 
 When the feature gate is enabled, the workflow URLs are injected into the signed app bundle. The current release requires only the GA4 values for direct Measurement Protocol event ingestion; they are not user identity or authorization secrets.
 
+For local end-to-end testing, build the app with `JESSEE_MANAGED_AI_ENABLED=1` plus both `JESSEE_TRANSCRIPTION_WORKFLOW_URL` and `JESSEE_STORY_WORKFLOW_URL`. The build fails if managed mode is requested without both workflows. The committed Info.plist and signed release workflow continue to leave managed mode off by default.
+
 ## Public PDFs
 
 Public links are opt-in. JesSee uploads a PDF only after the user chooses **Create public link**, stores the returned upload ID and URL with that local capture, and replaces the prior upload after the user publishes an updated PDF.
