@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en" data-resolution="landscape">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1080">
+    <script src="assets/vendor/gsap.min.js"></script>
+    <style>
+      :root {
+        --paper: #f7f5ef;
+        --ink: #18181b;
+        --muted: #625f68;
+        --violet: #5653e8;
+        --violet-dark: #4542c8;
+        --signal: #ff5a5f;
+        --white: #fffefa;
+        --sans: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+        --serif: Georgia, "Times New Roman", serif;
+        --mono: "JetBrains Mono", ui-monospace, monospace;
+      }
+
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--paper); color: var(--ink); font-family: var(--sans); }
+      #root { width: 100%; height: 100%; position: relative; overflow: hidden; background: var(--paper); }
+      .clip, .scene-content { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+      #scene-2-content, #scene-3-content, #scene-4-content, #scene-5-content { opacity: 0; }
+      .paper-scene {
+        background:
+          radial-gradient(circle at 83% 17%, rgba(86, 83, 232, 0.16), transparent 31%),
+          radial-gradient(circle at 17% 91%, rgba(255, 90, 95, 0.09), transparent 29%),
+          var(--paper);
+      }
+      .grain { position: absolute; inset: 0; opacity: 0.16; pointer-events: none; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitchTiles'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.17'/%3E%3C/svg%3E"); }
+      .orb { position: absolute; width: 520px; height: 520px; border: 2px solid rgba(86, 83, 232, 0.13); border-radius: 50%; box-shadow: 0 0 0 82px rgba(86, 83, 232, 0.035), 0 0 0 164px rgba(86, 83, 232, 0.02); }
+      .orb-a { right: -185px; top: -220px; }
+      .orb-b { left: -250px; bottom: -300px; border-color: rgba(255, 90, 95, 0.12); box-shadow: 0 0 0 72px rgba(255, 90, 95, 0.025); }
+      .kicker { display: flex; align-items: center; gap: 16px; color: var(--violet-dark); font-family: var(--mono); font-size: 24px; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; }
+      .kicker::before { content: ""; width: 14px; height: 14px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 0 9px rgba(255, 90, 95, 0.12); }
+      .serif { color: var(--violet); font-family: var(--serif); font-style: italic; font-weight: 400; }
+      .window { overflow: hidden; border: 2px solid rgba(24, 24, 27, 0.16); border-radius: 28px; background: #fff; box-shadow: 0 42px 110px rgba(34, 31, 52, 0.21); }
+      .window-bar { height: 64px; display: flex; align-items: center; padding: 0 24px; border-bottom: 1px solid rgba(24, 24, 27, 0.12); background: rgba(250, 250, 252, 0.95); }
+      .window-dot { width: 15px; height: 15px; margin-right: 10px; border-radius: 50%; background: #ff6259; }
+      .window-dot:nth-child(2) { background: #ffbd2e; }
+      .window-dot:nth-child(3) { background: #28c840; }
+      .window-title { margin-left: 18px; color: #6d6a73; font-family: var(--mono); font-size: 19px; letter-spacing: 0.05em; }
+
+      .scene-1-layout { position: absolute; inset: 0; display: grid; grid-template-columns: 1.08fr 0.92fr; gap: 110px; align-items: center; padding: 120px 150px; }
+      .problem-copy { position: relative; z-index: 3; }
+      .problem-copy h1 { margin-top: 42px; font-size: 108px; line-height: 0.96; letter-spacing: -0.067em; font-weight: 650; }
+      .problem-copy h1 span { display: block; }
+      .problem-copy .hook-two { margin-top: 17px; }
+      .video-problem { min-height: 700px; position: relative; }
+      .recording-card { width: 590px; height: 360px; position: absolute; right: 26px; top: 58px; padding: 34px; border: 2px solid rgba(24, 24, 27, 0.15); border-radius: 30px; background: #202027; color: #fff; box-shadow: 0 45px 100px rgba(31, 29, 42, 0.28); }
+      .recording-card .recording-head { display: flex; align-items: center; justify-content: space-between; font-family: var(--mono); font-size: 21px; letter-spacing: 0.07em; }
+      .recording-card .rec { display: flex; align-items: center; gap: 12px; color: #ffc9cb; }
+      .recording-card .rec::before { content: ""; width: 16px; height: 16px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 0 9px rgba(255, 90, 95, 0.15); }
+      .recording-preview { height: 212px; margin-top: 30px; position: relative; overflow: hidden; border-radius: 17px; background: linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px), linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px), #30303a; background-size: 56px 56px; }
+      .recording-preview::before { content: ""; width: 188px; height: 116px; position: absolute; left: 48px; top: 48px; border-radius: 18px; background: linear-gradient(135deg, #7775f0, #b9f3db); }
+      .recording-preview::after { content: ""; width: 170px; height: 18px; position: absolute; right: 45px; top: 92px; border-radius: 999px; background: rgba(255, 255, 255, 0.42); box-shadow: 0 38px 0 rgba(255, 255, 255, 0.2); }
+      .timeline-card { width: 720px; height: 178px; position: absolute; right: -34px; bottom: 65px; padding: 32px 36px; border: 2px solid rgba(24, 24, 27, 0.14); border-radius: 26px; background: rgba(255, 254, 250, 0.95); box-shadow: 0 30px 80px rgba(38, 34, 61, 0.16); }
+      .timeline-time { color: var(--ink); font-family: var(--mono); font-size: 44px; font-weight: 700; letter-spacing: -0.04em; }
+      .timeline-track { height: 28px; margin-top: 24px; position: relative; overflow: hidden; border-radius: 999px; background: #dedbe4; }
+      .timeline-fill { width: 82%; height: 100%; border-radius: inherit; background: repeating-linear-gradient(90deg, var(--violet) 0 14px, #6f6ceb 14px 27px); }
+      .timeline-playhead { width: 5px; height: 54px; position: absolute; left: 68%; bottom: 28px; border-radius: 999px; background: var(--signal); box-shadow: 0 0 0 6px rgba(255, 90, 95, 0.13); }
+
+      .scene-heading { position: absolute; z-index: 4; }
+      .scene-heading h2 { margin-top: 28px; font-size: 78px; line-height: 1.01; letter-spacing: -0.058em; font-weight: 650; }
+      .scene-heading h2 span { display: block; }
+      .capture-heading { left: 135px; top: 154px; width: 650px; }
+      .capture-stage { width: 760px; height: 820px; position: absolute; right: 118px; top: 130px; }
+      #capture-window { width: 470px; height: 820px; position: absolute; right: 120px; top: 0; }
+      #capture-window img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+      .annotation-ring { width: 390px; height: 235px; position: absolute; right: 158px; top: 338px; z-index: 6; border: 12px solid var(--signal); border-radius: 50%; box-shadow: 0 0 0 11px rgba(255, 90, 95, 0.12); }
+      .annotation-note { position: absolute; right: 8px; top: 548px; z-index: 7; padding: 17px 22px; border-radius: 999px; color: #fff; background: var(--signal); font-family: var(--mono); font-size: 21px; font-weight: 700; letter-spacing: 0.05em; box-shadow: 0 16px 36px rgba(255, 90, 95, 0.25); }
+      .hf-simulated-cursor { width: 58px; height: 58px; position: absolute; left: 0; top: 0; z-index: 20; pointer-events: none; filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.24)); }
+      .hf-simulated-cursor svg { width: 100%; height: 100%; }
+      .hf-simulated-cursor-pulse { width: 34px; height: 34px; position: absolute; left: 19px; top: 19px; border: 4px solid var(--signal); border-radius: 50%; opacity: 0; }
+
+      .editor-heading { left: 90px; top: 170px; width: 520px; }
+      .editor-heading h2 { font-size: 68px; }
+      .editor-frame-shell { width: 1220px; height: 850px; position: absolute; right: 72px; top: 112px; padding: 0; overflow: hidden; background: #ebecef; }
+      #editor-frame { width: 100%; height: 100%; position: relative; }
+      #editor-frame img { width: 100%; height: 100%; object-fit: contain; object-position: center; }
+      .source-chip { position: absolute; left: 82px; bottom: 82px; z-index: 7; display: flex; align-items: center; gap: 15px; padding: 16px 22px; border: 2px solid rgba(86, 83, 232, 0.26); border-radius: 999px; color: var(--violet-dark); background: rgba(255, 254, 250, 0.96); box-shadow: 0 16px 42px rgba(38, 34, 61, 0.18); font-family: var(--mono); font-size: 21px; font-weight: 700; }
+      .source-chip::before { content: "↗"; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--violet); }
+      .editor-cursor { left: 1140px; top: 790px; }
+
+      .scene-4-copy { width: 720px; position: absolute; left: 126px; top: 175px; z-index: 7; }
+      .scene-4-copy h2 { margin-top: 28px; font-size: 82px; line-height: 1; letter-spacing: -0.06em; font-weight: 650; }
+      .scene-4-copy h2 span { display: block; }
+      .result-stage { width: 980px; height: 900px; position: absolute; right: 82px; top: 95px; }
+      .library-card { width: 850px; height: 694px; position: absolute; right: 0; top: 0; background: #ebecef; }
+      .library-card img { width: 100%; height: 100%; object-fit: contain; object-position: top left; }
+      .pdf-card { width: 390px; height: 520px; position: absolute; left: 0; bottom: 0; z-index: 4; overflow: hidden; border: 2px solid rgba(24, 24, 27, 0.16); border-radius: 14px; background: #fff; box-shadow: 0 34px 85px rgba(34, 31, 52, 0.25); }
+      .pdf-card img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+      .result-label { position: absolute; z-index: 8; padding: 14px 19px; border-radius: 999px; color: #fff; background: var(--ink); font-family: var(--mono); font-size: 20px; font-weight: 700; letter-spacing: 0.08em; box-shadow: 0 14px 34px rgba(24, 24, 27, 0.2); }
+      .label-source { left: 300px; bottom: 52px; }
+      .label-return { right: 48px; top: 545px; background: var(--violet); }
+
+      .brand-scene { color: #fff; background: radial-gradient(circle at 77% 18%, rgba(255, 255, 255, 0.15), transparent 30%), radial-gradient(circle at 15% 86%, rgba(185, 243, 219, 0.13), transparent 31%), var(--violet); }
+      .brand-grid { position: absolute; inset: 0; opacity: 0.12; background-image: linear-gradient(rgba(255, 255, 255, 0.26) 2px, transparent 2px), linear-gradient(90deg, rgba(255, 255, 255, 0.26) 2px, transparent 2px); background-size: 160px 160px; }
+      .brand-close { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; }
+      .brand-close-inner { width: 1500px; position: relative; z-index: 3; }
+      .brand-close h2 { font-size: 112px; line-height: 0.96; letter-spacing: -0.067em; font-weight: 650; }
+      .brand-close h2 span { display: block; }
+      .brand-close h2 .brand-serif { color: #fff; font-family: var(--serif); font-style: italic; font-weight: 400; }
+      .brand-lockup { display: flex; align-items: center; justify-content: center; gap: 22px; margin-top: 54px; }
+      .brand-lockup img { width: 92px; height: 92px; border-radius: 23px; box-shadow: 0 22px 55px rgba(27, 24, 103, 0.27); }
+      .brand-name { font-size: 57px; font-weight: 760; letter-spacing: -0.05em; }
+      .brand-url { margin-top: 28px; font-family: var(--mono); font-size: 27px; letter-spacing: 0.15em; text-transform: uppercase; }
+      .brand-rule { width: 420px; height: 2px; margin: 30px auto 0; background: rgba(255, 255, 255, 0.45); transform-origin: center; }
+    </style>
+  </head>
+  <body>
+    <div data-hf-id="hf-qarg" id="root" data-composition-id="main" data-start="0" data-duration="22.4" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-nvqn" class="orb orb-a" data-layout-ignore=""></div>
+      <div data-hf-id="hf-tlc4" class="orb orb-b" data-layout-ignore=""></div>
+
+      <section data-hf-id="hf-ed0t" id="scene-1" class="clip" data-start="0" data-duration="4.6" data-track-index="1">
+        <div data-hf-id="hf-1olz" class="scene-content paper-scene" id="scene-1-content">
+          <div data-hf-id="hf-ryn8" class="grain" data-layout-ignore=""></div>
+          <div data-hf-id="hf-ub0t" class="scene-1-layout">
+            <div data-hf-id="hf-x09l" class="problem-copy">
+              <p data-hf-id="hf-7vpt" class="kicker" id="problem-kicker">THE PROBLEM</p>
+              <h1 data-hf-id="hf-m3fm"><span data-hf-id="hf-jen5" id="hook-one">A screen recording is easy to make.</span><span data-hf-id="hf-7mul" class="serif hook-two" id="hook-two">Awful to use.</span></h1>
+            </div>
+            <div data-hf-id="hf-oxpe" class="video-problem" data-layout-allow-overflow="">
+              <div data-hf-id="hf-msli" class="recording-card" id="recording-card">
+                <div data-hf-id="hf-e3a4" class="recording-head"><span data-hf-id="hf-ezm6" class="rec">SCREEN RECORDING</span><span data-hf-id="hf-ok2c">4.6 GB</span></div>
+                <div data-hf-id="hf-mbfe" class="recording-preview"></div>
+              </div>
+              <div data-hf-id="hf-klly" class="timeline-card" id="timeline-card">
+                <div data-hf-id="hf-mnd0" class="timeline-time">18:42</div>
+                <div data-hf-id="hf-03kr" class="timeline-track"><div data-hf-id="hf-ybk5" class="timeline-fill"></div></div>
+                <div data-hf-id="hf-l71u" class="timeline-playhead"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section data-hf-id="hf-0j1p" id="scene-2" class="clip" data-start="4.2" data-duration="4.8" data-track-index="2">
+        <div data-hf-id="hf-n5oc" class="scene-content paper-scene" id="scene-2-content">
+          <div data-hf-id="hf-3obg" class="grain" data-layout-ignore=""></div>
+          <div data-hf-id="hf-rygq" class="scene-heading capture-heading">
+            <p data-hf-id="hf-pdbd" class="kicker" id="capture-kicker">SHOW + EXPLAIN</p>
+            <h2 data-hf-id="hf-2l5r"><span data-hf-id="hf-1sw2" id="capture-line-one">Narrate it.</span><span data-hf-id="hf-n60d" class="serif" id="capture-line-two">Mark what matters.</span></h2>
+          </div>
+          <div data-hf-id="hf-gvf2" class="capture-stage" data-layout-allow-overflow="">
+            <div data-hf-id="hf-oza1" id="capture-window" class="window">
+              <img data-hf-id="hf-jrfp" src="assets/product/native-recording-home.png" alt="Native JesSee menu-bar recording app">
+            </div>
+            <div data-hf-id="hf-gedp" class="annotation-ring" id="annotation-ring" data-layout-ignore=""></div>
+            <div data-hf-id="hf-l2rd" class="annotation-note" id="annotation-note">GUIDED CAPTURE</div>
+            <div data-hf-id="hf-843z" class="hf-simulated-cursor" id="capture-cursor" aria-hidden="true" data-layout-ignore="">
+              <div data-hf-id="hf-23cu" class="hf-simulated-cursor-pulse"></div>
+              <svg data-hf-id="hf-ulu9" viewBox="0 0 24 24"><path data-hf-id="hf-zefw" d="M3 2.8 20.6 14 12.8 15.5 9 22 3 2.8Z" fill="#fff" stroke="rgba(0,0,0,.52)" stroke-width="1.4" /></svg>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section data-hf-id="hf-zoro" id="scene-3" class="clip" data-start="8.6" data-duration="5.4" data-track-index="3">
+        <div data-hf-id="hf-d1s5" class="scene-content paper-scene" id="scene-3-content">
+          <div data-hf-id="hf-2hed" class="grain" data-layout-ignore=""></div>
+          <div data-hf-id="hf-vuq5" class="scene-heading editor-heading">
+            <p data-hf-id="hf-3jdt" class="kicker" id="editor-kicker">REVIEW THE DRAFT</p>
+            <h2 data-hf-id="hf-gavz"><span data-hf-id="hf-z0y8" id="editor-line-one">JesSee finds the evidence.</span><span data-hf-id="hf-wbhp" class="serif" id="editor-line-two">You keep the final say.</span></h2>
+          </div>
+          <div data-hf-id="hf-sajb" class="editor-frame-shell window" data-layout-allow-overflow="">
+            <div data-hf-id="hf-nj16" id="editor-frame"><img data-hf-id="hf-8lzm" src="assets/product/native-image-markup.png" alt="Native JesSee image selection and annotation tools"></div>
+            <div data-hf-id="hf-0sh2" class="source-chip" id="source-chip">CHOOSE + HIGHLIGHT</div>
+          </div>
+          <div data-hf-id="hf-dz52" class="hf-simulated-cursor editor-cursor" id="editor-cursor" aria-hidden="true" data-layout-ignore="">
+            <div data-hf-id="hf-mb8i" class="hf-simulated-cursor-pulse"></div>
+            <svg data-hf-id="hf-1tol" viewBox="0 0 24 24"><path data-hf-id="hf-4l4r" d="M3 2.8 20.6 14 12.8 15.5 9 22 3 2.8Z" fill="#18181b" stroke="rgba(255,255,255,.85)" stroke-width="1.4" /></svg>
+          </div>
+        </div>
+      </section>
+
+      <section data-hf-id="hf-9oye" id="scene-4" class="clip" data-start="13.6" data-duration="5.2" data-track-index="4">
+        <div data-hf-id="hf-159m" class="scene-content paper-scene" id="scene-4-content">
+          <div data-hf-id="hf-2vpe" class="grain" data-layout-ignore=""></div>
+          <div data-hf-id="hf-wvmb" class="scene-4-copy">
+            <p data-hf-id="hf-ljj0" class="kicker" id="result-kicker">USEFUL CONTEXT</p>
+            <h2 data-hf-id="hf-fwky"><span data-hf-id="hf-r1ek" id="result-line-one">Editable story.</span><span data-hf-id="hf-uaic" class="serif" id="result-line-two">Reusable PDF.</span></h2>
+          </div>
+          <div data-hf-id="hf-dxbv" class="result-stage" data-layout-allow-overflow="">
+            <div data-hf-id="hf-tbim" class="library-card window" id="library-card">
+              <img data-hf-id="hf-9gzc" src="assets/product/native-story-editor.png" alt="Native JesSee Library and editable visual story">
+            </div>
+            <div data-hf-id="hf-ehkm" class="pdf-card" id="pdf-card"><img data-hf-id="hf-5leu" src="assets/product/jessee-native-playbook-page.png" alt="PDF generated by native JesSee"></div>
+            <div data-hf-id="hf-uaff" class="result-label label-source" id="label-source">EDITABLE</div>
+            <div data-hf-id="hf-99ra" class="result-label label-return" id="label-return">REOPEN ANYTIME</div>
+          </div>
+        </div>
+      </section>
+
+      <section data-hf-id="hf-o510" id="scene-5" class="clip" data-start="18.4" data-duration="4" data-track-index="5">
+        <div data-hf-id="hf-5j7c" class="scene-content brand-scene" id="scene-5-content">
+          <div data-hf-id="hf-oct5" class="brand-grid" data-layout-ignore=""></div>
+          <div data-hf-id="hf-4v8j" class="grain" data-layout-ignore=""></div>
+          <div data-hf-id="hf-jb3g" class="brand-close">
+            <div data-hf-id="hf-5uvz" class="brand-close-inner">
+              <h2 data-hf-id="hf-fi9x"><span data-hf-id="hf-2386" id="brand-line-one">Show it once.</span><span data-hf-id="hf-zz3k" class="brand-serif" id="brand-line-two">Send the useful version.</span></h2>
+              <div data-hf-id="hf-deqa" class="brand-lockup" id="brand-lockup"><img data-hf-id="hf-onx8" src="assets/product/jessee-icon.png" alt=""><span data-hf-id="hf-rqrp" class="brand-name">JesSee</span></div>
+              <div data-hf-id="hf-vp0i" class="brand-rule" id="brand-rule"></div>
+              <div data-hf-id="hf-bh82" class="brand-url" id="brand-url">JESSEE.AI · DOWNLOAD FOR MAC</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <audio data-hf-id="hf-iam7" id="sfx-problem" data-start="2.18" data-duration="0.18" data-track-index="10" data-volume="0.42" src="assets/sfx/impact/impactSoft_medium_001.ogg"></audio>
+      <audio data-hf-id="hf-hszj" id="sfx-capture-click" data-start="6" data-duration="0.01" data-track-index="11" data-volume="0.56" src="assets/sfx/interface/click_003.ogg"></audio>
+      <audio data-hf-id="hf-hi2b" id="sfx-capture-confirm" data-start="6.22" data-duration="0.18" data-track-index="12" data-volume="0.34" src="assets/sfx/impact/impactSoft_medium_001.ogg"></audio>
+      <audio data-hf-id="hf-fodv" id="sfx-editor-click" data-start="10.93" data-duration="0.01" data-track-index="13" data-volume="0.5" src="assets/sfx/interface/click_003.ogg"></audio>
+      <audio data-hf-id="hf-dm3p" id="sfx-pdf" data-start="14.2" data-duration="0.18" data-track-index="14" data-volume="0.38" src="assets/sfx/impact/impactSoft_medium_001.ogg"></audio>
+      <audio data-hf-id="hf-rx30" id="sfx-library" data-start="15.29" data-duration="0.18" data-track-index="15" data-volume="0.28" src="assets/sfx/impact/impactSoft_medium_001.ogg"></audio>
+      <audio data-hf-id="hf-ar55" id="sfx-logo" data-start="19.66" data-duration="0.9" data-track-index="16" data-volume="0.34" src="assets/sfx/impact/impactBell_heavy_000.ogg"></audio>
+    </div>
+
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      const fadeScene = (selector, start, end) => {
+        tl.fromTo(selector, { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "power2.out" }, start);
+        tl.to(selector, { opacity: 0, duration: 0.4, ease: "power2.in" }, end - 0.4);
+      };
+
+      tl.to("#scene-1-content", { opacity: 0, duration: 0.4, ease: "power2.in" }, 4.2);
+      fadeScene("#scene-2-content", 4.2, 9);
+      fadeScene("#scene-3-content", 8.6, 14);
+      fadeScene("#scene-4-content", 13.6, 18.8);
+      tl.fromTo("#scene-5-content", { opacity: 0 }, { opacity: 1, duration: 0.45, ease: "power2.out" }, 18.4);
+
+      tl.fromTo("#problem-kicker", { opacity: 0, x: -34 }, { opacity: 1, x: 0, duration: 0.55, ease: "power3.out" }, 0.3);
+      tl.fromTo("#hook-one", { opacity: 0, y: 52 }, { opacity: 1, y: 0, duration: 0.72, ease: "power3.out" }, 0.62);
+      tl.fromTo("#hook-two", { opacity: 0, y: 46 }, { opacity: 1, y: 0, duration: 0.7, ease: "power3.out" }, 2.18);
+      tl.fromTo("#recording-card", { x: 90, y: -24, rotation: 4 }, { x: 0, y: 0, rotation: 0, duration: 0.85, ease: "power3.out" }, 0.58);
+      tl.fromTo("#timeline-card", { opacity: 0, x: 105, y: 42, rotation: -3 }, { opacity: 1, x: 0, y: 0, rotation: 0, duration: 0.88, ease: "back.out(1.15)" }, 1.12);
+      tl.fromTo(".timeline-fill", { scaleX: 0, transformOrigin: "left center" }, { scaleX: 1, duration: 1.18, ease: "power2.out" }, 1.24);
+      tl.fromTo(".timeline-playhead", { opacity: 0, x: -155 }, { opacity: 1, x: 0, duration: 1.1, ease: "power2.out" }, 1.38);
+
+      tl.fromTo("#capture-kicker", { opacity: 0, x: -28 }, { opacity: 1, x: 0, duration: 0.5, ease: "power3.out" }, 4.5);
+      tl.fromTo("#capture-line-one", { opacity: 0, y: 46 }, { opacity: 1, y: 0, duration: 0.68, ease: "power3.out" }, 4.72);
+      tl.fromTo("#capture-line-two", { opacity: 0, y: 42 }, { opacity: 1, y: 0, duration: 0.68, ease: "power3.out" }, 6.26);
+      tl.fromTo("#capture-window", { opacity: 0, x: 115, y: 35, rotation: 2.4 }, { opacity: 1, x: 0, y: 0, rotation: 0, duration: 0.82, ease: "power3.out" }, 4.42);
+      tl.fromTo("#capture-cursor", { opacity: 0, x: 690, y: 725 }, { opacity: 1, x: 420, y: 445, duration: 0.86, ease: "power2.inOut" }, 5.14);
+      tl.fromTo("#capture-cursor .hf-simulated-cursor-pulse", { opacity: 0.85, scale: 0.2 }, { opacity: 0, scale: 2.5, duration: 0.46, ease: "power2.out" }, 6);
+      tl.fromTo("#annotation-ring", { opacity: 0, scale: 0.72, rotation: -9 }, { opacity: 1, scale: 1, rotation: -3, duration: 0.62, ease: "back.out(1.3)" }, 6.05);
+      tl.fromTo("#annotation-note", { opacity: 0, x: 35 }, { opacity: 1, x: 0, duration: 0.5, ease: "power3.out" }, 6.38);
+      tl.to("#capture-window", { scale: 1.035, x: -16, y: -10, duration: 1.2, ease: "power2.inOut" }, 6.95);
+
+      tl.fromTo("#editor-kicker", { opacity: 0, x: -28 }, { opacity: 1, x: 0, duration: 0.5, ease: "power3.out" }, 8.88);
+      tl.fromTo("#editor-line-one", { opacity: 0, y: 44 }, { opacity: 1, y: 0, duration: 0.72, ease: "power3.out" }, 9.08);
+      tl.fromTo("#editor-line-two", { opacity: 0, y: 42 }, { opacity: 1, y: 0, duration: 0.72, ease: "power3.out" }, 11.18);
+      tl.fromTo(".editor-frame-shell", { opacity: 0, x: 115, scale: 0.96 }, { opacity: 1, x: 0, scale: 1, duration: 0.9, ease: "power3.out" }, 8.72);
+      // beat-locked visual payoff: 10.93s
+      tl.to("#editor-frame", { scale: 1.065, x: -24, y: -14, duration: 1.25, ease: "power2.inOut" }, 9.54);
+      tl.fromTo("#editor-cursor", { opacity: 0, x: 480, y: 10 }, { opacity: 1, x: 140, y: -105, duration: 1.05, ease: "power2.inOut" }, 9.88);
+      tl.fromTo("#editor-cursor .hf-simulated-cursor-pulse", { opacity: 0.8, scale: 0.2 }, { opacity: 0, scale: 2.35, duration: 0.45, ease: "power2.out" }, 10.93);
+      tl.fromTo("#source-chip", { opacity: 0, y: 28 }, { opacity: 1, y: 0, duration: 0.58, ease: "back.out(1.2)" }, 12.18);
+
+      tl.fromTo("#result-kicker", { opacity: 0, x: -28 }, { opacity: 1, x: 0, duration: 0.5, ease: "power3.out" }, 13.85);
+      tl.fromTo("#result-line-one", { opacity: 0, y: 44 }, { opacity: 1, y: 0, duration: 0.72, ease: "power3.out" }, 14.08);
+      tl.fromTo("#result-line-two", { opacity: 0, y: 42 }, { opacity: 1, y: 0, duration: 0.72, ease: "power3.out" }, 15.68);
+      // beat-grid: PDF at 14.20s, Library at 15.29s; both hold for readability.
+      tl.fromTo("#pdf-card", { opacity: 0, x: 75, y: 85, rotation: -6, scale: 0.92 }, { opacity: 1, x: 0, y: 0, rotation: -2, scale: 1, duration: 0.84, ease: "back.out(1.15)" }, 14.2);
+      tl.fromTo("#library-card", { opacity: 0, x: 110, y: -20, rotation: 2 }, { opacity: 1, x: 0, y: 0, rotation: 0, duration: 0.88, ease: "power3.out" }, 15.29);
+      tl.fromTo("#label-source", { opacity: 0, scale: 0.84 }, { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(1.25)" }, 16.05);
+      tl.fromTo("#label-return", { opacity: 0, scale: 0.84 }, { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(1.25)" }, 16.58);
+      tl.to("#pdf-card", { y: -18, rotation: -1, duration: 1.4, ease: "sine.inOut" }, 16.72);
+
+      // beat-locked final reveal: 18.56s
+      tl.fromTo("#brand-line-one", { opacity: 0, y: 55 }, { opacity: 1, y: 0, duration: 0.7, ease: "power3.out" }, 18.56);
+      tl.fromTo("#brand-line-two", { opacity: 0, y: 48 }, { opacity: 1, y: 0, duration: 0.7, ease: "power3.out" }, 19.02);
+      tl.fromTo("#brand-lockup", { opacity: 0, scale: 0.92 }, { opacity: 1, scale: 1, duration: 0.62, ease: "back.out(1.12)" }, 19.66);
+      tl.fromTo("#brand-rule", { scaleX: 0 }, { scaleX: 1, duration: 0.58, ease: "power2.out" }, 20.06);
+      tl.fromTo("#brand-url", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.55, ease: "power2.out" }, 20.24);
+
+      tl.to(".orb-a", { x: 48, y: -25, scale: 1.12, duration: 22.4, ease: "sine.inOut" }, 0);
+      tl.to(".orb-b", { x: -42, y: 28, scale: 1.08, duration: 22.4, ease: "sine.inOut" }, 0);
+      tl.to(".brand-grid", { x: 32, y: -20, duration: 4, ease: "sine.inOut" }, 18.4);
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
