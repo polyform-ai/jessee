@@ -1,11 +1,16 @@
 import AppKit
 import JesSeeCore
 
+struct BrowserApplicationContext: Equatable, Sendable {
+  let bundleIdentifier: String
+  let processIdentifier: pid_t
+}
+
 struct BrowserPageContext: Equatable, Sendable {
-  var bundleIdentifier: String
-  var windowID: CGWindowID?
-  var displayID: CGDirectDisplayID?
-  var url: String
+  let application: BrowserApplicationContext
+  let windowID: CGWindowID?
+  let displayID: CGDirectDisplayID?
+  let url: String
 }
 
 @MainActor
@@ -28,18 +33,24 @@ enum BrowserURLReader {
     "org.chromium.Chromium",
   ]
 
-  static func frontmostSupportedBrowserBundleIdentifier() -> String? {
-    guard let bundleIdentifier = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+  static func frontmostSupportedBrowser() -> BrowserApplicationContext? {
+    guard let application = NSWorkspace.shared.frontmostApplication,
+      let bundleIdentifier = application.bundleIdentifier,
       script(for: bundleIdentifier) != nil
     else { return nil }
-    return bundleIdentifier
+    return BrowserApplicationContext(
+      bundleIdentifier: bundleIdentifier,
+      processIdentifier: application.processIdentifier)
   }
 
-  static func currentPage(for bundleIdentifier: String) -> BrowserPageContext? {
-    guard let scriptSource = script(for: bundleIdentifier),
-      let application = NSRunningApplication.runningApplications(
-        withBundleIdentifier: bundleIdentifier
-      ).first(where: { !$0.isTerminated })
+  static func currentPage(for expectedApplication: BrowserApplicationContext) -> BrowserPageContext? {
+    let applications = NSRunningApplication.runningApplications(
+      withBundleIdentifier: expectedApplication.bundleIdentifier
+    ).filter { !$0.isTerminated }
+    guard applications.count == 1,
+      let application = applications.first,
+      application.processIdentifier == expectedApplication.processIdentifier,
+      let scriptSource = script(for: expectedApplication.bundleIdentifier)
     else { return nil }
 
     var scriptError: NSDictionary?
@@ -50,7 +61,7 @@ enum BrowserURLReader {
     else { return nil }
     let window = frontmostWindow(for: application.processIdentifier)
     return BrowserPageContext(
-      bundleIdentifier: bundleIdentifier,
+      application: expectedApplication,
       windowID: window?.id,
       displayID: window.flatMap { displayID(containing: $0.frame) },
       url: normalizedURL)

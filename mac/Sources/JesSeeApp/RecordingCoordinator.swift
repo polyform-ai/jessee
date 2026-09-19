@@ -45,7 +45,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
   private let microphoneQueue = DispatchQueue(label: "ai.polyform.jessee.microphone-meter")
   private var recordingContentRect: CGRect = .zero
   private var recordingDisplayID: CGDirectDisplayID?
-  private var pendingBrowserBundleIdentifier: String?
+  private var pendingBrowserApplication: BrowserApplicationContext?
   private var recordingSourceURL: String?
 
   override init() {
@@ -62,14 +62,14 @@ final class RecordingCoordinator: NSObject, ObservableObject {
 
   func chooseWhatToRecord() {
     guard state == .idle || isFailure else { return }
-    pendingBrowserBundleIdentifier = BrowserURLReader.frontmostSupportedBrowserBundleIdentifier()
+    pendingBrowserApplication = BrowserURLReader.frontmostSupportedBrowser()
     state = .choosingRecording
     picker.present()
   }
 
   func chooseScreenshot() {
     guard state == .idle || isFailure else { return }
-    pendingBrowserBundleIdentifier = nil
+    pendingBrowserApplication = nil
     state = .choosingScreenshot
     picker.present()
   }
@@ -152,7 +152,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
     stream = nil
     recordingOutput = nil
     outputURL = nil
-    pendingBrowserBundleIdentifier = nil
+    pendingBrowserApplication = nil
     recordingSourceURL = nil
   }
 
@@ -206,10 +206,10 @@ final class RecordingCoordinator: NSObject, ObservableObject {
   }
 
   private func selectedSourceURL(for filter: SCContentFilter) -> String? {
-    defer { pendingBrowserBundleIdentifier = nil }
+    defer { pendingBrowserApplication = nil }
     guard #available(macOS 15.2, *),
-      let bundleIdentifier = pendingBrowserBundleIdentifier,
-      let context = BrowserURLReader.currentPage(for: bundleIdentifier)
+      let application = pendingBrowserApplication,
+      let context = BrowserURLReader.currentPage(for: application)
     else { return nil }
     if !filter.includedWindows.isEmpty {
       guard let windowID = context.windowID else { return nil }
@@ -217,7 +217,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
         ? context.url : nil
     }
     if filter.includedApplications.contains(where: {
-      $0.bundleIdentifier == context.bundleIdentifier
+      $0.processID == context.application.processIdentifier
     }) {
       return context.url
     }
@@ -236,7 +236,7 @@ extension RecordingCoordinator: SCContentSharingPickerObserver {
     didCancelFor stream: SCStream?
   ) {
     Task { @MainActor in
-      self.pendingBrowserBundleIdentifier = nil
+      self.pendingBrowserApplication = nil
       self.state = .idle
     }
   }
