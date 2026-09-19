@@ -40,7 +40,7 @@ Download the latest signed and notarized installer from [jessee.ai](https://jess
 1. Open `JesSee.dmg`.
 2. Drag JesSee to Applications.
 3. Open JesSee from Applications and complete the four-step setup.
-4. JesSee opens the Library when launched and stays in the menu bar for recording, screenshots, imports, and updates.
+4. Look for the JesSee viewfinder icon at the top-right of your Mac. JesSee stays in the menu bar for recording, screenshots, imports, and updates, even when the Library window is closed.
 
 The browser extensions have been retired. The native app records Safari, Chrome, and other Mac apps without an extension.
 

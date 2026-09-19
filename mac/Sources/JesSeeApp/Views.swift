@@ -591,16 +591,21 @@ private struct SetupCompleteStep: View {
   var onFinished: (() -> Void)?
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 13) {
-      Image(systemName: "checkmark.circle.fill")
-        .font(.system(size: 42, weight: .semibold))
-        .foregroundStyle(.green)
-      Text("Congrats, you're all ready to use JesSee.")
-        .font(.title3.weight(.bold))
+    VStack(alignment: .leading, spacing: 12) {
+      HStack(spacing: 10) {
+        Image(systemName: "checkmark.circle.fill")
+          .font(.system(size: 34, weight: .semibold))
+          .foregroundStyle(.green)
+        Text("Congrats, you're all ready to use JesSee.")
+          .font(.title3.weight(.bold))
+      }
       Text(
-        "JesSee opens your Library when it launches and stays available in your menu bar. Press ⌥⇧S to start a recording, explain what matters, and press ⌥S when you're ready for JesSee to build the story."
+        "JesSee opens your Library when it launches. Closing the Library does not quit the app—JesSee keeps running in your Mac's menu bar."
       )
       .font(.subheadline).foregroundStyle(.secondary)
+
+      MenuBarLocationGuide()
+
       Button("Start using JesSee") {
         store.finishSetup()
         onFinished?()
@@ -608,6 +613,59 @@ private struct SetupCompleteStep: View {
       .buttonStyle(.borderedProminent).tint(accent).controlSize(.large)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+private struct MenuBarLocationGuide: View {
+  var body: some View {
+    VStack(alignment: .leading, spacing: 9) {
+      HStack(spacing: 8) {
+        Image(systemName: "apple.logo")
+          .foregroundStyle(.secondary)
+        Text("Mac menu bar")
+          .font(.caption.weight(.medium))
+          .foregroundStyle(.secondary)
+        Spacer()
+        Image(systemName: "wifi")
+        Image(systemName: "battery.100percent")
+        ZStack {
+          RoundedRectangle(cornerRadius: 7)
+            .fill(accent.opacity(0.14))
+          Image(systemName: "viewfinder.circle.fill")
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(accent)
+        }
+        .frame(width: 30, height: 26)
+        .overlay(
+          RoundedRectangle(cornerRadius: 7)
+            .stroke(accent.opacity(0.5), lineWidth: 1))
+      }
+      .font(.system(size: 12, weight: .medium))
+
+      HStack(alignment: .top, spacing: 8) {
+        Image(systemName: "arrow.up.right")
+          .foregroundStyle(accent)
+        VStack(alignment: .leading, spacing: 3) {
+          Text("Look for this icon at the top-right of your screen.")
+            .font(.caption.weight(.semibold))
+          Text(
+            "Click it anytime to record, capture a screenshot link, import a video, or reopen your Library. Start a recording with ⌥⇧S."
+          )
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+    }
+    .padding(12)
+    .background(accent.opacity(0.065), in: RoundedRectangle(cornerRadius: 12))
+    .overlay(
+      RoundedRectangle(cornerRadius: 12)
+        .stroke(accent.opacity(0.2), lineWidth: 1))
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(
+      "JesSee stays in the Mac menu bar. Look for the viewfinder icon at the top-right of the screen."
+    )
   }
 }
 

@@ -17,7 +17,7 @@ struct JesSeeMacApp: App {
     Window("Welcome to JesSee", id: "welcome") {
       WelcomeView(store: store)
     }
-    .defaultSize(width: 500, height: 470)
+    .defaultSize(width: 520, height: 600)
     .defaultLaunchBehavior(store.isConfigured ? .suppressed : .presented)
 
     Window("JesSee Library", id: "library") {
