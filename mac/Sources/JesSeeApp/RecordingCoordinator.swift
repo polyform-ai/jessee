@@ -1,5 +1,6 @@
 import AVFoundation
 import Accelerate
+import AppKit
 import CoreVideo
 import Foundation
 import JesSeeCore
@@ -10,11 +11,18 @@ final class RecordingCoordinator: NSObject, ObservableObject {
   struct Result {
     var url: URL
     var markups: [RecordingMarkupStroke]
+    var sourceURL: String?
+  }
+
+  struct ScreenshotResult {
+    var url: URL
   }
 
   enum State: Equatable {
     case idle
-    case choosing
+    case choosingRecording
+    case choosingScreenshot
+    case capturingScreenshot
     case recording
     case stopping
     case failed(String)
@@ -26,6 +34,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
   var overlayModel: RecordingOverlayModel { overlay.model }
 
   var onFinished: ((Result) -> Void)?
+  var onScreenshotCaptured: ((ScreenshotResult) -> Void)?
 
   private let picker = SCContentSharingPicker.shared
   private var stream: SCStream?
@@ -36,6 +45,8 @@ final class RecordingCoordinator: NSObject, ObservableObject {
   private let microphoneQueue = DispatchQueue(label: "ai.polyform.jessee.microphone-meter")
   private var recordingContentRect: CGRect = .zero
   private var recordingDisplayID: CGDirectDisplayID?
+  private var pendingPageContext: BrowserPageContext?
+  private var recordingSourceURL: String?
 
   override init() {
     super.init()
@@ -51,7 +62,15 @@ final class RecordingCoordinator: NSObject, ObservableObject {
 
   func chooseWhatToRecord() {
     guard state == .idle || isFailure else { return }
-    state = .choosing
+    pendingPageContext = BrowserURLReader.currentPage()
+    state = .choosingRecording
+    picker.present()
+  }
+
+  func chooseScreenshot() {
+    guard state == .idle || isFailure else { return }
+    pendingPageContext = nil
+    state = .choosingScreenshot
     picker.present()
   }
 
@@ -80,6 +99,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
   }
 
   private func startRecording(filter: SCContentFilter) async {
+    recordingSourceURL = selectedSourceURL(for: filter)
     recordingContentRect = filter.contentRect
     if #available(macOS 15.2, *) {
       recordingDisplayID = filter.includedDisplays.first?.displayID
@@ -132,25 +152,79 @@ final class RecordingCoordinator: NSObject, ObservableObject {
     stream = nil
     recordingOutput = nil
     outputURL = nil
+    pendingPageContext = nil
+    recordingSourceURL = nil
   }
 
   private func completeRecording() {
     let finishedURL = outputURL
     let shouldRedo = discardCurrentRecording
     let markups = overlay.finish()
+    let sourceURL = recordingSourceURL
     state = .idle
     startedAt = nil
     stream = nil
     recordingOutput = nil
     outputURL = nil
     discardCurrentRecording = false
+    recordingSourceURL = nil
 
     if shouldRedo {
       if let finishedURL { try? FileManager.default.removeItem(at: finishedURL) }
       chooseWhatToRecord()
     } else if let finishedURL {
-      onFinished?(Result(url: finishedURL, markups: markups))
+      onFinished?(Result(url: finishedURL, markups: markups, sourceURL: sourceURL))
     }
+  }
+
+  private func captureScreenshot(filter: SCContentFilter) async {
+    state = .capturingScreenshot
+    let dimensions = CaptureDimensions.fitted(
+      pointWidth: Double(filter.contentRect.width),
+      pointHeight: Double(filter.contentRect.height),
+      pointPixelScale: Double(filter.pointPixelScale)
+    )
+    let configuration = SCStreamConfiguration()
+    configuration.width = dimensions.width
+    configuration.height = dimensions.height
+    configuration.showsCursor = false
+    do {
+      let image = try await SCScreenshotManager.captureImage(
+        contentFilter: filter, configuration: configuration)
+      let representation = NSBitmapImageRep(cgImage: image)
+      guard let data = representation.representation(using: .png, properties: [:]) else {
+        throw JesSeeError.invalidResponse("JesSee could not create the screenshot image.")
+      }
+      let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("JesSee-Screenshot-\(UUID().uuidString).png")
+      try data.write(to: url, options: .atomic)
+      state = .idle
+      onScreenshotCaptured?(ScreenshotResult(url: url))
+    } catch {
+      finishWithError(error.localizedDescription)
+    }
+  }
+
+  private func selectedSourceURL(for filter: SCContentFilter) -> String? {
+    defer { pendingPageContext = nil }
+    guard let context = pendingPageContext else { return nil }
+    guard #available(macOS 15.2, *) else { return context.url }
+    if !filter.includedWindows.isEmpty {
+      guard let windowID = context.windowID else { return nil }
+      return filter.includedWindows.contains(where: { $0.windowID == windowID })
+        ? context.url : nil
+    }
+    if filter.includedApplications.contains(where: {
+      $0.bundleIdentifier == context.bundleIdentifier
+    }) {
+      return context.url
+    }
+    if let displayID = context.displayID,
+      filter.includedDisplays.contains(where: { $0.displayID == displayID })
+    {
+      return context.url
+    }
+    return nil
   }
 }
 
@@ -159,7 +233,10 @@ extension RecordingCoordinator: SCContentSharingPickerObserver {
     _ picker: SCContentSharingPicker,
     didCancelFor stream: SCStream?
   ) {
-    Task { @MainActor in self.state = .idle }
+    Task { @MainActor in
+      self.pendingPageContext = nil
+      self.state = .idle
+    }
   }
 
   nonisolated func contentSharingPicker(
@@ -167,7 +244,16 @@ extension RecordingCoordinator: SCContentSharingPickerObserver {
     didUpdateWith filter: SCContentFilter,
     for stream: SCStream?
   ) {
-    Task { @MainActor in await self.startRecording(filter: filter) }
+    Task { @MainActor in
+      switch self.state {
+      case .choosingScreenshot:
+        await self.captureScreenshot(filter: filter)
+      case .choosingRecording:
+        await self.startRecording(filter: filter)
+      default:
+        break
+      }
+    }
   }
 
   nonisolated func contentSharingPickerStartDidFailWithError(_ error: any Error) {

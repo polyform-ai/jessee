@@ -286,6 +286,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
   public var updatedAt: Date
   public var title: String
   public var source: CaptureSource
+  public var sourceURL: String?
   public var stage: CaptureStage
   public var duration: Double?
   public var mediaFilename: String
@@ -312,6 +313,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     updatedAt: Date = Date(),
     title: String,
     source: CaptureSource,
+    sourceURL: String? = nil,
     stage: CaptureStage = .saved,
     duration: Double? = nil,
     mediaFilename: String,
@@ -337,6 +339,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     self.updatedAt = updatedAt
     self.title = title
     self.source = source
+    self.sourceURL = sourceURL
     self.stage = stage
     self.duration = duration
     self.mediaFilename = mediaFilename

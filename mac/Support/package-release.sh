@@ -102,6 +102,8 @@ This release is signed by Polyform, notarized by Apple, and can update itself fr
 - Let JesSee prioritize marked evidence while preserving useful screenshots from across the full recording.
 - Edit rich text, choose alternate screenshots, add highlights or redactions, retain a webpage source link, and export one continuous PDF.
 - Generate and copy a public PDF link directly beside the editor's save controls.
+- Capture a screenshot, upload it through Polyform, and copy its public link from the menu bar.
+- Preserve the active webpage URL automatically when a recording starts from a supported browser.
 - Use the refreshed JesSee identity across the native app and website.
 EOF
 fi

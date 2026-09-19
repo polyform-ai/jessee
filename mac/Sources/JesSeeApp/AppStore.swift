@@ -35,6 +35,7 @@ final class AppStore: ObservableObject {
   @Published private(set) var notice: Notice?
   @Published private(set) var authenticationState: AuthenticationState
   @Published private(set) var publishingCaptureID: String?
+  @Published private(set) var isPublishingScreenshot = false
   @Published private(set) var hasAPIKey: Bool
   @Published private(set) var isTestingAPIKey = false
   @Published private(set) var readyCaptureID: String?
@@ -90,8 +91,12 @@ final class AppStore: ObservableObject {
           from: result.url,
           source: .recording,
           deleteSourceAfterImport: true,
-          recordingMarkups: result.markups)
+          recordingMarkups: result.markups,
+          capturedSourceURL: result.sourceURL)
       }
+    }
+    recorder.onScreenshotCaptured = { [weak self] result in
+      Task { @MainActor in await self?.publishScreenshot(result) }
     }
     Task {
       if configuration.aiProviderMode == .polyformCovered { _ = try? await accessToken() }
@@ -110,7 +115,7 @@ final class AppStore: ObservableObject {
 
   var recentCaptures: [CaptureRecord] { Array(captures.prefix(4)) }
   var isPolyformCoveredAvailable: Bool { polyformManagedAIAvailable }
-  var isPublicPDFPublishingAvailable: Bool { polyformClient != nil }
+  var isPublicLinkPublishingAvailable: Bool { polyformClient != nil }
   var isSignedIntoPolyform: Bool {
     if case .signedIn = authenticationState { return true }
     return false
@@ -298,6 +303,19 @@ final class AppStore: ObservableObject {
     Task { await addCapture(from: url, source: .importedVideo) }
   }
 
+  func captureScreenshotLink() {
+    guard !isPublishingScreenshot else { return }
+    guard polyformClient != nil else {
+      show(.error(JesSeeError.serviceNotConfigured.localizedDescription))
+      return
+    }
+    guard workflowSession != nil else {
+      show(.error("Sign in with Polyform in Settings to create public screenshot URLs."))
+      return
+    }
+    recorder.chooseScreenshot()
+  }
+
   func reveal(_ record: CaptureRecord) {
     guard let workspace else { return }
     NSWorkspace.shared.activateFileViewerSelecting([workspace.directoryURL(for: record)])
@@ -438,7 +456,8 @@ final class AppStore: ObservableObject {
     from url: URL,
     source: CaptureSource,
     deleteSourceAfterImport: Bool = false,
-    recordingMarkups: [RecordingMarkupStroke]? = nil
+    recordingMarkups: [RecordingMarkupStroke]? = nil,
+    capturedSourceURL: String? = nil
   ) async {
     guard let workspace else {
       show(.error(JesSeeError.outputFolderUnavailable.localizedDescription))
@@ -448,6 +467,7 @@ final class AppStore: ObservableObject {
       let record = try await workspace.importMedia(
         from: url,
         source: source,
+        capturedSourceURL: capturedSourceURL,
         processingProviderMode: configuration.aiProviderMode,
         recordingMarkups: recordingMarkups)
       if deleteSourceAfterImport { try? FileManager.default.removeItem(at: url) }
@@ -462,6 +482,42 @@ final class AppStore: ObservableObject {
       show(.success("Saved to your library. JesSee is transcribing it now."))
     } catch {
       show(.error(error.localizedDescription))
+    }
+  }
+
+  private func publishScreenshot(_ result: RecordingCoordinator.ScreenshotResult) async {
+    guard !isPublishingScreenshot else {
+      try? FileManager.default.removeItem(at: result.url)
+      return
+    }
+    isPublishingScreenshot = true
+    defer {
+      isPublishingScreenshot = false
+      try? FileManager.default.removeItem(at: result.url)
+    }
+    do {
+      let upload = try await withPolyformAuthentication { client, token in
+        try await client.publishImage(
+          at: result.url, contentType: "image/png", accessToken: token)
+      }
+      guard let publicURL = upload.publicURL else {
+        throw JesSeeError.invalidResponse("Polyform did not return a public screenshot link.")
+      }
+      copyToPasteboard(publicURL.absoluteString)
+      recordUsage(.screenshotPublished, feature: "public_screenshot")
+      show(.success("Screenshot URL copied."))
+      let center = UNUserNotificationCenter.current()
+      if (try? await center.requestAuthorization(options: [.alert, .sound])) == true {
+        let content = UNMutableNotificationContent()
+        content.title = "Screenshot URL copied"
+        content.body = "Paste it anywhere you need to share visual context."
+        content.sound = .default
+        try? await center.add(
+          UNNotificationRequest(
+            identifier: "screenshot-\(upload.id)", content: content, trigger: nil))
+      }
+    } catch {
+      show(.error(authenticationAwareError(error).localizedDescription))
     }
   }
 

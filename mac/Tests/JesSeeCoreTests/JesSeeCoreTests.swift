@@ -363,6 +363,45 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(requests.last?.url?.path.hasSuffix("/uploads/upload-orphan") == true)
 }
 
+@Test func publicScreenshotUsesImageContentTypeAndReturnsURL() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [StubURLProtocol.self]
+  let client = PolyformClient(
+    configuration: PolyformServiceConfiguration(
+      apiBase: URL(string: "https://example.test")!, appKey: "app-key"),
+    session: URLSession(configuration: configuration))
+  StubURLProtocol.prepare([
+    .init(
+      status: 200,
+      data: Data(
+        #"{"upload_id":"screenshot-1","upload_url":"https://example.test/upload-target"}"#.utf8)),
+    .init(status: 200, data: Data()),
+    .init(
+      status: 200,
+      data: Data(
+        #"{"upload_id":"screenshot-1","public_url":"https://files.example.test/screenshot.png"}"#.utf8)),
+  ])
+
+  let screenshot = FileManager.default.temporaryDirectory.appendingPathComponent(
+    "\(UUID().uuidString).png")
+  try Data("png".utf8).write(to: screenshot)
+  defer { try? FileManager.default.removeItem(at: screenshot) }
+
+  let upload = try await client.publishImage(
+    at: screenshot, contentType: "image/png", accessToken: "token")
+  #expect(upload.id == "screenshot-1")
+  #expect(upload.publicURL?.absoluteString == "https://files.example.test/screenshot.png")
+
+  let requests = StubURLProtocol.requests()
+  let bodies = StubURLProtocol.bodies()
+  let uploadBody = try #require(bodies.first ?? nil)
+  let uploadJSON = try #require(
+    JSONSerialization.jsonObject(with: uploadBody) as? [String: Any])
+  #expect(uploadJSON["content_type"] as? String == "image/png")
+  #expect(uploadJSON["visibility"] as? String == "public")
+  #expect(requests[1].value(forHTTPHeaderField: "Content-Type") == "image/png")
+}
+
 @Test func successfulTranscriptionSurvivesTemporaryUploadCleanupFailure() async throws {
   let configuration = URLSessionConfiguration.ephemeral
   configuration.protocolClasses = [StubURLProtocol.self]
@@ -918,9 +957,11 @@ private struct WorkflowTestValue: Decodable, Equatable {
   let workspace = CaptureWorkspace(rootURL: temporary)
   _ = try await workspace.load()
   let record = try await workspace.importMedia(
-    from: source, source: .importedVideo, processingProviderMode: .polyformCovered)
+    from: source, source: .importedVideo, capturedSourceURL: "example.com/source",
+    processingProviderMode: .polyformCovered)
   #expect(FileManager.default.fileExists(atPath: workspace.mediaURL(for: record).path))
   #expect(record.processingProviderMode == .polyformCovered)
+  #expect(record.sourceURL == "https://example.com/source")
   #expect(
     record.processingRetryPolicyVersion == CaptureProcessingRetryPolicy.currentVersion)
 
@@ -929,6 +970,7 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(history.count == 1)
   #expect(history.first?.title == "walkthrough")
   #expect(history.first?.processingProviderMode == .polyformCovered)
+  #expect(history.first?.sourceURL == "https://example.com/source")
 }
 
 @Test @MainActor func rendererCreatesOneLongPDFAndEditableHTML() throws {

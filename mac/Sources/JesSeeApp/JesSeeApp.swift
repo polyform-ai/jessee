@@ -46,13 +46,19 @@ private struct RecorderMenuIcon: View {
 
   var body: some View {
     Group {
-      switch recorder.state {
-      case .recording, .stopping:
-        Label("JesSee is recording", systemImage: "record.circle.fill")
-      case .choosing:
-        Label("JesSee is choosing a screen", systemImage: "rectangle.dashed.badge.record")
-      default:
-        Label("JesSee", systemImage: "viewfinder.circle.fill")
+      if store.isPublishingScreenshot {
+        Label("JesSee is uploading a screenshot", systemImage: "arrow.up.circle.fill")
+      } else {
+        switch recorder.state {
+        case .recording, .stopping:
+          Label("JesSee is recording", systemImage: "record.circle.fill")
+        case .choosingRecording, .choosingScreenshot:
+          Label("JesSee is choosing a screen", systemImage: "rectangle.dashed.badge.record")
+        case .capturingScreenshot:
+          Label("JesSee is capturing a screenshot", systemImage: "camera.fill")
+        default:
+          Label("JesSee", systemImage: "viewfinder.circle.fill")
+        }
       }
     }
     .task {

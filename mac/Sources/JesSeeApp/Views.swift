@@ -107,13 +107,21 @@ private struct HomeView: View {
       switch recorder.state {
       case .recording, .stopping:
         RecordingControls(recorder: recorder)
-      case .choosing:
+      case .choosingRecording:
         StatusCard(
           icon: "rectangle.dashed.badge.record", title: "Choose what to share",
           detail: "Pick one window, app, or display in the system panel.")
+      case .choosingScreenshot:
+        StatusCard(
+          icon: "camera.viewfinder", title: "Choose a screenshot",
+          detail: "Pick one window, app, or display. JesSee will copy its public link.")
+      case .capturingScreenshot:
+        StatusCard(
+          icon: "camera.fill", title: "Capturing screenshot",
+          detail: "JesSee is preparing the image for upload.")
       case .failed(let message):
         StatusCard(
-          icon: "exclamationmark.triangle", title: "Recording did not start", detail: message,
+          icon: "exclamationmark.triangle", title: "JesSee could not finish", detail: message,
           actionTitle: "Back", action: recorder.dismissError)
       case .idle:
         StartCard(store: store)
@@ -127,6 +135,7 @@ private struct HomeView: View {
 
 private struct StartCard: View {
   @ObservedObject var store: AppStore
+  @Environment(\.openSettings) private var openSettings
 
   var body: some View {
     VStack(spacing: 10) {
@@ -135,11 +144,33 @@ private struct StartCard: View {
           .frame(maxWidth: .infinity).padding(.vertical, 7)
       }
       .buttonStyle(.borderedProminent).tint(accent).controlSize(.large)
+      Button(action: captureScreenshotLink) {
+        Label(
+          store.isPublishingScreenshot ? "Uploading screenshot…" : "Copy screenshot URL",
+          systemImage: "camera.viewfinder"
+        )
+        .frame(maxWidth: .infinity).padding(.vertical, 4)
+      }
+      .buttonStyle(.bordered).controlSize(.large)
+      .disabled(store.isPublishingScreenshot)
+      .help(
+        store.isSignedIntoPolyform
+          ? "Capture a screenshot, upload it, and copy its public URL"
+          : "Sign in with Polyform in Settings to create public screenshot URLs")
       Button(action: store.importVideo) {
         Label("Import a video", systemImage: "square.and.arrow.down")
           .frame(maxWidth: .infinity).padding(.vertical, 4)
       }
       .buttonStyle(.bordered).controlSize(.large)
+    }
+  }
+
+  private func captureScreenshotLink() {
+    if store.isSignedIntoPolyform {
+      store.captureScreenshotLink()
+    } else {
+      openSettings()
+      NSApp.activate(ignoringOtherApps: true)
     }
   }
 }
@@ -706,7 +737,7 @@ private struct CaptureDetailView: View {
                 store.openPDF(recordID: record.id)
                 completion(true, "PDF updated and opened", nil)
               } else if action == "saveAndPublishPDF" {
-                guard store.isPublicPDFPublishingAvailable else {
+                guard store.isPublicLinkPublishingAvailable else {
                   completion(false, "Public links are unavailable in this build.", nil)
                   return
                 }
@@ -859,10 +890,10 @@ struct SettingsView: View {
           }
         }
       }
-      if store.isPublicPDFPublishingAvailable {
-        Section("Public PDF links") {
+      if store.isPublicLinkPublishingAvailable {
+        Section("Public links") {
           Text(
-            "Sign in with Polyform to upload a finished PDF, generate a public URL, and copy it for sharing. Your local story and source files stay on this Mac."
+            "Sign in with Polyform to upload a screenshot or finished PDF, generate a public URL, and copy it for sharing. Your local story and source files stay on this Mac."
           )
           .font(.caption).foregroundStyle(.secondary)
           PolyformAuthenticationControls(store: store, allowsSignOut: true)
@@ -884,7 +915,9 @@ struct SettingsView: View {
             }
           }
         }
-        Text("You choose one window, app, or display each time a recording starts.")
+        Text(
+          "You choose one window, app, or display each time. When a supported browser is active, JesSee also reads its current webpage URL so the finished story keeps its source. macOS may ask for browser access the first time."
+        )
           .font(.caption).foregroundStyle(.secondary)
       }
       Section("Privacy") {

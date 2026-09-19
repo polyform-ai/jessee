@@ -29,6 +29,7 @@ public actor CaptureWorkspace {
   public func importMedia(
     from sourceURL: URL,
     source: CaptureSource,
+    capturedSourceURL: String? = nil,
     processingProviderMode: AIProviderMode? = nil,
     recordingMarkups: [RecordingMarkupStroke]? = nil
   ) throws -> CaptureRecord {
@@ -55,6 +56,7 @@ public actor CaptureWorkspace {
       updatedAt: now,
       title: fallbackTitle,
       source: source,
+      sourceURL: PolyformClient.normalizedWebURL(capturedSourceURL),
       mediaFilename: filename,
       recordingMarkups: recordingMarkups,
       processingRetryPolicyVersion: CaptureProcessingRetryPolicy.currentVersion,
