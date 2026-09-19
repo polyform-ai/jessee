@@ -1,8 +1,14 @@
 import AVFoundation
 import AppKit
+import Carbon.HIToolbox
 import JesSeeCore
 import SwiftUI
 @preconcurrency import UserNotifications
+
+private enum AppHotKeyAction: UInt32 {
+  case startRecording = 1
+  case captureScreenshot
+}
 
 @MainActor
 final class AppStore: ObservableObject {
@@ -56,6 +62,7 @@ final class AppStore: ObservableObject {
   private var refreshTask: Task<WorkflowAuthSession, Error>?
   private var signInTask: Task<Void, Never>?
   private var workflowSession: WorkflowAuthSession?
+  private var appHotKeys: GlobalHotKeyController?
 
   init() {
     let notificationCenter = UNUserNotificationCenter.current()
@@ -97,6 +104,27 @@ final class AppStore: ObservableObject {
     }
     recorder.onScreenshotCaptured = { [weak self] result in
       Task { @MainActor in await self?.publishScreenshot(result) }
+    }
+    appHotKeys = GlobalHotKeyController(
+      signature: 0x4A53_5343,
+      registrations: [
+        GlobalHotKeyRegistration(
+          id: AppHotKeyAction.startRecording.rawValue,
+          keyCode: UInt32(kVK_ANSI_S),
+          modifiers: UInt32(optionKey | shiftKey)),
+        GlobalHotKeyRegistration(
+          id: AppHotKeyAction.captureScreenshot.rawValue,
+          keyCode: UInt32(kVK_ANSI_C),
+          modifiers: UInt32(optionKey | shiftKey)),
+      ]
+    ) { [weak self] id in
+      Task { @MainActor in
+        switch AppHotKeyAction(rawValue: id) {
+        case .startRecording: self?.recorder.chooseWhatToRecord()
+        case .captureScreenshot: self?.captureScreenshotLink()
+        case nil: break
+        }
+      }
     }
     Task {
       if configuration.aiProviderMode == .polyformCovered { _ = try? await accessToken() }

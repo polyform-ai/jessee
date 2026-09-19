@@ -402,6 +402,37 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(requests[1].value(forHTTPHeaderField: "Content-Type") == "image/png")
 }
 
+@Test func failedScreenshotTransferDeletesTheCreatedUpload() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [StubURLProtocol.self]
+  let client = PolyformClient(
+    configuration: PolyformServiceConfiguration(
+      apiBase: URL(string: "https://example.test")!, appKey: "app-key"),
+    session: URLSession(configuration: configuration))
+  StubURLProtocol.prepare([
+    .init(
+      status: 200,
+      data: Data(
+        #"{"upload_id":"screenshot-orphan","upload_url":"https://example.test/upload-target"}"#.utf8)),
+    .init(status: 503, data: Data(#"{"error":"try again"}"#.utf8)),
+    .init(status: 204, data: Data()),
+  ])
+
+  let screenshot = FileManager.default.temporaryDirectory.appendingPathComponent(
+    "\(UUID().uuidString).png")
+  try Data("png".utf8).write(to: screenshot)
+  defer { try? FileManager.default.removeItem(at: screenshot) }
+
+  await #expect(throws: PolyformClientError.self) {
+    _ = try await client.publishImage(
+      at: screenshot, contentType: "image/png", accessToken: "token")
+  }
+  let requests = StubURLProtocol.requests()
+  #expect(requests.count == 3)
+  #expect(requests.last?.httpMethod == "DELETE")
+  #expect(requests.last?.url?.path.hasSuffix("/uploads/screenshot-orphan") == true)
+}
+
 @Test func successfulTranscriptionSurvivesTemporaryUploadCleanupFailure() async throws {
   let configuration = URLSessionConfiguration.ephemeral
   configuration.protocolClasses = [StubURLProtocol.self]

@@ -69,6 +69,9 @@ private struct RecorderMenuIcon: View {
       } else if ProcessInfo.processInfo.arguments.contains("--open-library") {
         handledLaunchRequest = true
         openWindow(id: "library")
+      } else if store.isConfigured {
+        handledLaunchRequest = true
+        openWindow(id: "library")
       } else {
         return
       }

@@ -140,22 +140,31 @@ private struct StartCard: View {
   var body: some View {
     VStack(spacing: 10) {
       Button(action: store.recorder.chooseWhatToRecord) {
-        Label("Start a recording", systemImage: "record.circle.fill")
+        HStack(spacing: 10) {
+          Label("Start a recording", systemImage: "record.circle.fill")
+          Spacer()
+          Text("⌥⇧S").font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.9))
+        }
           .frame(maxWidth: .infinity).padding(.vertical, 7)
       }
       .buttonStyle(.borderedProminent).tint(accent).controlSize(.large)
+      .help("Choose a window, app, or display to record · ⌥⇧S")
       Button(action: captureScreenshotLink) {
-        Label(
-          store.isPublishingScreenshot ? "Uploading screenshot…" : "Copy screenshot URL",
-          systemImage: "camera.viewfinder"
-        )
+        HStack(spacing: 10) {
+          Label(
+            store.isPublishingScreenshot ? "Uploading screenshot…" : "Copy screenshot URL",
+            systemImage: "camera.viewfinder"
+          )
+          Spacer()
+          Text("⌥⇧C").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+        }
         .frame(maxWidth: .infinity).padding(.vertical, 4)
       }
       .buttonStyle(.bordered).controlSize(.large)
       .disabled(store.isPublishingScreenshot)
       .help(
         store.isSignedIntoPolyform
-          ? "Capture a screenshot, upload it, and copy its public URL"
+          ? "Capture a screenshot, upload it, and copy its public URL · ⌥⇧C"
           : "Sign in with Polyform in Settings to create public screenshot URLs")
       Button(action: store.importVideo) {
         Label("Import a video", systemImage: "square.and.arrow.down")
@@ -589,7 +598,7 @@ private struct SetupCompleteStep: View {
       Text("Congrats, you're all ready to use JesSee.")
         .font(.title3.weight(.bold))
       Text(
-        "JesSee now lives in your menu bar. Start a recording, explain what matters, and press ⌥S when you're ready for JesSee to build the story."
+        "JesSee opens your Library when it launches and stays available in your menu bar. Press ⌥⇧S to start a recording, explain what matters, and press ⌥S when you're ready for JesSee to build the story."
       )
       .font(.subheadline).foregroundStyle(.secondary)
       Button("Start using JesSee") {
@@ -916,7 +925,7 @@ struct SettingsView: View {
           }
         }
         Text(
-          "You choose one window, app, or display each time. When a supported browser is active, JesSee also reads its current webpage URL so the finished story keeps its source. macOS may ask for browser access the first time."
+          "You choose one window, app, or display each time. On macOS 15.2 or newer, when a supported browser is active, JesSee also reads its current webpage URL so the finished story keeps its source. macOS may ask for browser access the first time."
         )
           .font(.caption).foregroundStyle(.secondary)
       }

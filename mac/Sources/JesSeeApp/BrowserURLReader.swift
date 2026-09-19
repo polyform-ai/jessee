@@ -28,10 +28,18 @@ enum BrowserURLReader {
     "org.chromium.Chromium",
   ]
 
-  static func currentPage() -> BrowserPageContext? {
-    guard let application = NSWorkspace.shared.frontmostApplication,
-      let bundleIdentifier = application.bundleIdentifier,
-      let scriptSource = script(for: bundleIdentifier)
+  static func frontmostSupportedBrowserBundleIdentifier() -> String? {
+    guard let bundleIdentifier = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+      script(for: bundleIdentifier) != nil
+    else { return nil }
+    return bundleIdentifier
+  }
+
+  static func currentPage(for bundleIdentifier: String) -> BrowserPageContext? {
+    guard let scriptSource = script(for: bundleIdentifier),
+      let application = NSRunningApplication.runningApplications(
+        withBundleIdentifier: bundleIdentifier
+      ).first(where: { !$0.isTerminated })
     else { return nil }
 
     var scriptError: NSDictionary?

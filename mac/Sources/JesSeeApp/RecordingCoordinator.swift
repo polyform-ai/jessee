@@ -45,7 +45,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
   private let microphoneQueue = DispatchQueue(label: "ai.polyform.jessee.microphone-meter")
   private var recordingContentRect: CGRect = .zero
   private var recordingDisplayID: CGDirectDisplayID?
-  private var pendingPageContext: BrowserPageContext?
+  private var pendingBrowserBundleIdentifier: String?
   private var recordingSourceURL: String?
 
   override init() {
@@ -62,14 +62,14 @@ final class RecordingCoordinator: NSObject, ObservableObject {
 
   func chooseWhatToRecord() {
     guard state == .idle || isFailure else { return }
-    pendingPageContext = BrowserURLReader.currentPage()
+    pendingBrowserBundleIdentifier = BrowserURLReader.frontmostSupportedBrowserBundleIdentifier()
     state = .choosingRecording
     picker.present()
   }
 
   func chooseScreenshot() {
     guard state == .idle || isFailure else { return }
-    pendingPageContext = nil
+    pendingBrowserBundleIdentifier = nil
     state = .choosingScreenshot
     picker.present()
   }
@@ -152,7 +152,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
     stream = nil
     recordingOutput = nil
     outputURL = nil
-    pendingPageContext = nil
+    pendingBrowserBundleIdentifier = nil
     recordingSourceURL = nil
   }
 
@@ -206,9 +206,11 @@ final class RecordingCoordinator: NSObject, ObservableObject {
   }
 
   private func selectedSourceURL(for filter: SCContentFilter) -> String? {
-    defer { pendingPageContext = nil }
-    guard let context = pendingPageContext else { return nil }
-    guard #available(macOS 15.2, *) else { return context.url }
+    defer { pendingBrowserBundleIdentifier = nil }
+    guard #available(macOS 15.2, *),
+      let bundleIdentifier = pendingBrowserBundleIdentifier,
+      let context = BrowserURLReader.currentPage(for: bundleIdentifier)
+    else { return nil }
     if !filter.includedWindows.isEmpty {
       guard let windowID = context.windowID else { return nil }
       return filter.includedWindows.contains(where: { $0.windowID == windowID })
@@ -234,7 +236,7 @@ extension RecordingCoordinator: SCContentSharingPickerObserver {
     didCancelFor stream: SCStream?
   ) {
     Task { @MainActor in
-      self.pendingPageContext = nil
+      self.pendingBrowserBundleIdentifier = nil
       self.state = .idle
     }
   }

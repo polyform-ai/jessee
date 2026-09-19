@@ -308,20 +308,31 @@ public struct PolyformClient: Sendable {
         filename: fileURL.lastPathComponent, contentType: contentType,
         byteCount: data.count, visibility: visibility),
       accessToken: accessToken)
-    guard let uploadURLValue = created.uploadURL, let uploadURL = URL(string: uploadURLValue) else {
-      throw PolyformClientError.invalidResponse("Polyform returned an invalid upload session.")
+    do {
+      guard let uploadURLValue = created.uploadURL, let uploadURL = URL(string: uploadURLValue)
+      else {
+        throw PolyformClientError.invalidResponse("Polyform returned an invalid upload session.")
+      }
+      var put = URLRequest(url: uploadURL)
+      put.httpMethod = "PUT"
+      put.setValue(contentType, forHTTPHeaderField: "Content-Type")
+      put.httpBody = data
+      _ = try await checkedData(for: put)
+      let completed: UploadResponse = try await post(
+        configuration.authURL("uploads/\(created.uploadID)/complete"),
+        body: EmptyBody(), accessToken: accessToken)
+      return ManagedUpload(
+        id: completed.uploadID,
+        publicURL: completed.publicURL.flatMap(URL.init(string:)))
+    } catch {
+      do {
+        try await deleteUpload(id: created.uploadID, accessToken: accessToken)
+      } catch let cleanupError {
+        throw PolyformClientError.invalidResponse(
+          "Upload \(created.uploadID) failed and could not be removed: \(error.localizedDescription). Cleanup failed: \(cleanupError.localizedDescription)")
+      }
+      throw error
     }
-    var put = URLRequest(url: uploadURL)
-    put.httpMethod = "PUT"
-    put.setValue(contentType, forHTTPHeaderField: "Content-Type")
-    put.httpBody = data
-    _ = try await checkedData(for: put)
-    let completed: UploadResponse = try await post(
-      configuration.authURL("uploads/\(created.uploadID)/complete"),
-      body: EmptyBody(), accessToken: accessToken)
-    return ManagedUpload(
-      id: completed.uploadID,
-      publicURL: completed.publicURL.flatMap(URL.init(string:)))
   }
 
   public func deleteUpload(id: String, accessToken: String) async throws {

@@ -18,7 +18,7 @@ Use it for:
 - A guided choice between Polyform Covered and Bring Your Own Key, plus output folder and microphone access
 - Menu-bar recording for any selected window, app, or display
 - One-click screenshot capture that uploads a public image and copies its URL
-- Automatic source webpage URLs for recordings started from supported browsers
+- Automatic source webpage URLs for recordings started from supported browsers on macOS 15.2+
 - A live timer, microphone meter, drawing and highlighting controls
 - Global recording shortcuts, including `⌥S` to stop and process
 - Video import for existing walkthroughs
@@ -40,7 +40,7 @@ Download the latest signed and notarized installer from [jessee.ai](https://jess
 1. Open `JesSee.dmg`.
 2. Drag JesSee to Applications.
 3. Open JesSee from Applications and complete the four-step setup.
-4. Use the menu-bar icon to record, import video, open the library, or check for updates.
+4. JesSee opens the Library when launched and stays in the menu bar for recording, screenshots, imports, and updates.
 
 The browser extensions have been retired. The native app records Safari, Chrome, and other Mac apps without an extension.
 
@@ -50,6 +50,8 @@ The floating recording bar shows the elapsed time and microphone activity. Hover
 
 | Action | Shortcut |
 | --- | --- |
+| Start a recording | `⌥⇧S` |
+| Copy screenshot URL | `⌥⇧C` |
 | Draw | `⌥D` |
 | Highlight | `⌥H` |
 | Undo | `⌥Z` |
