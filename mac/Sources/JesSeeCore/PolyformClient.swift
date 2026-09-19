@@ -328,6 +328,12 @@ public struct PolyformClient: Sendable {
       do {
         try await deleteUpload(id: created.uploadID, accessToken: accessToken)
       } catch let cleanupError {
+        if let clientError = error as? PolyformClientError,
+          case .authenticationRequired(let detail) = clientError
+        {
+          throw PolyformClientError.authenticationRequired(
+            "\(detail) Upload \(created.uploadID) cleanup also failed: \(cleanupError.localizedDescription)")
+        }
         throw PolyformClientError.invalidResponse(
           "Upload \(created.uploadID) failed and could not be removed: \(error.localizedDescription). Cleanup failed: \(cleanupError.localizedDescription)")
       }

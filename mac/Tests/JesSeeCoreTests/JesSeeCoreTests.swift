@@ -433,6 +433,44 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(requests.last?.url?.path.hasSuffix("/uploads/screenshot-orphan") == true)
 }
 
+@Test func uploadCleanupFailurePreservesAuthenticationRequired() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [StubURLProtocol.self]
+  let client = PolyformClient(
+    configuration: PolyformServiceConfiguration(
+      apiBase: URL(string: "https://example.test")!, appKey: "app-key"),
+    session: URLSession(configuration: configuration))
+  StubURLProtocol.prepare([
+    .init(
+      status: 200,
+      data: Data(
+        #"{"upload_id":"expired-upload","upload_url":"https://example.test/upload-target"}"#.utf8)),
+    .init(status: 200, data: Data()),
+    .init(status: 401, data: Data(#"{"error":"session expired"}"#.utf8)),
+    .init(status: 401, data: Data(#"{"error":"session expired"}"#.utf8)),
+  ])
+
+  let screenshot = FileManager.default.temporaryDirectory.appendingPathComponent(
+    "\(UUID().uuidString).png")
+  try Data("png".utf8).write(to: screenshot)
+  defer { try? FileManager.default.removeItem(at: screenshot) }
+
+  do {
+    _ = try await client.publishImage(
+      at: screenshot, contentType: "image/png", accessToken: "expired-token")
+    Issue.record("Expected authentication to be required")
+  } catch let error as PolyformClientError {
+    guard case .authenticationRequired(let detail) = error else {
+      Issue.record("Expected authenticationRequired, received \(error)")
+      return
+    }
+    #expect(detail.contains("cleanup also failed"))
+  }
+  let requests = StubURLProtocol.requests()
+  #expect(requests.count == 4)
+  #expect(requests.last?.httpMethod == "DELETE")
+}
+
 @Test func successfulTranscriptionSurvivesTemporaryUploadCleanupFailure() async throws {
   let configuration = URLSessionConfiguration.ephemeral
   configuration.protocolClasses = [StubURLProtocol.self]
