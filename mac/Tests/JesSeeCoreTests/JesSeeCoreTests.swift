@@ -363,6 +363,114 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(requests.last?.url?.path.hasSuffix("/uploads/upload-orphan") == true)
 }
 
+@Test func publicScreenshotUsesImageContentTypeAndReturnsURL() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [StubURLProtocol.self]
+  let client = PolyformClient(
+    configuration: PolyformServiceConfiguration(
+      apiBase: URL(string: "https://example.test")!, appKey: "app-key"),
+    session: URLSession(configuration: configuration))
+  StubURLProtocol.prepare([
+    .init(
+      status: 200,
+      data: Data(
+        #"{"upload_id":"screenshot-1","upload_url":"https://example.test/upload-target"}"#.utf8)),
+    .init(status: 200, data: Data()),
+    .init(
+      status: 200,
+      data: Data(
+        #"{"upload_id":"screenshot-1","public_url":"https://files.example.test/screenshot.png"}"#.utf8)),
+  ])
+
+  let screenshot = FileManager.default.temporaryDirectory.appendingPathComponent(
+    "\(UUID().uuidString).png")
+  try Data("png".utf8).write(to: screenshot)
+  defer { try? FileManager.default.removeItem(at: screenshot) }
+
+  let upload = try await client.publishImage(
+    at: screenshot, contentType: "image/png", accessToken: "token")
+  #expect(upload.id == "screenshot-1")
+  #expect(upload.publicURL?.absoluteString == "https://files.example.test/screenshot.png")
+
+  let requests = StubURLProtocol.requests()
+  let bodies = StubURLProtocol.bodies()
+  let uploadBody = try #require(bodies.first ?? nil)
+  let uploadJSON = try #require(
+    JSONSerialization.jsonObject(with: uploadBody) as? [String: Any])
+  #expect(uploadJSON["content_type"] as? String == "image/png")
+  #expect(uploadJSON["visibility"] as? String == "public")
+  #expect(requests[1].value(forHTTPHeaderField: "Content-Type") == "image/png")
+}
+
+@Test func failedScreenshotTransferDeletesTheCreatedUpload() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [StubURLProtocol.self]
+  let client = PolyformClient(
+    configuration: PolyformServiceConfiguration(
+      apiBase: URL(string: "https://example.test")!, appKey: "app-key"),
+    session: URLSession(configuration: configuration))
+  StubURLProtocol.prepare([
+    .init(
+      status: 200,
+      data: Data(
+        #"{"upload_id":"screenshot-orphan","upload_url":"https://example.test/upload-target"}"#.utf8)),
+    .init(status: 503, data: Data(#"{"error":"try again"}"#.utf8)),
+    .init(status: 204, data: Data()),
+  ])
+
+  let screenshot = FileManager.default.temporaryDirectory.appendingPathComponent(
+    "\(UUID().uuidString).png")
+  try Data("png".utf8).write(to: screenshot)
+  defer { try? FileManager.default.removeItem(at: screenshot) }
+
+  await #expect(throws: PolyformClientError.self) {
+    _ = try await client.publishImage(
+      at: screenshot, contentType: "image/png", accessToken: "token")
+  }
+  let requests = StubURLProtocol.requests()
+  #expect(requests.count == 3)
+  #expect(requests.last?.httpMethod == "DELETE")
+  #expect(requests.last?.url?.path.hasSuffix("/uploads/screenshot-orphan") == true)
+}
+
+@Test func uploadCleanupFailurePreservesAuthenticationRequired() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [StubURLProtocol.self]
+  let client = PolyformClient(
+    configuration: PolyformServiceConfiguration(
+      apiBase: URL(string: "https://example.test")!, appKey: "app-key"),
+    session: URLSession(configuration: configuration))
+  StubURLProtocol.prepare([
+    .init(
+      status: 200,
+      data: Data(
+        #"{"upload_id":"expired-upload","upload_url":"https://example.test/upload-target"}"#.utf8)),
+    .init(status: 200, data: Data()),
+    .init(status: 401, data: Data(#"{"error":"session expired"}"#.utf8)),
+    .init(status: 401, data: Data(#"{"error":"session expired"}"#.utf8)),
+  ])
+
+  let screenshot = FileManager.default.temporaryDirectory.appendingPathComponent(
+    "\(UUID().uuidString).png")
+  try Data("png".utf8).write(to: screenshot)
+  defer { try? FileManager.default.removeItem(at: screenshot) }
+
+  do {
+    _ = try await client.publishImage(
+      at: screenshot, contentType: "image/png", accessToken: "expired-token")
+    Issue.record("Expected authentication to be required")
+  } catch let error as PolyformClientError {
+    guard case .authenticationRequired(let detail) = error else {
+      Issue.record("Expected authenticationRequired, received \(error)")
+      return
+    }
+    #expect(detail.contains("cleanup also failed"))
+  }
+  let requests = StubURLProtocol.requests()
+  #expect(requests.count == 4)
+  #expect(requests.last?.httpMethod == "DELETE")
+}
+
 @Test func successfulTranscriptionSurvivesTemporaryUploadCleanupFailure() async throws {
   let configuration = URLSessionConfiguration.ephemeral
   configuration.protocolClasses = [StubURLProtocol.self]
@@ -918,9 +1026,11 @@ private struct WorkflowTestValue: Decodable, Equatable {
   let workspace = CaptureWorkspace(rootURL: temporary)
   _ = try await workspace.load()
   let record = try await workspace.importMedia(
-    from: source, source: .importedVideo, processingProviderMode: .polyformCovered)
+    from: source, source: .importedVideo, capturedSourceURL: "example.com/source",
+    processingProviderMode: .polyformCovered)
   #expect(FileManager.default.fileExists(atPath: workspace.mediaURL(for: record).path))
   #expect(record.processingProviderMode == .polyformCovered)
+  #expect(record.sourceURL == "https://example.com/source")
   #expect(
     record.processingRetryPolicyVersion == CaptureProcessingRetryPolicy.currentVersion)
 
@@ -929,6 +1039,7 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(history.count == 1)
   #expect(history.first?.title == "walkthrough")
   #expect(history.first?.processingProviderMode == .polyformCovered)
+  #expect(history.first?.sourceURL == "https://example.com/source")
 }
 
 @Test @MainActor func rendererCreatesOneLongPDFAndEditableHTML() throws {

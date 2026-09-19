@@ -1,8 +1,8 @@
 # Polyform setup for JesSee
 
-JesSee uses one Polyform workflow-auth group for email-approved access to transcription, story creation, and optional public PDF uploads. The Mac app uses PKCE, stores the returned bearer session in Keychain, and rotates the session through the workflow-auth refresh endpoint.
+JesSee uses one Polyform workflow-auth group for email-approved access to transcription, story creation, and optional public PDF or screenshot uploads. The Mac app uses PKCE, stores the returned bearer session in Keychain, and rotates the session through the workflow-auth refresh endpoint.
 
-> Release status: Polyform Covered is enabled in signed releases. The release workflow injects the transcription and story workflow URLs, while Polyform email authentication also supports opt-in public PDF links. Bring Your Own Key remains available as a separate mode.
+> Release status: Polyform Covered is enabled in signed releases. The release workflow injects the transcription and story workflow URLs, while Polyform email authentication also supports opt-in public PDF and screenshot links. Bring Your Own Key remains available as a separate mode.
 
 These are production configuration steps; they are not performed by the app repository.
 
@@ -11,7 +11,7 @@ These are production configuration steps; they are not performed by the app repo
 Use the existing **Jessee App** workflow-auth group and **Jessee User Access** policy workflow.
 
 - Keep the current app key and email approval flow.
-- Change managed upload access from `private` to `public` after the PDF upload backend supports `application/pdf`.
+- Change managed upload access from `private` to `public` after the upload backend supports `application/pdf` and `image/png`.
 - Expect changing upload access to revoke existing grants. Make the change before distributing a new release or tell existing testers to sign in again.
 - Keep both AI workflows protected by this same workflow-auth group.
 
@@ -78,11 +78,11 @@ The workflow URLs are injected into the signed app bundle with the managed-AI fe
 
 For local end-to-end testing, build the app with `JESSEE_MANAGED_AI_ENABLED=1` plus both `JESSEE_TRANSCRIPTION_WORKFLOW_URL` and `JESSEE_STORY_WORKFLOW_URL`. The build fails if managed mode is requested without both workflows. The committed Info.plist remains safe for ordinary local builds, while the signed release workflow explicitly enables managed mode and injects both URLs.
 
-## Public PDFs
+## Public links
 
-Public links are opt-in and independent of the selected AI provider. JesSee authenticates through the same workflow-auth group, uploads a PDF only after the user chooses **Generate public link**, stores the returned upload ID and URL with that local capture, and replaces the prior upload after the user publishes an updated PDF.
+Public links are opt-in and independent of the selected AI provider. JesSee authenticates through the same workflow-auth group. It uploads a PDF only after the user chooses **Generate public link**, stores the returned upload ID and URL with that local capture, and replaces the prior upload after the user publishes an updated PDF. It uploads a PNG only after the user chooses **Copy screenshot URL**, copies the returned public URL, and removes the temporary local PNG.
 
-The Polyform backend must allow `application/pdf` for workflow-auth managed uploads before enabling public upload access for the group. Do not enable this for a release until the backend change has been deployed and a signed build has completed an end-to-end upload test.
+The Polyform backend must allow both `application/pdf` and `image/png` for workflow-auth managed uploads before enabling public upload access for the group. If PNG uploads are not yet allowed, JesSee will show the backend error and no screenshot link will be copied. Do not enable this for a release until the backend change has been deployed and a signed build has completed an end-to-end upload test.
 
 ## Analytics cleanup
 

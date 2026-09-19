@@ -265,18 +265,35 @@ public struct PolyformClient: Sendable {
   }
 
   public func publishPDF(at fileURL: URL, accessToken: String) async throws -> ManagedUpload {
+    try await publishPublicFile(
+      at: fileURL, contentType: "application/pdf", kind: "PDF", accessToken: accessToken)
+  }
+
+  public func publishImage(
+    at fileURL: URL, contentType: String, accessToken: String
+  ) async throws -> ManagedUpload {
+    guard contentType == "image/png" || contentType == "image/jpeg" else {
+      throw PolyformClientError.invalidResponse("JesSee can only publish PNG or JPEG screenshots.")
+    }
+    return try await publishPublicFile(
+      at: fileURL, contentType: contentType, kind: "screenshot", accessToken: accessToken)
+  }
+
+  private func publishPublicFile(
+    at fileURL: URL, contentType: String, kind: String, accessToken: String
+  ) async throws -> ManagedUpload {
     let uploaded = try await upload(
-      fileURL: fileURL, contentType: "application/pdf", visibility: "public",
+      fileURL: fileURL, contentType: contentType, visibility: "public",
       accessToken: accessToken)
     guard uploaded.publicURL != nil else {
       do {
         try await deleteUpload(id: uploaded.id, accessToken: accessToken)
       } catch {
         throw PolyformClientError.invalidResponse(
-          "Polyform uploaded the PDF without a public link, and upload \(uploaded.id) could not be removed: \(error.localizedDescription)")
+          "Polyform uploaded the \(kind) without a public link, and upload \(uploaded.id) could not be removed: \(error.localizedDescription)")
       }
       throw PolyformClientError.invalidResponse(
-        "Polyform uploaded the PDF but did not return its public link.")
+        "Polyform uploaded the \(kind) but did not return its public link.")
     }
     return uploaded
   }
@@ -291,20 +308,37 @@ public struct PolyformClient: Sendable {
         filename: fileURL.lastPathComponent, contentType: contentType,
         byteCount: data.count, visibility: visibility),
       accessToken: accessToken)
-    guard let uploadURLValue = created.uploadURL, let uploadURL = URL(string: uploadURLValue) else {
-      throw PolyformClientError.invalidResponse("Polyform returned an invalid upload session.")
+    do {
+      guard let uploadURLValue = created.uploadURL, let uploadURL = URL(string: uploadURLValue)
+      else {
+        throw PolyformClientError.invalidResponse("Polyform returned an invalid upload session.")
+      }
+      var put = URLRequest(url: uploadURL)
+      put.httpMethod = "PUT"
+      put.setValue(contentType, forHTTPHeaderField: "Content-Type")
+      put.httpBody = data
+      _ = try await checkedData(for: put)
+      let completed: UploadResponse = try await post(
+        configuration.authURL("uploads/\(created.uploadID)/complete"),
+        body: EmptyBody(), accessToken: accessToken)
+      return ManagedUpload(
+        id: completed.uploadID,
+        publicURL: completed.publicURL.flatMap(URL.init(string:)))
+    } catch {
+      do {
+        try await deleteUpload(id: created.uploadID, accessToken: accessToken)
+      } catch let cleanupError {
+        if let clientError = error as? PolyformClientError,
+          case .authenticationRequired(let detail) = clientError
+        {
+          throw PolyformClientError.authenticationRequired(
+            "\(detail) Upload \(created.uploadID) cleanup also failed: \(cleanupError.localizedDescription)")
+        }
+        throw PolyformClientError.invalidResponse(
+          "Upload \(created.uploadID) failed and could not be removed: \(error.localizedDescription). Cleanup failed: \(cleanupError.localizedDescription)")
+      }
+      throw error
     }
-    var put = URLRequest(url: uploadURL)
-    put.httpMethod = "PUT"
-    put.setValue(contentType, forHTTPHeaderField: "Content-Type")
-    put.httpBody = data
-    _ = try await checkedData(for: put)
-    let completed: UploadResponse = try await post(
-      configuration.authURL("uploads/\(created.uploadID)/complete"),
-      body: EmptyBody(), accessToken: accessToken)
-    return ManagedUpload(
-      id: completed.uploadID,
-      publicURL: completed.publicURL.flatMap(URL.init(string:)))
   }
 
   public func deleteUpload(id: String, accessToken: String) async throws {
@@ -324,7 +358,7 @@ public struct PolyformClient: Sendable {
     return requested
   }
 
-  static func normalizedWebURL(_ candidate: String?) -> String? {
+  public static func normalizedWebURL(_ candidate: String?) -> String? {
     guard var value = candidate?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty
     else { return nil }
     if !value.contains("://") { value = "https://\(value)" }

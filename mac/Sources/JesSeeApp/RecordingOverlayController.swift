@@ -448,70 +448,32 @@ private enum RecordingHotKeyAction: UInt32 {
   case stop
 }
 
-private let recordingHotKeyHandler: EventHandlerUPP = { _, event, userData in
-  guard let event, let userData else { return OSStatus(eventNotHandledErr) }
-  var hotKeyID = EventHotKeyID()
-  let status = GetEventParameter(
-    event,
-    EventParamName(kEventParamDirectObject),
-    EventParamType(typeEventHotKeyID),
-    nil,
-    MemoryLayout<EventHotKeyID>.size,
-    nil,
-    &hotKeyID)
-  guard status == noErr, let action = RecordingHotKeyAction(rawValue: hotKeyID.id) else {
-    return OSStatus(eventNotHandledErr)
-  }
-  Unmanaged<RecordingHotKeyController>.fromOpaque(userData).takeUnretainedValue().perform(action)
-  return noErr
-}
-
 private final class RecordingHotKeyController {
   private let handler: (RecordingHotKeyAction) -> Void
-  private var eventHandler: EventHandlerRef?
-  private var hotKeys: [EventHotKeyRef?] = []
+  private var controller: GlobalHotKeyController?
 
   init(handler: @escaping (RecordingHotKeyAction) -> Void) {
     self.handler = handler
-    var eventType = EventTypeSpec(
-      eventClass: OSType(kEventClassKeyboard),
-      eventKind: UInt32(kEventHotKeyPressed))
-    InstallEventHandler(
-      GetApplicationEventTarget(),
-      recordingHotKeyHandler,
-      1,
-      &eventType,
-      Unmanaged.passUnretained(self).toOpaque(),
-      &eventHandler)
-    register(.draw, keyCode: UInt32(kVK_ANSI_D))
-    register(.highlight, keyCode: UInt32(kVK_ANSI_H))
-    register(.undo, keyCode: UInt32(kVK_ANSI_Z))
-    register(.clear, keyCode: UInt32(kVK_ANSI_C))
-    register(.redo, keyCode: UInt32(kVK_ANSI_R))
-    register(.stop, keyCode: UInt32(kVK_ANSI_S))
-  }
-
-  deinit {
-    for hotKey in hotKeys { if let hotKey { UnregisterEventHotKey(hotKey) } }
-    if let eventHandler { RemoveEventHandler(eventHandler) }
-  }
-
-  func perform(_ action: RecordingHotKeyAction) {
-    handler(action)
-  }
-
-  private func register(_ action: RecordingHotKeyAction, keyCode: UInt32) {
-    var reference: EventHotKeyRef?
-    let identifier = EventHotKeyID(signature: 0x4A53_4545, id: action.rawValue)
-    if RegisterEventHotKey(
-      keyCode,
-      UInt32(optionKey),
-      identifier,
-      GetApplicationEventTarget(),
-      0,
-      &reference) == noErr
-    {
-      hotKeys.append(reference)
+    controller = GlobalHotKeyController(
+      signature: 0x4A53_4545,
+      registrations: [
+        registration(.draw, keyCode: kVK_ANSI_D),
+        registration(.highlight, keyCode: kVK_ANSI_H),
+        registration(.undo, keyCode: kVK_ANSI_Z),
+        registration(.clear, keyCode: kVK_ANSI_C),
+        registration(.redo, keyCode: kVK_ANSI_R),
+        registration(.stop, keyCode: kVK_ANSI_S),
+      ]
+    ) { [weak self] id in
+      guard let action = RecordingHotKeyAction(rawValue: id) else { return }
+      self?.handler(action)
     }
+  }
+
+  private func registration(
+    _ action: RecordingHotKeyAction, keyCode: Int
+  ) -> GlobalHotKeyRegistration {
+    GlobalHotKeyRegistration(
+      id: action.rawValue, keyCode: UInt32(keyCode), modifiers: UInt32(optionKey))
   }
 }

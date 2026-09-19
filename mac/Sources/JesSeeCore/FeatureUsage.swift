@@ -6,6 +6,7 @@ public enum FeatureUsageActivity: String, Sendable {
   case storyEdited = "story_edited"
   case pdfOpened = "pdf_opened"
   case pdfPublished = "pdf_published"
+  case screenshotPublished = "screenshot_published"
 }
 
 public struct FeatureUsageEvent: Codable, Equatable, Sendable {
