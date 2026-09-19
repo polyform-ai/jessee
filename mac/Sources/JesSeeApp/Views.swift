@@ -139,7 +139,7 @@ private struct StartCard: View {
 
   var body: some View {
     VStack(spacing: 10) {
-      Button(action: store.recorder.chooseWhatToRecord) {
+      Button(action: store.startRecording) {
         HStack(spacing: 10) {
           Label("Start a recording", systemImage: "record.circle.fill")
           Spacer()

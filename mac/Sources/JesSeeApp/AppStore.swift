@@ -120,7 +120,7 @@ final class AppStore: ObservableObject {
     ) { [weak self] id in
       Task { @MainActor in
         switch AppHotKeyAction(rawValue: id) {
-        case .startRecording: self?.recorder.chooseWhatToRecord()
+        case .startRecording: self?.startRecording()
         case .captureScreenshot: self?.captureScreenshotLink()
         case nil: break
         }
@@ -329,6 +329,14 @@ final class AppStore: ObservableObject {
     panel.allowedContentTypes = [.movie, .video]
     guard panel.runModal() == .OK, let url = panel.url else { return }
     Task { await addCapture(from: url, source: .importedVideo) }
+  }
+
+  func startRecording() {
+    guard isConfigured else {
+      show(.error("Finish JesSee setup before starting a recording."))
+      return
+    }
+    recorder.chooseWhatToRecord()
   }
 
   func captureScreenshotLink() {
