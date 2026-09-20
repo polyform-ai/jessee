@@ -1,10 +1,10 @@
 # Feature usage events
 
-JesSee can share a small product-analytics event contract directly with Google Analytics 4. Sharing is off by default and can be changed in **Settings → Privacy**. The app does not use a Polyform analytics workflow or collector.
+JesSee can share a small product-analytics event contract directly with Google Analytics 4. Sharing is on by default and can be turned off in **Settings → Privacy**. The app does not use a Polyform analytics workflow or collector.
 
 ## Event contract
 
-Every event contains a random event ID, a GA4-compatible random client ID, product, app version, feature, and completion status. Some events also contain a fixed source, mode, or item count. Events never contain email addresses, recordings, screenshots, narration, story text, filenames, API keys, workflow tokens, or project identifiers. The client ID is created only after consent and is removed when sharing is turned off.
+Every event contains a random event ID, a GA4-compatible random client ID, product, app version, feature, and completion status. Some events also contain a fixed source, mode, or item count. Events never contain email addresses, recordings, screenshots, narration, story text, filenames, API keys, workflow tokens, or project identifiers. The client ID is created only while sharing is enabled and is removed when sharing is turned off.
 
 | Activity | Recorded after | Feature |
 | --- | --- | --- |

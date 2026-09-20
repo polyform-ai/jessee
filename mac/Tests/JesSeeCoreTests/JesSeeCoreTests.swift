@@ -798,12 +798,19 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect((color?.redComponent ?? 0) > (color?.greenComponent ?? 1))
 }
 
-@Test func configurationFromOlderBuildGetsSafePrivacyDefault() throws {
+@Test func configurationFromOlderBuildGetsCurrentPrivacyDefaults() throws {
   let data = Data(#"{"email":"a@b.com","outputFolderPath":"/tmp","setupCompleted":true}"#.utf8)
   let configuration = try JesSeeJSON.decoder().decode(JesSeeConfiguration.self, from: data)
   #expect(configuration.shareScreenshotsForStory)
-  #expect(!configuration.shareAnonymousFeatureUsage)
+  #expect(configuration.shareAnonymousFeatureUsage)
   #expect(configuration.aiProviderMode == .bringYourOwnKey)
+}
+
+@Test func configurationPreservesExplicitAnalyticsOptOut() throws {
+  let original = JesSeeConfiguration(shareAnonymousFeatureUsage: false)
+  let data = try JesSeeJSON.encoder().encode(original)
+  let decoded = try JesSeeJSON.decoder().decode(JesSeeConfiguration.self, from: data)
+  #expect(!decoded.shareAnonymousFeatureUsage)
 }
 
 @Test func featureUsageWritesAGA4ReadyEventWithoutEmail() async throws {

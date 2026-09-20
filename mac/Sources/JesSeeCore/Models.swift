@@ -454,7 +454,7 @@ public struct JesSeeConfiguration: Codable, Sendable, Equatable {
     email: String = "", outputFolderPath: String = "", setupCompleted: Bool = false,
     aiProviderMode: AIProviderMode? = nil,
     shareScreenshotsForStory: Bool = true,
-    shareAnonymousFeatureUsage: Bool = false
+    shareAnonymousFeatureUsage: Bool = true
   ) {
     self.email = email
     self.outputFolderPath = outputFolderPath
@@ -486,7 +486,7 @@ public struct JesSeeConfiguration: Codable, Sendable, Equatable {
       ?? container.decodeIfPresent(Bool.self, forKey: .shareScreenshotsWithOpenAI)
       ?? true
     shareAnonymousFeatureUsage =
-      try container.decodeIfPresent(Bool.self, forKey: .shareAnonymousFeatureUsage) ?? false
+      try container.decodeIfPresent(Bool.self, forKey: .shareAnonymousFeatureUsage) ?? true
   }
 
   public func encode(to encoder: any Encoder) throws {

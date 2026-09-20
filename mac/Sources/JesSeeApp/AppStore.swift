@@ -290,6 +290,10 @@ final class AppStore: ObservableObject {
     configuration.setupCompleted = true
     persistConfiguration()
     show(.success("JesSee is ready."))
+    Task {
+      _ = try? await UNUserNotificationCenter.current().requestAuthorization(
+        options: [.alert, .sound])
+    }
   }
 
   func setScreenshotSharing(_ enabled: Bool) {
@@ -541,13 +545,14 @@ final class AppStore: ObservableObject {
       }
       copyToPasteboard(publicURL.absoluteString)
       recordUsage(.screenshotPublished, feature: "public_screenshot")
-      show(.success("Screenshot URL copied."))
+      show(.success("Screenshot URL copied to clipboard."))
       let center = UNUserNotificationCenter.current()
       if (try? await center.requestAuthorization(options: [.alert, .sound])) == true {
         let content = UNMutableNotificationContent()
-        content.title = "Screenshot URL copied"
+        content.title = "Screenshot URL copied to clipboard"
         content.body = "Paste it anywhere you need to share visual context."
         content.sound = .default
+        content.interruptionLevel = .active
         try? await center.add(
           UNNotificationRequest(
             identifier: "screenshot-\(upload.id)", content: content, trigger: nil))
