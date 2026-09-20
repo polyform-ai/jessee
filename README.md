@@ -31,7 +31,7 @@ Use it for:
 
 JesSee requires macOS 15 or newer. **Polyform Covered** lets you sign in by email while Polyform covers transcription and AI costs. **Bring Your Own Key** stores your OpenAI API key in the Mac Keychain and sends narration and selected screenshots directly to OpenAI. Recordings, generated story screenshots, generated files, and PDFs remain in the output folder you choose. Public screenshot and PDF links use the same optional Polyform sign-in; only an image or PDF you explicitly choose to publish is uploaded publicly.
 
-Anonymous feature-usage sharing is on by default and can be turned off in **Settings → Privacy**. JesSee sends completed feature names, app version, counts, and a random installation ID directly to GA4. It never includes media, narration, story text, filenames, email, or API keys. See [Feature usage events](docs/FEATURE_USAGE_EVENTS.md) for the exact contract.
+Product analytics are on by default and have a clear opt-out in **Settings → Privacy**. JesSee sends completed feature names, app version, counts, and a random installation ID directly to GA4. After Polyform sign-in, events also carry an opaque ID derived from the authenticated Polyform grant so activity remains associated across app sessions. JesSee never sends media, narration, story text, filenames, email, API keys, or the underlying grant ID. See [Feature usage events](docs/FEATURE_USAGE_EVENTS.md) for the exact contract.
 
 ## Install
 

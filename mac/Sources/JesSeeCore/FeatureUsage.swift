@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 public enum FeatureUsageActivity: String, Sendable {
@@ -7,6 +8,7 @@ public enum FeatureUsageActivity: String, Sendable {
   case pdfOpened = "pdf_opened"
   case pdfPublished = "pdf_published"
   case screenshotPublished = "screenshot_published"
+  case userIdentified = "login"
 }
 
 public struct FeatureUsageEvent: Codable, Equatable, Sendable {
@@ -14,6 +16,7 @@ public struct FeatureUsageEvent: Codable, Equatable, Sendable {
   public let occurredAt: Date
   public let activity: String
   public let clientID: String
+  public let userID: String?
   public let product: String
   public let appVersion: String
   public let feature: String
@@ -27,6 +30,7 @@ public struct FeatureUsageEvent: Codable, Equatable, Sendable {
     case occurredAt = "ts"
     case activity
     case clientID = "client_id"
+    case userID = "user_id"
     case product
     case appVersion = "app_version"
     case feature
@@ -46,6 +50,8 @@ public actor FeatureUsageRecorder {
   private let eventFileURL: URL
   private let endpoint: URL?
   private var clientID: String?
+  private var userID: String?
+  private var hasLoadedUserID = false
   private let session: URLSession
 
   public init(
@@ -84,6 +90,7 @@ public actor FeatureUsageRecorder {
       occurredAt: Date(),
       activity: activity.rawValue,
       clientID: clientID,
+      userID: currentUserID(),
       product: product,
       appVersion: appVersion,
       feature: feature,
@@ -97,8 +104,34 @@ public actor FeatureUsageRecorder {
     return event
   }
 
+  @discardableResult
+  public func identify(authenticatedID: String, emitLoginEvent: Bool = true) async
+    -> FeatureUsageEvent?
+  {
+    let value = authenticatedID.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !value.isEmpty else { return nil }
+    let identity = Self.opaqueUserID(for: value)
+    userID = identity
+    hasLoadedUserID = true
+    let fileURL = eventFileURL.deletingLastPathComponent().appendingPathComponent("ga4-user-id")
+    try? FileManager.default.createDirectory(
+      at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try? Data("\(identity)\n".utf8).write(to: fileURL, options: .atomic)
+    guard emitLoginEvent else { return nil }
+    return await record(
+      .userIdentified, feature: "polyform_auth", source: "polyform", mode: "polyform_covered")
+  }
+
+  public func clearIdentity() {
+    userID = nil
+    hasLoadedUserID = true
+    try? FileManager.default.removeItem(
+      at: eventFileURL.deletingLastPathComponent().appendingPathComponent("ga4-user-id"))
+  }
+
   public func resetClientID() {
     clientID = nil
+    clearIdentity()
     let directory = eventFileURL.deletingLastPathComponent()
     try? FileManager.default.removeItem(at: directory.appendingPathComponent("ga4-client-id"))
     try? FileManager.default.removeItem(
@@ -130,11 +163,12 @@ public actor FeatureUsageRecorder {
     if let source = event.source { parameters["source"] = source }
     if let mode = event.mode { parameters["mode"] = mode }
     if let itemCount = event.itemCount { parameters["item_count"] = itemCount }
-    let payload: [String: Any] = [
+    var payload: [String: Any] = [
       "client_id": event.clientID,
       "consent": ["ad_user_data": "DENIED", "ad_personalization": "DENIED"],
       "events": [["name": event.activity, "params": parameters]],
     ]
+    if let userID = event.userID { payload["user_id"] = userID }
     return try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
   }
 
@@ -158,6 +192,26 @@ public actor FeatureUsageRecorder {
     let value = Self.loadClientID(in: eventFileURL.deletingLastPathComponent())
     clientID = value
     return value
+  }
+
+  private func currentUserID() -> String? {
+    if hasLoadedUserID { return userID }
+    hasLoadedUserID = true
+    let fileURL = eventFileURL.deletingLastPathComponent().appendingPathComponent("ga4-user-id")
+    guard
+      let value = try? String(contentsOf: fileURL, encoding: .utf8)
+        .trimmingCharacters(in: .whitespacesAndNewlines),
+      value.count == 64,
+      value.allSatisfy({ $0.isHexDigit })
+    else { return nil }
+    userID = value
+    return value
+  }
+
+  static func opaqueUserID(for authenticatedID: String) -> String {
+    SHA256.hash(data: Data("jessee-ga4-user-v1:\(authenticatedID)".utf8))
+      .map { String(format: "%02x", $0) }
+      .joined()
   }
 
   private static func loadClientID(in directory: URL) -> String {

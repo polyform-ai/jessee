@@ -128,6 +128,9 @@ final class AppStore: ObservableObject {
     }
     Task {
       if configuration.aiProviderMode == .polyformCovered { _ = try? await accessToken() }
+      if configuration.shareAnonymousFeatureUsage, let session = workflowSession {
+        await featureUsage.identify(authenticatedID: session.grantID, emitLoginEvent: false)
+      }
       await loadLibrary()
     }
   }
@@ -221,6 +224,9 @@ final class AppStore: ObservableObject {
             configuration.email = session.email
             restoreCompletedSetupIfPossible(for: .polyformCovered)
             persistConfiguration()
+            if configuration.shareAnonymousFeatureUsage {
+              await featureUsage.identify(authenticatedID: session.grantID)
+            }
             if !configuration.setupCompleted { setupStep = max(setupStep, 1) }
             show(.success("Signed in to JesSee."))
             await resumeFailedCaptures(recoverableBy: .polyformSignIn)
@@ -253,6 +259,7 @@ final class AppStore: ObservableObject {
     try? JesSeeKeychain.removeWorkflowSession()
     workflowSession = nil
     authenticationState = .signedOut
+    Task { await featureUsage.clearIdentity() }
     if configuration.aiProviderMode == .polyformCovered {
       configuration.setupCompleted = false
       setupStep = 0
@@ -306,6 +313,10 @@ final class AppStore: ObservableObject {
     persistConfiguration()
     if !enabled {
       Task { await featureUsage.resetClientID() }
+    } else if let session = workflowSession {
+      Task {
+        await featureUsage.identify(authenticatedID: session.grantID, emitLoginEvent: false)
+      }
     }
   }
 

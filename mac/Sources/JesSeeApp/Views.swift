@@ -566,7 +566,13 @@ private struct PolyformAuthenticationControls: View {
           Button("Cancel") { store.cancelSignIn() }
         }
       case .signedOut:
+        Text("Your email").font(.caption.weight(.semibold))
         TextField("you@company.com", text: $email).textFieldStyle(.roundedBorder)
+          .textContentType(.emailAddress)
+        Text(
+          "We use this to send your secure sign-in link. If product analytics is enabled, JesSee identifies the signed-in account with an opaque ID—not your email."
+        )
+        .font(.caption2).foregroundStyle(.secondary)
         Button("Email me a sign-in link") { store.beginSignIn(email) }
           .buttonStyle(.borderedProminent).tint(accent).disabled(email.isEmpty)
       }
@@ -682,7 +688,7 @@ private struct SetupCompleteStep: View {
       MenuBarLocationGuide()
 
       Label(
-        "Anonymous product analytics are on by default. JesSee never sends your media, narration, story text, email, or filenames, and you can turn sharing off in Settings.",
+        "Product analytics are on by default. JesSee never sends your media, narration, story text, email, or filenames. Polyform sign-in uses an opaque account ID, and you can opt out in Settings.",
         systemImage: "chart.bar.xaxis"
       )
       .font(.caption)
@@ -1083,14 +1089,14 @@ struct SettingsView: View {
             : "Only narration, timestamps, and screenshot timing are used to plan the story."
         ).font(.caption).foregroundStyle(.secondary)
         Toggle(
-          "Share product analytics",
+          "Opt out of product analytics",
           isOn: Binding(
-            get: { store.configuration.shareAnonymousFeatureUsage },
-            set: { store.setAnonymousFeatureUsageSharing($0) }
+            get: { !store.configuration.shareAnonymousFeatureUsage },
+            set: { store.setAnonymousFeatureUsageSharing(!$0) }
           )
         )
         Text(
-          "On by default. Sends completed feature names, app version, counts, and a random installation ID directly to Google Analytics. It never sends your email, recordings, screenshots, narration, story text, filenames, or API keys. Turning this off removes the local analytics ID."
+          "Analytics are on by default. Turn on this opt-out to stop sharing and remove local analytics identifiers. JesSee sends completed feature names, app version, counts, and a random installation ID directly to Google Analytics. After Polyform sign-in, events also use an opaque account ID. Your email, recordings, screenshots, narration, story text, filenames, and API keys are never sent."
         ).font(.caption).foregroundStyle(.secondary)
       }
       Section("Software Updates") {

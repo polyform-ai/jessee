@@ -844,7 +844,7 @@ private struct WorkflowTestValue: Decodable, Equatable {
 @Test func featureUsageBuildsDirectGA4PayloadWithoutIdentityData() throws {
   let event = FeatureUsageEvent(
     activityID: UUID().uuidString.lowercased(), occurredAt: Date(),
-    activity: FeatureUsageActivity.captureAdded.rawValue, clientID: "123.456",
+    activity: FeatureUsageActivity.captureAdded.rawValue, clientID: "123.456", userID: nil,
     product: "jessee", appVersion: "test", feature: "video_import", status: "completed",
     source: nil, mode: nil, itemCount: nil)
   let data = try #require(FeatureUsageRecorder.ga4Payload(event))
@@ -855,6 +855,33 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(events.first?["name"] as? String == "capture_added")
   #expect(String(decoding: data, as: UTF8.self).contains("email") == false)
   #expect(String(decoding: data, as: UTF8.self).contains("user_id") == false)
+}
+
+@Test func featureUsageIdentifiesPolyformUsersWithoutSendingEmailOrGrantID() async throws {
+  let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+    UUID().uuidString, isDirectory: true)
+  try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: temporary) }
+
+  let recorder = FeatureUsageRecorder(
+    product: "jessee", appVersion: "test", applicationSupportURL: temporary)
+  let login = try #require(await recorder.identify(authenticatedID: "grant-secret"))
+  let event = await recorder.record(.captureAdded, feature: "recording")
+  let payloadData = try #require(FeatureUsageRecorder.ga4Payload(event))
+  let payload = try #require(
+    JSONSerialization.jsonObject(with: payloadData) as? [String: Any])
+  let userID = try #require(payload["user_id"] as? String)
+  let log = try String(
+    contentsOf: temporary.appendingPathComponent("jessee/feature-usage.jsonl"), encoding: .utf8)
+
+  #expect(login.activity == "login")
+  #expect(login.userID == userID)
+  #expect(userID.count == 64)
+  #expect(!log.contains("grant-secret"))
+  #expect(!log.contains("email"))
+  await recorder.clearIdentity()
+  let anonymousEvent = await recorder.record(.captureAdded, feature: "recording")
+  #expect(anonymousEvent.userID == nil)
 }
 
 @Test func captionsPreserveSegmentTiming() {

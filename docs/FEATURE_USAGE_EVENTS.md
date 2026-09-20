@@ -1,10 +1,10 @@
 # Feature usage events
 
-JesSee can share a small product-analytics event contract directly with Google Analytics 4. Sharing is on by default and can be turned off in **Settings → Privacy**. The app does not use a Polyform analytics workflow or collector.
+JesSee shares a small product-analytics event contract directly with Google Analytics 4 by default. **Settings → Privacy** provides an explicit opt-out. The app does not use a Polyform analytics workflow or collector.
 
 ## Event contract
 
-Every event contains a random event ID, a GA4-compatible random client ID, product, app version, feature, and completion status. Some events also contain a fixed source, mode, or item count. Events never contain email addresses, recordings, screenshots, narration, story text, filenames, API keys, workflow tokens, or project identifiers. The client ID is created only while sharing is enabled and is removed when sharing is turned off.
+Every event contains a random event ID, a GA4-compatible random client ID, product, app version, feature, and completion status. Some events also contain a fixed source, mode, or item count. After successful Polyform email authentication, JesSee adds an opaque SHA-256 identifier derived from the authenticated grant and records a GA4 `login` event. The email and underlying grant ID are never sent or written to the analytics log. Events never contain recordings, screenshots, narration, story text, filenames, API keys, workflow tokens, or project identifiers. Analytics identifiers are created only while sharing is enabled and are removed when the user opts out.
 
 | Activity | Recorded after | Feature |
 | --- | --- | --- |
@@ -14,5 +14,6 @@ Every event contains a random event ID, a GA4-compatible random client ID, produ
 | `pdf_opened` | The finished PDF is opened from JesSee | `pdf_review` |
 | `pdf_published` | The user explicitly creates or updates a public PDF link | `public_pdf` |
 | `screenshot_published` | The user explicitly captures and creates a public screenshot link | `public_screenshot` |
+| `login` | Polyform email authentication succeeds | `polyform_auth` |
 
 The app appends the same feature events to `~/Library/Application Support/jessee/feature-usage.jsonl` so they can be inspected locally. Distribution builds receive the GA4 measurement ID and Measurement Protocol API secret through the `GA4_MEASUREMENT_ID` and `GA4_API_SECRET` GitHub Actions secrets. These values are embedded in the app bundle and must be treated as public ingestion credentials, not as authentication or authorization. Failed analytics delivery never blocks the product workflow.

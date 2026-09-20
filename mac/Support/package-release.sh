@@ -105,6 +105,7 @@ This release is signed by Polyform, notarized by Apple, and can update itself fr
 - Start a recording with ⌥⇧S, or use ⌥⇧C to drag over part of the screen, press Space to choose a window, upload the screenshot through Polyform, and copy its public link.
 - See a confirmation in JesSee and a Mac notification when a screenshot URL is copied to the clipboard.
 - Share anonymous, media-free product analytics by default, with a clear opt-out in Settings.
+- Ask for email inside Polyform Covered and associate signed-in analytics with an opaque account ID without sending the email or grant ID.
 - Open the Library automatically whenever a configured JesSee app launches.
 - Preserve the active webpage URL automatically when a recording starts from a supported browser on macOS 15.2 or newer.
 - Use the refreshed JesSee identity across the native app and website.
