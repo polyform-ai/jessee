@@ -3,11 +3,13 @@ import Foundation
 public enum CaptureSource: String, Codable, Sendable, CaseIterable {
   case recording
   case importedVideo = "imported_video"
+  case screenshot
 
   public var label: String {
     switch self {
     case .recording: "Recorded"
     case .importedVideo: "Imported"
+    case .screenshot: "Screenshot"
     }
   }
 }

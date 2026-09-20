@@ -46,8 +46,8 @@ private struct RecorderMenuIcon: View {
 
   var body: some View {
     Group {
-      if store.isPublishingScreenshot {
-        Label("JesSee is uploading a screenshot", systemImage: "arrow.up.circle.fill")
+      if store.isSavingScreenshot {
+        Label("JesSee is saving a screenshot", systemImage: "arrow.down.circle.fill")
       } else {
         switch recorder.state {
         case .recording, .stopping:

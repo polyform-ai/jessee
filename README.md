@@ -17,10 +17,10 @@ Use it for:
 
 - A guided choice between Polyform Covered and Bring Your Own Key, plus output folder and microphone access
 - Menu-bar recording for any selected window, app, or display
-- Mac-style screenshot capture: drag to select an area or press Space for a window, then copy its public URL
+- Mac-style screenshot capture: drag to select an area or press Space for a window, then edit it in the Library and optionally copy its public URL
 - Automatic source webpage URLs for recordings started from supported browsers on macOS 15.2+
 - A live timer, microphone meter, drawing and highlighting controls
-- Global recording shortcuts, including `⌥S` to stop and process
+- One global `⌥⇧S` shortcut to start or stop and process a recording
 - Video import for existing walkthroughs
 - Background transcription and story creation with timestamp-aligned screenshots
 - A local library with processing state, retry, replay, and editable history
@@ -50,14 +50,13 @@ The floating recording bar shows the elapsed time and microphone activity. Hover
 
 | Action | Shortcut |
 | --- | --- |
-| Start a recording | `⌥⇧S` |
-| Capture an area or window and copy its URL | `⌥⇧C` |
+| Start or stop a recording | `⌥⇧S` |
+| Capture an area or window into the Library | `⌥⇧C` |
 | Draw | `⌥D` |
 | Highlight | `⌥H` |
 | Undo | `⌥Z` |
 | Clear marks | `⌥C` |
 | Redo take | `⌥R` |
-| Stop and process | `⌥S` |
 
 Select an active drawing tool again to return to normal interaction with the recorded app.
 

@@ -95,14 +95,15 @@ This release is signed by Polyform, notarized by Apple, and can update itself fr
 
 - Record with a visible timer and live microphone level.
 - Draw, highlight, undo, clear, redo, or stop directly from the floating controls.
-- Press Option-S from anywhere to stop and process the recording.
+- Press ⌥⇧S again from anywhere to stop and process the recording.
 - Finish onboarding with a clear confirmation before JesSee moves into the menu bar.
 - Get an immediate transcription notification, then another when the finished story opens for review.
 - Open Recent stories and See all directly in the Library editor without losing your place.
 - Let JesSee prioritize marked evidence while preserving useful screenshots from across the full recording.
 - Edit rich text, choose alternate screenshots, add highlights or redactions, retain a webpage source link, and export one continuous PDF.
 - Generate and copy a public PDF link directly beside the editor's save controls.
-- Start a recording with ⌥⇧S, or use ⌥⇧C to drag over part of the screen, press Space to choose a window, upload the screenshot through Polyform, and copy its public link.
+- Start or stop a recording with ⌥⇧S, or use ⌥⇧C to drag over part of the screen, press Space to choose a window, save the screenshot to the Library, and create a public link after reviewing the edit when signed in with Polyform.
+- Open captured screenshots in the Library to add text, highlight or redact details, copy the annotated image or PDF, and share the result.
 - See a confirmation in JesSee and a Mac notification when a screenshot URL is copied to the clipboard.
 - Share anonymous, media-free product analytics by default, with a clear opt-out in Settings.
 - Ask for email inside Polyform Covered and associate signed-in analytics with an opaque account ID without sending the email or grant ID.

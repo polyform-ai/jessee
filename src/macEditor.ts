@@ -1,6 +1,12 @@
 import { Editor, Node as TiptapNode, mergeAttributes, type JSONContent } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import "./macEditor.css";
+import {
+  containedContentBounds,
+  normalizePointInBounds,
+  pointIsInsideBounds,
+  type RectangleBounds
+} from "./annotationCoordinates";
 import { htmlBlocks, htmlText, narrativeHTML, renderBlocks } from "./richTextHTML";
 import { normalizeSourceURL } from "./storyURL";
 
@@ -45,10 +51,19 @@ interface EditorPayload {
   story: Story;
   frames: Frame[];
   publicPDFURL?: string;
+  canPublishImage: boolean;
+  canCopyImage: boolean;
+  canCopyPDF: boolean;
 }
 
 interface BridgeMessage {
-  type: "save" | "saveAndOpenPDF" | "saveAndPublishPDF";
+  type:
+    | "save"
+    | "saveAndOpenPDF"
+    | "saveAndPublishImage"
+    | "saveAndPublishPDF"
+    | "saveAndCopyImage"
+    | "saveAndCopyPDF";
   story: Story;
 }
 
@@ -129,6 +144,7 @@ let dragStart: { x: number; y: number } | undefined;
 let editRevision = 0;
 let pendingSaveRevision: number | undefined;
 let pendingAction: BridgeMessage["type"] | undefined;
+let markupResizeObserver: ResizeObserver | undefined;
 
 const StoryImage = TiptapNode.create({
   name: "storyImage",
@@ -227,7 +243,7 @@ window.jesseeDidSave = (success, message, publicURL) => {
   const hasNewerEdits = savedRevision !== undefined && savedRevision !== editRevision;
   setStatus(
     success && hasNewerEdits
-      ? completedAction === "saveAndPublishPDF"
+      ? isPublishAction(completedAction)
         ? "Link copied · New edits not saved"
         : "Earlier version saved · New edits not saved"
       : message,
@@ -238,12 +254,20 @@ window.jesseeDidSave = (success, message, publicURL) => {
 };
 
 function renderShell(): void {
+  const copyActions = [
+    payload.canCopyImage
+      ? `<button class="header-icon" id="copyImage" data-tooltip="Save and copy annotated image" title="Save and copy annotated image" aria-label="Save and copy annotated image">▣</button>`
+      : "",
+    payload.canCopyPDF
+      ? `<button class="header-icon pdf-icon" id="copyPDF" data-tooltip="Save and copy PDF" title="Save and copy PDF" aria-label="Save and copy PDF">PDF</button>`
+      : ""
+  ].join("");
   app.innerHTML = `
     <div class="editor-app">
       <header class="editor-header">
         <div><p class="kicker">Visual story editor</p><h1>Shape the story before you share it</h1><p>Edit like a document, then choose and mark up the strongest screenshot for each step.</p></div>
         <div class="header-sharing">
-          <div class="header-actions"><span id="saveStatus">Saved</span><button class="button secondary" id="saveStory">Save</button><button class="button primary" id="openPDF">Save & open PDF</button><button class="button secondary" id="getLink" data-tooltip="Generate public link" title="Generate public link">Get link</button></div>
+          <div class="header-actions"><span id="saveStatus">Saved</span>${copyActions}<button class="button secondary" id="saveStory">Save</button><button class="button primary" id="openPDF">Save & open PDF</button><button class="button secondary" id="getLink" data-tooltip="Generate public link" title="Generate public link">Get link</button></div>
           <div class="public-link-row" id="publicLinkRow" hidden><span class="public-link-value" id="publicLink"></span><span id="publicLinkStatus"></span></div>
         </div>
       </header>
@@ -264,7 +288,13 @@ function bindShellEvents(): void {
   });
   mustFind<HTMLButtonElement>("#saveStory").addEventListener("click", () => send("save"));
   mustFind<HTMLButtonElement>("#openPDF").addEventListener("click", () => send("saveAndOpenPDF"));
-  mustFind<HTMLButtonElement>("#getLink").addEventListener("click", () => send("saveAndPublishPDF"));
+  mustFind<HTMLButtonElement>("#getLink").addEventListener("click", () =>
+    send(payload.canPublishImage ? "saveAndPublishImage" : "saveAndPublishPDF")
+  );
+  document.querySelector<HTMLButtonElement>("#copyImage")
+    ?.addEventListener("click", () => send("saveAndCopyImage"));
+  document.querySelector<HTMLButtonElement>("#copyPDF")
+    ?.addEventListener("click", () => send("saveAndCopyPDF"));
   mustFind<HTMLButtonElement>("#addStep").addEventListener("click", addStep);
   mustFind<HTMLInputElement>("#sourceURL").addEventListener("input", (event) => {
     (event.currentTarget as HTMLInputElement).setCustomValidity("");
@@ -338,7 +368,13 @@ function send(type: BridgeMessage["type"]): void {
   setStatus(
     type === "save"
       ? "Saving…"
-      : type === "saveAndOpenPDF" ? "Updating PDF…" : "Generating public link…"
+      : type === "saveAndOpenPDF"
+        ? "Updating PDF…"
+        : type === "saveAndCopyImage"
+          ? "Saving and copying image…"
+          : type === "saveAndCopyPDF"
+            ? "Saving and copying PDF…"
+            : "Generating public link…"
   );
   pendingSaveRevision = editRevision;
   pendingAction = type;
@@ -348,8 +384,8 @@ function send(type: BridgeMessage["type"]): void {
   if (bridge) bridge.postMessage(message);
   else window.jesseeDidSave?.(
     true,
-    type === "saveAndPublishPDF" ? "Copied" : "Preview saved",
-    type === "saveAndPublishPDF" ? "https://example.com/jessee-preview.pdf" : undefined
+    isPublishAction(type) ? "Copied" : "Preview saved",
+    isPublishAction(type) ? "https://example.com/jessee-preview" : undefined
   );
 }
 
@@ -360,11 +396,16 @@ function setStatus(message: string, error = false): void {
 }
 
 function setActionPending(action?: BridgeMessage["type"]): void {
-  for (const id of ["saveStory", "openPDF", "getLink"]) {
-    mustFind<HTMLButtonElement>(`#${id}`).disabled = action !== undefined;
+  for (const id of ["saveStory", "openPDF", "getLink", "copyImage", "copyPDF"]) {
+    document.querySelector<HTMLButtonElement>(`#${id}`)
+      ?.toggleAttribute("disabled", action !== undefined);
   }
   mustFind<HTMLButtonElement>("#getLink").textContent =
-    action === "saveAndPublishPDF" ? "Generating…" : "Get link";
+    isPublishAction(action) ? "Generating…" : "Get link";
+}
+
+function isPublishAction(action?: BridgeMessage["type"]): boolean {
+  return action === "saveAndPublishImage" || action === "saveAndPublishPDF";
 }
 
 function showPublicLink(publicURL: string, status = ""): void {
@@ -486,6 +527,8 @@ function openImagePicker(stepIndex: number): void {
 
 function renderPicker(): void {
   if (activeStepIndex === undefined) return;
+  markupResizeObserver?.disconnect();
+  markupResizeObserver = undefined;
   const step = serializeStory().steps[activeStepIndex];
   const frame = candidates[candidateIndex];
   const card = mustFind<HTMLElement>("#pickerCard");
@@ -496,7 +539,7 @@ function renderPicker(): void {
       <div class="markup-tools"><button id="highlightMode" class="${drawingMode === "highlight" ? "active" : ""}">Highlight</button><button id="redactMode" class="${drawingMode === "redaction" ? "active" : ""}">Redact</button><button id="undoMarkup" ${draftAnnotations.length ? "" : "disabled"}>Undo</button><button id="clearMarkup" ${draftAnnotations.length ? "" : "disabled"}>Clear</button></div>
       <span>${frame ? `${candidateIndex + 1} of ${candidates.length}` : "No images"}</span>
     </div>
-    ${frame ? `<div class="picker-stage-row"><button class="arrow" id="previousFrame" data-tooltip="Previous screenshot" aria-label="Previous screenshot" title="Previous screenshot" ${candidateIndex === 0 ? "disabled" : ""}>←</button><figure><div class="markup-stage ${drawingMode ? "drawing" : ""}" id="markupStage"><img src="${escapeAttribute(frame.filename)}" alt="Screenshot ${candidateIndex + 1}" />${draftAnnotations.map((annotation) => annotationElement(annotation).outerHTML).join("")}</div><figcaption><strong>${escapeHTML(frame.filename.split("/").at(-1) || frame.filename)}</strong><span>${formatSeconds(frame.seconds)} · ${Math.abs(frame.seconds - step.endSeconds) < 1 ? "Best timing" : "Nearby moment"}</span></figcaption></figure><button class="arrow" id="nextFrame" data-tooltip="Next screenshot" aria-label="Next screenshot" title="Next screenshot" ${candidateIndex === candidates.length - 1 ? "disabled" : ""}>→</button></div>` : `<div class="empty-picker">No screenshots are available for this recording.</div>`}
+    ${frame ? `<div class="picker-stage-row"><button class="arrow" id="previousFrame" data-tooltip="Previous screenshot" aria-label="Previous screenshot" title="Previous screenshot" ${candidateIndex === 0 ? "disabled" : ""}>←</button><figure><div class="markup-stage ${drawingMode ? "drawing" : ""}" id="markupStage"><img src="${escapeAttribute(frame.filename)}" alt="Screenshot ${candidateIndex + 1}" />${draftAnnotations.map((annotation) => markupAnnotationElement(annotation).outerHTML).join("")}</div><figcaption><strong>${escapeHTML(frame.filename.split("/").at(-1) || frame.filename)}</strong><span>${formatSeconds(frame.seconds)} · ${Math.abs(frame.seconds - step.endSeconds) < 1 ? "Best timing" : "Nearby moment"}</span></figcaption></figure><button class="arrow" id="nextFrame" data-tooltip="Next screenshot" aria-label="Next screenshot" title="Next screenshot" ${candidateIndex === candidates.length - 1 ? "disabled" : ""}>→</button></div>` : `<div class="empty-picker">No screenshots are available for this recording.</div>`}
     <div class="picker-actions"><button class="button secondary" id="textOnly">Use text only</button><span>${drawingMode ? "Drag on the screenshot to add markup." : "Select Highlight or Redact, then drag on the screenshot."}</span><button class="button primary" id="useFrame" ${frame ? "" : "disabled"}>Use this image</button></div>
     <div class="filmstrip">${candidates.map((item, index) => `<button data-frame-index="${index}" class="${index === candidateIndex ? "active" : ""}" aria-label="Choose screenshot ${index + 1}" title="Choose screenshot ${index + 1}"><img src="${escapeAttribute(item.filename)}" alt="" /><span>${String(index + 1).padStart(2, "0")}</span></button>`).join("")}</div>`;
 
@@ -517,8 +560,17 @@ function renderPicker(): void {
     button.onclick = () => { candidateIndex = Number(button.dataset.frameIndex || 0); syncDraftAnnotations(); renderPicker(); };
   });
   const stage = document.querySelector<HTMLElement>("#markupStage");
+  const image = stage?.querySelector<HTMLImageElement>("img");
   stage?.addEventListener("pointerdown", startMarkup);
   stage?.addEventListener("pointerup", finishMarkup);
+  if (stage && image) {
+    const layout = () => layoutMarkupAnnotations(stage, image);
+    image.addEventListener("load", layout, { once: true });
+    markupResizeObserver = new ResizeObserver(layout);
+    markupResizeObserver.observe(stage);
+    markupResizeObserver.observe(image);
+    requestAnimationFrame(layout);
+  }
 }
 
 function changeFrameCollection(showAll: boolean): void {
@@ -547,15 +599,26 @@ function toggleDrawing(mode: AnnotationKind): void {
 
 function startMarkup(event: PointerEvent): void {
   if (!drawingMode) return;
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-  dragStart = { x: clamp((event.clientX - rect.left) / rect.width), y: clamp((event.clientY - rect.top) / rect.height) };
-  (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+  const target = event.currentTarget as HTMLElement;
+  const rect = displayedImageBounds(target.querySelector("img"));
+  if (!rect || !pointIsInsideBounds(event.clientX, event.clientY, rect)) return;
+  dragStart = normalizePointInBounds(event.clientX, event.clientY, rect);
+  if (!dragStart) return;
+  target.setPointerCapture(event.pointerId);
 }
 
 function finishMarkup(event: PointerEvent): void {
   if (!drawingMode || !dragStart) return;
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-  const end = { x: clamp((event.clientX - rect.left) / rect.width), y: clamp((event.clientY - rect.top) / rect.height) };
+  const rect = displayedImageBounds((event.currentTarget as HTMLElement).querySelector("img"));
+  if (!rect) {
+    dragStart = undefined;
+    return;
+  }
+  const end = normalizePointInBounds(event.clientX, event.clientY, rect);
+  if (!end) {
+    dragStart = undefined;
+    return;
+  }
   const annotation: Annotation = {
     id: crypto.randomUUID(), kind: drawingMode,
     x: Math.min(dragStart.x, end.x), y: Math.min(dragStart.y, end.y),
@@ -595,6 +658,8 @@ function applyImage(frame: Frame | undefined, annotations: Annotation[]): void {
 }
 
 function closePicker(): void {
+  markupResizeObserver?.disconnect();
+  markupResizeObserver = undefined;
   mustFind<HTMLDialogElement>("#imagePicker").close();
   activeStepIndex = undefined;
   candidates = [];
@@ -609,6 +674,38 @@ function annotationElement(annotation: Annotation): HTMLSpanElement {
   element.style.width = `${clamp(annotation.width) * 100}%`;
   element.style.height = `${clamp(annotation.height) * 100}%`;
   return element;
+}
+
+function markupAnnotationElement(annotation: Annotation): HTMLSpanElement {
+  const element = annotationElement(annotation);
+  element.dataset.x = String(annotation.x);
+  element.dataset.y = String(annotation.y);
+  element.dataset.width = String(annotation.width);
+  element.dataset.height = String(annotation.height);
+  element.style.visibility = "hidden";
+  return element;
+}
+
+function layoutMarkupAnnotations(stage: HTMLElement, image: HTMLImageElement): void {
+  const stageBounds = stage.getBoundingClientRect();
+  const imageBounds = displayedImageBounds(image);
+  if (!imageBounds) return;
+  for (const element of stage.querySelectorAll<HTMLElement>(".annotation")) {
+    const x = clamp(Number(element.dataset.x));
+    const y = clamp(Number(element.dataset.y));
+    const width = clamp(Number(element.dataset.width));
+    const height = clamp(Number(element.dataset.height));
+    element.style.left = `${imageBounds.left - stageBounds.left + x * imageBounds.width}px`;
+    element.style.top = `${imageBounds.top - stageBounds.top + y * imageBounds.height}px`;
+    element.style.width = `${width * imageBounds.width}px`;
+    element.style.height = `${height * imageBounds.height}px`;
+    element.style.visibility = "visible";
+  }
+}
+
+function displayedImageBounds(image: HTMLImageElement | null): RectangleBounds | undefined {
+  if (!image) return undefined;
+  return containedContentBounds(image.getBoundingClientRect(), image.naturalWidth, image.naturalHeight);
 }
 
 function parseAnnotations(value: unknown): Annotation[] {

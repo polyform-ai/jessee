@@ -23,7 +23,7 @@ body.is-dirty #saveStatus { color: #9a6100; }
 .public-link-row[hidden] { display: none; }
 .public-link-value { min-width: 0; overflow: hidden; color: #5148ef; text-overflow: ellipsis; white-space: nowrap; user-select: text; }
 .public-link-row span { flex: 0 0 auto; color: #178447; font-weight: 700; }
-.button, .tool, .segmented button, .markup-tools button, .icon, .arrow { border: 1px solid #d8d6e1; background: #fff; color: #232229; border-radius: 9px; cursor: pointer; }
+.button, .tool, .segmented button, .markup-tools button, .icon, .arrow, .header-icon { border: 1px solid #d8d6e1; background: #fff; color: #232229; border-radius: 9px; cursor: pointer; }
 [data-tooltip] { position: relative; }
 [data-tooltip]::after {
   content: attr(data-tooltip);
@@ -51,8 +51,10 @@ body.is-dirty #saveStatus { color: #9a6100; }
   transform: translate(-50%, 0);
 }
 .button { min-height: 34px; padding: 7px 13px; font-weight: 650; }
+.header-icon { width: 34px; height: 34px; padding: 0; color: #5148ef; font-size: 17px; font-weight: 800; line-height: 1; }
+.header-icon.pdf-icon { font-size: 9px; letter-spacing: -.02em; }
 .button.primary { color: #fff; border-color: #5a52ff; background: #5a52ff; box-shadow: 0 4px 14px rgba(90,82,255,.22); }
-.button:hover, .tool:hover, .segmented button:hover, .markup-tools button:hover { border-color: #9e99c0; }
+.button:hover, .tool:hover, .segmented button:hover, .markup-tools button:hover, .header-icon:hover { border-color: #9e99c0; }
 .editor-toolbar { position: sticky; top: 0; z-index: 20; max-width: 920px; margin: 0 auto; display: flex; gap: 5px; align-items: center; padding: 9px; background: rgba(255,255,255,.92); border: 1px solid #dfdde7; border-radius: 13px 13px 0 0; backdrop-filter: blur(16px); box-shadow: 0 7px 22px rgba(32,26,67,.07); }
 .source-field { max-width: 920px; margin: 0 auto; padding: 10px 13px; display: flex; align-items: center; gap: 10px; color: #686774; background: #fbfaff; border: 1px solid #dfdde7; border-top: 0; font-size: 12px; font-weight: 650; }
 .source-field input { flex: 1; min-width: 0; padding: 7px 9px; color: #27252f; background: #fff; border: 1px solid #d8d6e1; border-radius: 8px; font: inherit; font-weight: 450; }

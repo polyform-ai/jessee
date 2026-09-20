@@ -15,6 +15,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
 
   struct ScreenshotResult {
     var url: URL
+    var sourceURL: String?
   }
 
   enum State: Equatable {
@@ -33,6 +34,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
 
   var onFinished: ((Result) -> Void)?
   var onScreenshotCaptured: ((ScreenshotResult) -> Void)?
+  var onStopRequested: (() -> Void)?
 
   private let picker = SCContentSharingPicker.shared
   private var stream: SCStream?
@@ -44,6 +46,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
   private var recordingContentRect: CGRect = .zero
   private var recordingDisplayID: CGDirectDisplayID?
   private var pendingBrowserApplication: BrowserApplicationContext?
+  private var pendingScreenshotSourceURL: String?
   private var recordingSourceURL: String?
 
   override init() {
@@ -67,15 +70,23 @@ final class RecordingCoordinator: NSObject, ObservableObject {
 
   func chooseScreenshot() {
     guard state == .idle || isFailure else { return }
-    pendingBrowserApplication = nil
+    pendingBrowserApplication = BrowserURLReader.frontmostSupportedBrowser()
+    pendingScreenshotSourceURL = pendingBrowserApplication.flatMap {
+      BrowserURLReader.currentPage(for: $0)?.url
+    }
     state = .choosingScreenshot
     Task { await captureInteractiveScreenshot() }
   }
 
   func stop() {
+    stop(notifyUser: true)
+  }
+
+  private func stop(notifyUser: Bool) {
     guard state == .recording, let stream else { return }
     state = .stopping
     overlay.setStopping()
+    if notifyUser { onStopRequested?() }
     Task {
       do { try await stream.stopCapture() } catch { finishWithError(error.localizedDescription) }
     }
@@ -84,7 +95,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
   func redo() {
     guard state == .recording else { return }
     discardCurrentRecording = true
-    stop()
+    stop(notifyUser: false)
   }
 
   func dismissError() {
@@ -151,6 +162,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
     recordingOutput = nil
     outputURL = nil
     pendingBrowserApplication = nil
+    pendingScreenshotSourceURL = nil
     recordingSourceURL = nil
   }
 
@@ -181,11 +193,16 @@ final class RecordingCoordinator: NSObject, ObservableObject {
     do {
       _ = try await Self.runSystemScreenshotCapture(at: url)
       guard FileManager.default.fileExists(atPath: url.path) else {
+        pendingBrowserApplication = nil
+        pendingScreenshotSourceURL = nil
         state = .idle
         return
       }
+      let sourceURL = pendingScreenshotSourceURL
+      pendingBrowserApplication = nil
+      pendingScreenshotSourceURL = nil
       state = .idle
-      onScreenshotCaptured?(ScreenshotResult(url: url))
+      onScreenshotCaptured?(ScreenshotResult(url: url, sourceURL: sourceURL))
     } catch {
       try? FileManager.default.removeItem(at: url)
       finishWithError(error.localizedDescription)

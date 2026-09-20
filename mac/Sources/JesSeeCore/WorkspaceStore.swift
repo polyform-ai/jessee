@@ -66,6 +66,57 @@ public actor CaptureWorkspace {
     return record
   }
 
+  public func importScreenshot(
+    from sourceURL: URL,
+    capturedSourceURL: String? = nil
+  ) throws -> CaptureRecord {
+    guard FileManager.default.fileExists(atPath: sourceURL.path) else {
+      throw JesSeeError.sourceUnavailable(sourceURL.path)
+    }
+    try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+    let now = Date()
+    let id = UUID().uuidString.lowercased()
+    let date = Self.folderDate(from: now)
+    let directory = rootURL.appendingPathComponent("\(date)-\(id.prefix(8))", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let fileExtension = sourceURL.pathExtension.isEmpty ? "png" : sourceURL.pathExtension.lowercased()
+    let filename = "screenshot.\(fileExtension)"
+    try FileManager.default.copyItem(
+      at: sourceURL, to: directory.appendingPathComponent(filename))
+
+    let normalizedSourceURL = PolyformClient.normalizedWebURL(capturedSourceURL)
+    let story = StoryDocument(
+      title: "Screenshot",
+      sourceURL: normalizedSourceURL,
+      summary: "",
+      keyPoints: [],
+      steps: [
+        StoryStep(
+          startSeconds: 0,
+          endSeconds: 0,
+          title: "Screenshot",
+          narrative: "",
+          transcript: "",
+          imageFilename: filename)
+      ])
+    let storyFilename = "story.json"
+    let record = CaptureRecord(
+      id: id,
+      createdAt: now,
+      updatedAt: now,
+      title: story.title,
+      source: .screenshot,
+      sourceURL: normalizedSourceURL,
+      stage: .ready,
+      mediaFilename: filename,
+      storyFilename: storyFilename,
+      imageFilenames: [filename],
+      imageTimes: [filename: 0])
+    try write(story, filename: storyFilename, for: record)
+    try save(record)
+    return record
+  }
+
   public func save(_ record: CaptureRecord) throws {
     var updated = record
     updated.updatedAt = Date()

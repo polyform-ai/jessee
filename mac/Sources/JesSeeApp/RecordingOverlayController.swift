@@ -157,7 +157,6 @@ final class RecordingOverlayController {
         case .undo: self.model.undo()
         case .clear: self.model.clear()
         case .redo: onRedo()
-        case .stop: onStop()
         }
       }
     }
@@ -354,12 +353,12 @@ private struct RecordingHUDView: View {
           HStack(spacing: 5) {
             Label(model.isStopping ? "Finishing…" : "Stop", systemImage: "stop.fill")
               .font(.system(size: 12, weight: .bold))
-            Text("⌥S").font(.system(size: 9, weight: .bold)).opacity(0.82)
+            Text("⌥⇧S").font(.system(size: 9, weight: .bold)).opacity(0.82)
           }
           .fixedSize(horizontal: true, vertical: false)
         }
         .buttonStyle(.borderedProminent).tint(.red).disabled(model.isStopping)
-        .jesseeHoverHelp("Stop and process · ⌥S", onChange: showControl)
+        .jesseeHoverHelp("Stop and process · ⌥⇧S", onChange: showControl)
       }
       Text(
         hoveredControl
@@ -445,7 +444,6 @@ private enum RecordingHotKeyAction: UInt32 {
   case undo
   case clear
   case redo
-  case stop
 }
 
 private final class RecordingHotKeyController {
@@ -462,7 +460,6 @@ private final class RecordingHotKeyController {
         registration(.undo, keyCode: kVK_ANSI_Z),
         registration(.clear, keyCode: kVK_ANSI_C),
         registration(.redo, keyCode: kVK_ANSI_R),
-        registration(.stop, keyCode: kVK_ANSI_S),
       ]
     ) { [weak self] id in
       guard let action = RecordingHotKeyAction(rawValue: id) else { return }

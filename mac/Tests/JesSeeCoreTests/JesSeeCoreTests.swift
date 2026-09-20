@@ -1079,6 +1079,36 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(history.first?.sourceURL == "https://example.com/source")
 }
 
+@Test func workspaceCreatesEditableScreenshotStory() async throws {
+  let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+    UUID().uuidString, isDirectory: true)
+  try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: temporary) }
+  let source = temporary.appendingPathComponent("capture.png")
+  try Data("png".utf8).write(to: source)
+
+  let workspace = CaptureWorkspace(rootURL: temporary)
+  _ = try await workspace.load()
+  let record = try await workspace.importScreenshot(
+    from: source, capturedSourceURL: "example.com/dashboard")
+  let storyFilename = try #require(record.storyFilename)
+  let story = try await workspace.read(
+    StoryDocument.self, filename: storyFilename, for: record)
+
+  #expect(record.source == .screenshot)
+  #expect(record.stage == .ready)
+  #expect(record.sourceURL == "https://example.com/dashboard")
+  #expect(record.imageFilenames == ["screenshot.png"])
+  #expect(record.imageTimes == ["screenshot.png": 0])
+  #expect(story.sourceURL == record.sourceURL)
+  #expect(story.steps.first?.imageFilename == "screenshot.png")
+  #expect(FileManager.default.fileExists(atPath: workspace.mediaURL(for: record).path))
+
+  let history = try await CaptureWorkspace(rootURL: temporary).load()
+  #expect(history.first?.source == .screenshot)
+  #expect(history.first?.storyFilename == "story.json")
+}
+
 @Test @MainActor func rendererCreatesOneLongPDFAndEditableHTML() throws {
   let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
     UUID().uuidString, isDirectory: true)
