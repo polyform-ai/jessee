@@ -899,6 +899,13 @@ private struct CaptureDetailView: View {
               if action == "saveAndOpenPDF" {
                 store.openPDF(recordID: record.id)
                 completion(true, "PDF updated and opened", nil)
+              } else if action == "saveAndCopyImage" {
+                let copied = await store.copyPrimaryImage(recordID: record.id)
+                completion(
+                  copied, copied ? "Image copied" : "JesSee could not copy the image", nil)
+              } else if action == "saveAndCopyPDF" {
+                let copied = store.copyPDF(recordID: record.id)
+                completion(copied, copied ? "PDF copied" : "JesSee could not copy the PDF", nil)
               } else if action == "saveAndPublishPDF" {
                 guard store.isPublicLinkPublishingAvailable else {
                   completion(false, "Public links are unavailable in this build.", nil)
@@ -964,16 +971,6 @@ private struct EditorActionToolbar: View {
 
   var body: some View {
     HStack(spacing: 4) {
-      if record.source == .screenshot {
-        EditorIconButton(title: "Copy annotated image", systemImage: "photo.on.rectangle") {
-          Task { await store.copyPrimaryImage(record) }
-        }
-      }
-      if record.pdfFilename != nil {
-        EditorIconButton(title: "Copy PDF", systemImage: "doc.on.doc") {
-          store.copyPDF(record)
-        }
-      }
       if record.pdfFilename != nil {
         EditorIconButton(title: "Open PDF", systemImage: "doc.richtext") {
           store.openPDF(record)

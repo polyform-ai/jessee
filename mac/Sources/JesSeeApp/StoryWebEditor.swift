@@ -12,6 +12,8 @@ struct StoryWebEditor: NSViewRepresentable {
     var story: StoryDocument
     var frames: [Frame]
     var publicPDFURL: String?
+    var canCopyImage: Bool
+    var canCopyPDF: Bool
   }
 
   struct BridgeMessage: Decodable {
@@ -66,7 +68,12 @@ struct StoryWebEditor: NSViewRepresentable {
         seconds: record.imageTimes?[filename]
           ?? fallbackFrameTime(index: index, count: record.imageFilenames.count))
     }
-    let payload = Payload(story: story, frames: frames, publicPDFURL: record.publicPDFURL)
+    let payload = Payload(
+      story: story,
+      frames: frames,
+      publicPDFURL: record.publicPDFURL,
+      canCopyImage: record.source == .screenshot,
+      canCopyPDF: record.pdfFilename != nil)
     guard let data = try? JesSeeJSON.encoder().encode(payload),
       let json = String(data: data, encoding: .utf8)
     else { return }

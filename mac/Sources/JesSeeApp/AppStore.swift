@@ -401,34 +401,40 @@ final class AppStore: ObservableObject {
     openPDF(record)
   }
 
-  func copyPrimaryImage(_ record: CaptureRecord) async {
-    guard let workspace else { return }
+  func copyPrimaryImage(recordID: String) async -> Bool {
+    guard let workspace, let record = captures.first(where: { $0.id == recordID }) else {
+      return false
+    }
     let story = await loadStory(for: record)
     let step = story?.steps.first(where: { $0.imageFilename != nil })
     let filename = step?.imageFilename ?? record.imageFilenames.first ?? record.mediaFilename
     let imageURL = workspace.directoryURL(for: record).appendingPathComponent(filename)
     guard let image = NSImage(contentsOf: imageURL) else {
       show(.error("JesSee could not copy this screenshot."), asSystemNotification: true)
-      return
+      return false
     }
     let copiedImage = imageWithAnnotations(image, annotations: step?.imageAnnotations ?? [])
     NSPasteboard.general.clearContents()
     guard NSPasteboard.general.writeObjects([copiedImage]) else {
       show(.error("JesSee could not copy this screenshot."), asSystemNotification: true)
-      return
+      return false
     }
     show(.success("Screenshot copied to clipboard."), asSystemNotification: true)
+    return true
   }
 
-  func copyPDF(_ record: CaptureRecord) {
-    guard let workspace, let filename = record.pdfFilename else { return }
+  func copyPDF(recordID: String) -> Bool {
+    guard let workspace, let record = captures.first(where: { $0.id == recordID }),
+      let filename = record.pdfFilename
+    else { return false }
     let url = workspace.directoryURL(for: record).appendingPathComponent(filename)
     NSPasteboard.general.clearContents()
     guard NSPasteboard.general.writeObjects([url as NSURL]) else {
       show(.error("JesSee could not copy this PDF."), asSystemNotification: true)
-      return
+      return false
     }
     show(.success("PDF copied to clipboard."), asSystemNotification: true)
+    return true
   }
 
   func loadStory(for record: CaptureRecord) async -> StoryDocument? {

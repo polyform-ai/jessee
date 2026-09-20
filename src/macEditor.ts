@@ -45,10 +45,17 @@ interface EditorPayload {
   story: Story;
   frames: Frame[];
   publicPDFURL?: string;
+  canCopyImage: boolean;
+  canCopyPDF: boolean;
 }
 
 interface BridgeMessage {
-  type: "save" | "saveAndOpenPDF" | "saveAndPublishPDF";
+  type:
+    | "save"
+    | "saveAndOpenPDF"
+    | "saveAndPublishPDF"
+    | "saveAndCopyImage"
+    | "saveAndCopyPDF";
   story: Story;
 }
 
@@ -238,12 +245,20 @@ window.jesseeDidSave = (success, message, publicURL) => {
 };
 
 function renderShell(): void {
+  const copyActions = [
+    payload.canCopyImage
+      ? `<button class="header-icon" id="copyImage" data-tooltip="Save and copy annotated image" title="Save and copy annotated image" aria-label="Save and copy annotated image">▣</button>`
+      : "",
+    payload.canCopyPDF
+      ? `<button class="header-icon pdf-icon" id="copyPDF" data-tooltip="Save and copy PDF" title="Save and copy PDF" aria-label="Save and copy PDF">PDF</button>`
+      : ""
+  ].join("");
   app.innerHTML = `
     <div class="editor-app">
       <header class="editor-header">
         <div><p class="kicker">Visual story editor</p><h1>Shape the story before you share it</h1><p>Edit like a document, then choose and mark up the strongest screenshot for each step.</p></div>
         <div class="header-sharing">
-          <div class="header-actions"><span id="saveStatus">Saved</span><button class="button secondary" id="saveStory">Save</button><button class="button primary" id="openPDF">Save & open PDF</button><button class="button secondary" id="getLink" data-tooltip="Generate public link" title="Generate public link">Get link</button></div>
+          <div class="header-actions"><span id="saveStatus">Saved</span>${copyActions}<button class="button secondary" id="saveStory">Save</button><button class="button primary" id="openPDF">Save & open PDF</button><button class="button secondary" id="getLink" data-tooltip="Generate public link" title="Generate public link">Get link</button></div>
           <div class="public-link-row" id="publicLinkRow" hidden><span class="public-link-value" id="publicLink"></span><span id="publicLinkStatus"></span></div>
         </div>
       </header>
@@ -265,6 +280,10 @@ function bindShellEvents(): void {
   mustFind<HTMLButtonElement>("#saveStory").addEventListener("click", () => send("save"));
   mustFind<HTMLButtonElement>("#openPDF").addEventListener("click", () => send("saveAndOpenPDF"));
   mustFind<HTMLButtonElement>("#getLink").addEventListener("click", () => send("saveAndPublishPDF"));
+  document.querySelector<HTMLButtonElement>("#copyImage")
+    ?.addEventListener("click", () => send("saveAndCopyImage"));
+  document.querySelector<HTMLButtonElement>("#copyPDF")
+    ?.addEventListener("click", () => send("saveAndCopyPDF"));
   mustFind<HTMLButtonElement>("#addStep").addEventListener("click", addStep);
   mustFind<HTMLInputElement>("#sourceURL").addEventListener("input", (event) => {
     (event.currentTarget as HTMLInputElement).setCustomValidity("");
@@ -338,7 +357,13 @@ function send(type: BridgeMessage["type"]): void {
   setStatus(
     type === "save"
       ? "Saving…"
-      : type === "saveAndOpenPDF" ? "Updating PDF…" : "Generating public link…"
+      : type === "saveAndOpenPDF"
+        ? "Updating PDF…"
+        : type === "saveAndCopyImage"
+          ? "Saving and copying image…"
+          : type === "saveAndCopyPDF"
+            ? "Saving and copying PDF…"
+            : "Generating public link…"
   );
   pendingSaveRevision = editRevision;
   pendingAction = type;
@@ -360,8 +385,9 @@ function setStatus(message: string, error = false): void {
 }
 
 function setActionPending(action?: BridgeMessage["type"]): void {
-  for (const id of ["saveStory", "openPDF", "getLink"]) {
-    mustFind<HTMLButtonElement>(`#${id}`).disabled = action !== undefined;
+  for (const id of ["saveStory", "openPDF", "getLink", "copyImage", "copyPDF"]) {
+    document.querySelector<HTMLButtonElement>(`#${id}`)
+      ?.toggleAttribute("disabled", action !== undefined);
   }
   mustFind<HTMLButtonElement>("#getLink").textContent =
     action === "saveAndPublishPDF" ? "Generating…" : "Get link";
