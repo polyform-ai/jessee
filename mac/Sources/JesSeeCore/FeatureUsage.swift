@@ -84,30 +84,15 @@ public actor FeatureUsageRecorder {
     mode: String? = nil,
     itemCount: Int? = nil
   ) async -> FeatureUsageEvent {
-    let clientID = currentClientID()
-    let event = FeatureUsageEvent(
-      activityID: UUID().uuidString.lowercased(),
-      occurredAt: Date(),
-      activity: activity.rawValue,
-      clientID: clientID,
-      userID: currentUserID(),
-      product: product,
-      appVersion: appVersion,
-      feature: feature,
-      status: "completed",
-      source: source,
-      mode: mode,
-      itemCount: itemCount)
-    guard let data = Self.encode(event) else { return event }
-    Self.append(data, to: eventFileURL)
+    let event = makeEvent(
+      activity, feature: feature, source: source, mode: mode, itemCount: itemCount)
+    persist(event)
     await send(event)
     return event
   }
 
   @discardableResult
-  public func identify(authenticatedID: String, emitLoginEvent: Bool = true) async
-    -> FeatureUsageEvent?
-  {
+  public func identify(authenticatedID: String, emitLoginEvent: Bool = true) -> FeatureUsageEvent? {
     let value = authenticatedID.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !value.isEmpty else { return nil }
     let identity = Self.opaqueUserID(for: value)
@@ -118,8 +103,11 @@ public actor FeatureUsageRecorder {
       at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
     try? Data("\(identity)\n".utf8).write(to: fileURL, options: .atomic)
     guard emitLoginEvent else { return nil }
-    return await record(
+    let event = makeEvent(
       .userIdentified, feature: "polyform_auth", source: "polyform", mode: "polyform_covered")
+    persist(event)
+    Task { await self.send(event) }
+    return event
   }
 
   public func clearIdentity() {
@@ -150,6 +138,33 @@ public actor FeatureUsageRecorder {
       let httpResponse = response as? HTTPURLResponse,
       (200..<300).contains(httpResponse.statusCode)
     else { return }
+  }
+
+  private func makeEvent(
+    _ activity: FeatureUsageActivity,
+    feature: String,
+    source: String? = nil,
+    mode: String? = nil,
+    itemCount: Int? = nil
+  ) -> FeatureUsageEvent {
+    FeatureUsageEvent(
+      activityID: UUID().uuidString.lowercased(),
+      occurredAt: Date(),
+      activity: activity.rawValue,
+      clientID: currentClientID(),
+      userID: currentUserID(),
+      product: product,
+      appVersion: appVersion,
+      feature: feature,
+      status: "completed",
+      source: source,
+      mode: mode,
+      itemCount: itemCount)
+  }
+
+  private func persist(_ event: FeatureUsageEvent) {
+    guard let data = Self.encode(event) else { return }
+    Self.append(data, to: eventFileURL)
   }
 
   static func ga4Payload(_ event: FeatureUsageEvent) -> Data? {
