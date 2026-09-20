@@ -6,7 +6,7 @@ import SwiftUI
 @preconcurrency import UserNotifications
 
 private enum AppHotKeyAction: UInt32 {
-  case startRecording = 1
+  case toggleRecording = 1
   case captureScreenshot
 }
 
@@ -81,6 +81,11 @@ final class AppStore: ObservableObject {
       workflowSession = nil
       authenticationState = .signedOut
     }
+    if configuration.setupCompleted {
+      Task {
+        _ = try? await notificationCenter.requestAuthorization(options: [.alert, .sound])
+      }
+    }
     if !polyformManagedAIAvailable, configuration.aiProviderMode == .polyformCovered {
       configuration.aiProviderMode = hasAPIKey ? .bringYourOwnKey : nil
       configuration.setupCompleted = false
@@ -105,11 +110,17 @@ final class AppStore: ObservableObject {
     recorder.onScreenshotCaptured = { [weak self] result in
       Task { @MainActor in await self?.publishScreenshot(result) }
     }
+    recorder.onStopRequested = { [weak self] in
+      self?.postSystemNotification(
+        title: "JesSee is processing your recording",
+        body: "You can keep working while JesSee saves, transcribes, and builds the story.",
+        identifier: "recording-stopped-\(UUID().uuidString)")
+    }
     appHotKeys = GlobalHotKeyController(
       signature: 0x4A53_5343,
       registrations: [
         GlobalHotKeyRegistration(
-          id: AppHotKeyAction.startRecording.rawValue,
+          id: AppHotKeyAction.toggleRecording.rawValue,
           keyCode: UInt32(kVK_ANSI_S),
           modifiers: UInt32(optionKey | shiftKey)),
         GlobalHotKeyRegistration(
@@ -120,7 +131,7 @@ final class AppStore: ObservableObject {
     ) { [weak self] id in
       Task { @MainActor in
         switch AppHotKeyAction(rawValue: id) {
-        case .startRecording: self?.startRecording()
+        case .toggleRecording: self?.toggleRecording()
         case .captureScreenshot: self?.captureScreenshotLink()
         case nil: break
         }
@@ -355,14 +366,18 @@ final class AppStore: ObservableObject {
     recorder.chooseWhatToRecord()
   }
 
+  func toggleRecording() {
+    if recorder.state == .recording {
+      recorder.stop()
+    } else {
+      startRecording()
+    }
+  }
+
   func captureScreenshotLink() {
     guard !isPublishingScreenshot else { return }
-    guard polyformClient != nil else {
-      show(.error(JesSeeError.serviceNotConfigured.localizedDescription))
-      return
-    }
-    guard workflowSession != nil else {
-      show(.error("Sign in with Polyform in Settings to create public screenshot URLs."))
+    guard isConfigured else {
+      show(.error("Finish JesSee setup before capturing a screenshot."))
       return
     }
     recorder.chooseScreenshot()
@@ -384,6 +399,36 @@ final class AppStore: ObservableObject {
   func openPDF(recordID: String) {
     guard let record = captures.first(where: { $0.id == recordID }) else { return }
     openPDF(record)
+  }
+
+  func copyPrimaryImage(_ record: CaptureRecord) async {
+    guard let workspace else { return }
+    let story = await loadStory(for: record)
+    let step = story?.steps.first(where: { $0.imageFilename != nil })
+    let filename = step?.imageFilename ?? record.imageFilenames.first ?? record.mediaFilename
+    let imageURL = workspace.directoryURL(for: record).appendingPathComponent(filename)
+    guard let image = NSImage(contentsOf: imageURL) else {
+      show(.error("JesSee could not copy this screenshot."), asSystemNotification: true)
+      return
+    }
+    let copiedImage = imageWithAnnotations(image, annotations: step?.imageAnnotations ?? [])
+    NSPasteboard.general.clearContents()
+    guard NSPasteboard.general.writeObjects([copiedImage]) else {
+      show(.error("JesSee could not copy this screenshot."), asSystemNotification: true)
+      return
+    }
+    show(.success("Screenshot copied to clipboard."), asSystemNotification: true)
+  }
+
+  func copyPDF(_ record: CaptureRecord) {
+    guard let workspace, let filename = record.pdfFilename else { return }
+    let url = workspace.directoryURL(for: record).appendingPathComponent(filename)
+    NSPasteboard.general.clearContents()
+    guard NSPasteboard.general.writeObjects([url as NSURL]) else {
+      show(.error("JesSee could not copy this PDF."), asSystemNotification: true)
+      return
+    }
+    show(.success("PDF copied to clipboard."), asSystemNotification: true)
   }
 
   func loadStory(for record: CaptureRecord) async -> StoryDocument? {
@@ -526,7 +571,7 @@ final class AppStore: ObservableObject {
       guard isCurrentWorkspace(workspace) else { return }
       captures = await workspace.allRecords()
       guard isCurrentWorkspace(workspace) else { return }
-      startProcessing(record, in: workspace, notifyStarted: true)
+      startProcessing(record, in: workspace, notifyStarted: source != .recording)
       recordUsage(
         .captureAdded,
         feature: source == .recording ? "screen_recording" : "video_import",
@@ -547,30 +592,46 @@ final class AppStore: ObservableObject {
       isPublishingScreenshot = false
       try? FileManager.default.removeItem(at: result.url)
     }
+    guard let workspace else {
+      show(.error(JesSeeError.outputFolderUnavailable.localizedDescription), asSystemNotification: true)
+      return
+    }
     do {
-      let upload = try await withPolyformAuthentication { client, token in
-        try await client.publishImage(
-          at: result.url, contentType: "image/png", accessToken: token)
-      }
-      guard let publicURL = upload.publicURL else {
-        throw JesSeeError.invalidResponse("Polyform did not return a public screenshot link.")
-      }
-      copyToPasteboard(publicURL.absoluteString)
-      recordUsage(.screenshotPublished, feature: "public_screenshot")
-      show(.success("Screenshot URL copied to clipboard."))
-      let center = UNUserNotificationCenter.current()
-      if (try? await center.requestAuthorization(options: [.alert, .sound])) == true {
-        let content = UNMutableNotificationContent()
-        content.title = "Screenshot URL copied to clipboard"
-        content.body = "Paste it anywhere you need to share visual context."
-        content.sound = .default
-        content.interruptionLevel = .active
-        try? await center.add(
-          UNNotificationRequest(
-            identifier: "screenshot-\(upload.id)", content: content, trigger: nil))
+      var record = try await workspace.importScreenshot(
+        from: result.url, capturedSourceURL: result.sourceURL)
+      let story = try await workspace.read(
+        StoryDocument.self, filename: record.storyFilename ?? "story.json", for: record)
+      let rendered = try DocumentRenderer.render(
+        story: story, in: workspace.directoryURL(for: record))
+      record.htmlFilename = rendered.html
+      record.pdfFilename = rendered.pdf
+      try await workspace.save(record)
+      guard isCurrentWorkspace(workspace) else { return }
+      captures = await workspace.allRecords()
+      selectedCaptureID = record.id
+      readyCaptureID = record.id
+      recordUsage(.captureAdded, feature: "screenshot", source: CaptureSource.screenshot.rawValue)
+
+      if polyformClient != nil, workflowSession != nil {
+        let upload = try await withPolyformAuthentication { client, token in
+          try await client.publishImage(
+            at: result.url, contentType: "image/png", accessToken: token)
+        }
+        guard let publicURL = upload.publicURL else {
+          throw JesSeeError.invalidResponse("Polyform did not return a public screenshot link.")
+        }
+        copyToPasteboard(publicURL.absoluteString)
+        recordUsage(.screenshotPublished, feature: "public_screenshot")
+        show(.success("Screenshot saved. URL copied to clipboard."))
+        postSystemNotification(
+          title: "Screenshot URL copied to clipboard",
+          body: "The screenshot is also open in your JesSee Library for markup and notes.",
+          identifier: "screenshot-\(upload.id)")
+      } else {
+        show(.success("Screenshot saved and opened in your Library."), asSystemNotification: true)
       }
     } catch {
-      show(.error(authenticationAwareError(error).localizedDescription))
+      show(.error(authenticationAwareError(error).localizedDescription), asSystemNotification: true)
     }
   }
 
@@ -657,7 +718,7 @@ final class AppStore: ObservableObject {
             recovery: appStore.credentialRecovery(for: visibleError, provider: provider),
             error: visibleError,
             in: processingWorkspace)
-          appStore.show(.error(visibleError.localizedDescription))
+          appStore.show(.error(visibleError.localizedDescription), asSystemNotification: true)
           break
         }
       }
@@ -809,6 +870,7 @@ final class AppStore: ObservableObject {
     let completedRecord = await processingWorkspace.record(id: id)
     content.body = completedRecord?.title ?? "Open the library to review it."
     content.sound = .default
+    content.interruptionLevel = .active
     try? await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
   }
 
@@ -828,6 +890,7 @@ final class AppStore: ObservableObject {
       content.title = "JesSee is transcribing your recording"
       content.body = "You can keep working while JesSee transcribes, chooses visuals, and builds the story."
       content.sound = .default
+      content.interruptionLevel = .active
       try? await center.add(
         UNNotificationRequest(
           identifier: notificationID, content: content, trigger: nil))
@@ -1101,12 +1164,72 @@ final class AppStore: ObservableObject {
     NSPasteboard.general.setString(value, forType: .string)
   }
 
-  private func show(_ value: Notice) {
+  private func show(_ value: Notice, asSystemNotification: Bool = false) {
     notice = value
+    if asSystemNotification {
+      let title: String
+      let body: String
+      switch value {
+      case .success(let message):
+        title = "JesSee"
+        body = message
+      case .error(let message):
+        title = "JesSee needs attention"
+        body = message
+      }
+      postSystemNotification(
+        title: title, body: body, identifier: "notice-\(UUID().uuidString)")
+    }
     Task { [weak self] in
       try? await Task.sleep(for: .seconds(4))
       if self?.notice == value { self?.notice = nil }
     }
+  }
+
+  private func postSystemNotification(title: String, body: String, identifier: String) {
+    Task {
+      let center = UNUserNotificationCenter.current()
+      guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else {
+        return
+      }
+      let content = UNMutableNotificationContent()
+      content.title = title
+      content.body = body
+      content.sound = .default
+      content.interruptionLevel = .active
+      try? await center.add(
+        UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
+    }
+  }
+
+  private func imageWithAnnotations(
+    _ image: NSImage, annotations: [StoryAnnotation]
+  ) -> NSImage {
+    guard !annotations.isEmpty else { return image }
+    let rendered = NSImage(size: image.size)
+    rendered.lockFocus()
+    image.draw(in: NSRect(origin: .zero, size: image.size))
+    for annotation in annotations {
+      let rect = NSRect(
+        x: CGFloat(annotation.x) * image.size.width,
+        y: (1 - CGFloat(annotation.y + annotation.height)) * image.size.height,
+        width: CGFloat(annotation.width) * image.size.width,
+        height: CGFloat(annotation.height) * image.size.height)
+      switch annotation.kind {
+      case .highlight:
+        NSColor.systemYellow.withAlphaComponent(0.2).setFill()
+        NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8).fill()
+        NSColor.systemOrange.setStroke()
+        let path = NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8)
+        path.lineWidth = max(3, image.size.width / 400)
+        path.stroke()
+      case .redaction:
+        NSColor.black.setFill()
+        NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4).fill()
+      }
+    }
+    rendered.unlockFocus()
+    return rendered
   }
 }
 
