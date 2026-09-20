@@ -128,6 +128,15 @@ final class AppStore: ObservableObject {
     }
     Task {
       if configuration.aiProviderMode == .polyformCovered { _ = try? await accessToken() }
+      if configuration.shareAnonymousFeatureUsage {
+        if let session = workflowSession {
+          await featureUsage.identify(authenticatedID: session.grantID, emitLoginEvent: false)
+        } else {
+          await featureUsage.clearIdentity()
+        }
+      } else {
+        await featureUsage.resetAllAnalyticsData()
+      }
       await loadLibrary()
     }
   }
@@ -221,6 +230,9 @@ final class AppStore: ObservableObject {
             configuration.email = session.email
             restoreCompletedSetupIfPossible(for: .polyformCovered)
             persistConfiguration()
+            if configuration.shareAnonymousFeatureUsage {
+              await featureUsage.identify(authenticatedID: session.grantID)
+            }
             if !configuration.setupCompleted { setupStep = max(setupStep, 1) }
             show(.success("Signed in to JesSee."))
             await resumeFailedCaptures(recoverableBy: .polyformSignIn)
@@ -248,11 +260,7 @@ final class AppStore: ObservableObject {
 
   func signOut() {
     signInTask?.cancel()
-    refreshTask?.cancel()
-    refreshTask = nil
-    try? JesSeeKeychain.removeWorkflowSession()
-    workflowSession = nil
-    authenticationState = .signedOut
+    clearWorkflowSession()
     if configuration.aiProviderMode == .polyformCovered {
       configuration.setupCompleted = false
       setupStep = 0
@@ -290,6 +298,10 @@ final class AppStore: ObservableObject {
     configuration.setupCompleted = true
     persistConfiguration()
     show(.success("JesSee is ready."))
+    Task {
+      _ = try? await UNUserNotificationCenter.current().requestAuthorization(
+        options: [.alert, .sound])
+    }
   }
 
   func setScreenshotSharing(_ enabled: Bool) {
@@ -301,7 +313,11 @@ final class AppStore: ObservableObject {
     configuration.shareAnonymousFeatureUsage = enabled
     persistConfiguration()
     if !enabled {
-      Task { await featureUsage.resetClientID() }
+      Task { await featureUsage.resetAllAnalyticsData() }
+    } else if let session = workflowSession {
+      Task {
+        await featureUsage.identify(authenticatedID: session.grantID, emitLoginEvent: false)
+      }
     }
   }
 
@@ -541,13 +557,14 @@ final class AppStore: ObservableObject {
       }
       copyToPasteboard(publicURL.absoluteString)
       recordUsage(.screenshotPublished, feature: "public_screenshot")
-      show(.success("Screenshot URL copied."))
+      show(.success("Screenshot URL copied to clipboard."))
       let center = UNUserNotificationCenter.current()
       if (try? await center.requestAuthorization(options: [.alert, .sound])) == true {
         let content = UNMutableNotificationContent()
-        content.title = "Screenshot URL copied"
+        content.title = "Screenshot URL copied to clipboard"
         content.body = "Paste it anywhere you need to share visual context."
         content.sound = .default
+        content.interruptionLevel = .active
         try? await center.add(
           UNNotificationRequest(
             identifier: "screenshot-\(upload.id)", content: content, trigger: nil))
@@ -1020,16 +1037,21 @@ final class AppStore: ObservableObject {
   }
 
   private func signOutAfterAuthenticationFailure() {
-    refreshTask?.cancel()
-    refreshTask = nil
-    try? JesSeeKeychain.removeWorkflowSession()
-    workflowSession = nil
-    authenticationState = .signedOut
+    clearWorkflowSession()
     if configuration.aiProviderMode == .polyformCovered {
       configuration.setupCompleted = false
       setupStep = 0
     }
     persistConfiguration()
+  }
+
+  private func clearWorkflowSession() {
+    refreshTask?.cancel()
+    refreshTask = nil
+    try? JesSeeKeychain.removeWorkflowSession()
+    workflowSession = nil
+    authenticationState = .signedOut
+    Task { await featureUsage.clearIdentity() }
   }
 
   private func withPolyformAuthentication<Value: Sendable>(

@@ -113,12 +113,8 @@ private struct HomeView: View {
           detail: "Pick one window, app, or display in the system panel.")
       case .choosingScreenshot:
         StatusCard(
-          icon: "camera.viewfinder", title: "Choose a screenshot",
-          detail: "Pick one window, app, or display. JesSee will copy its public link.")
-      case .capturingScreenshot:
-        StatusCard(
-          icon: "camera.fill", title: "Capturing screenshot",
-          detail: "JesSee is preparing the image for upload.")
+          icon: "camera.viewfinder", title: "Select an area",
+          detail: "Drag over any part of the screen, or press Space to capture a window.")
       case .failed(let message):
         StatusCard(
           icon: "exclamationmark.triangle", title: "JesSee could not finish", detail: message,
@@ -139,33 +135,28 @@ private struct StartCard: View {
 
   var body: some View {
     VStack(spacing: 10) {
-      Button(action: store.startRecording) {
-        HStack(spacing: 10) {
-          Label("Start a recording", systemImage: "record.circle.fill")
-          Spacer()
-          Text("⌥⇧S").font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.9))
-        }
-          .frame(maxWidth: .infinity).padding(.vertical, 7)
-      }
-      .buttonStyle(.borderedProminent).tint(accent).controlSize(.large)
-      .help("Choose a window, app, or display to record · ⌥⇧S")
-      Button(action: captureScreenshotLink) {
-        HStack(spacing: 10) {
-          Label(
-            store.isPublishingScreenshot ? "Uploading screenshot…" : "Copy screenshot URL",
-            systemImage: "camera.viewfinder"
-          )
-          Spacer()
-          Text("⌥⇧C").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity).padding(.vertical, 4)
-      }
-      .buttonStyle(.bordered).controlSize(.large)
-      .disabled(store.isPublishingScreenshot)
-      .help(
-        store.isSignedIntoPolyform
-          ? "Capture a screenshot, upload it, and copy its public URL · ⌥⇧C"
-          : "Sign in with Polyform in Settings to create public screenshot URLs")
+      CaptureActionButton(
+        title: "Start recording",
+        detail: "Show and explain anything on your Mac",
+        systemImage: "record.circle.fill",
+        shortcut: "⌥⇧S",
+        style: .primary,
+        help: "Choose a window, app, or display to record",
+        action: store.startRecording)
+      CaptureActionButton(
+        title: store.isPublishingScreenshot ? "Uploading screenshot…" : "Capture screenshot",
+        detail: store.isSignedIntoPolyform
+          ? "Drag to select an area · Space selects a window"
+          : "Sign in with Polyform to create a public link",
+        systemImage: "camera.viewfinder",
+        shortcut: "⌥⇧C",
+        style: .secondary,
+        isLoading: store.isPublishingScreenshot,
+        isDisabled: store.isPublishingScreenshot,
+        help: store.isSignedIntoPolyform
+          ? "Capture an area or window, upload it, and copy its public URL"
+          : "Sign in with Polyform in Settings to create public screenshot URLs",
+        action: captureScreenshotLink)
       Button(action: store.importVideo) {
         Label("Import a video", systemImage: "square.and.arrow.down")
           .frame(maxWidth: .infinity).padding(.vertical, 4)
@@ -181,6 +172,90 @@ private struct StartCard: View {
       openSettings()
       NSApp.activate(ignoringOtherApps: true)
     }
+  }
+}
+
+private enum CaptureActionStyle {
+  case primary
+  case secondary
+}
+
+private struct CaptureActionButton: View {
+  let title: String
+  let detail: String
+  let systemImage: String
+  let shortcut: String
+  let style: CaptureActionStyle
+  var isLoading = false
+  var isDisabled = false
+  let help: String
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      HStack(spacing: 12) {
+        ZStack {
+          RoundedRectangle(cornerRadius: 10)
+            .fill(style == .primary ? Color.white.opacity(0.16) : accent.opacity(0.1))
+          if isLoading {
+            ProgressView().controlSize(.small)
+              .tint(style == .primary ? .white : accent)
+          } else {
+            Image(systemName: systemImage)
+              .font(.system(size: 18, weight: .semibold))
+              .foregroundStyle(style == .primary ? .white : accent)
+          }
+        }
+        .frame(width: 38, height: 38)
+
+        VStack(alignment: .leading, spacing: 2) {
+          Text(title).font(.subheadline.weight(.semibold))
+          Text(detail)
+            .font(.caption)
+            .foregroundStyle(style == .primary ? Color.white.opacity(0.78) : .secondary)
+            .lineLimit(2)
+        }
+        Spacer(minLength: 8)
+        Text(shortcut)
+          .font(.caption2.weight(.bold))
+          .padding(.horizontal, 8)
+          .padding(.vertical, 5)
+          .background(
+            style == .primary ? Color.white.opacity(0.15) : Color.primary.opacity(0.055),
+            in: Capsule())
+      }
+      .foregroundStyle(style == .primary ? .white : .primary)
+      .padding(.horizontal, 13)
+      .padding(.vertical, 11)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .contentShape(RoundedRectangle(cornerRadius: 14))
+    }
+    .buttonStyle(.plain)
+    .background {
+      if style == .primary {
+        LinearGradient(
+          colors: [accent, Color(red: 0.25, green: 0.36, blue: 0.93)],
+          startPoint: .topLeading,
+          endPoint: .bottomTrailing)
+      } else {
+        Color(nsColor: .controlBackgroundColor)
+      }
+    }
+    .clipShape(RoundedRectangle(cornerRadius: 14))
+    .overlay {
+      RoundedRectangle(cornerRadius: 14)
+        .stroke(
+          style == .primary ? Color.white.opacity(0.12) : accent.opacity(0.2),
+          lineWidth: 1)
+    }
+    .shadow(
+      color: style == .primary ? accent.opacity(0.2) : .clear,
+      radius: 9,
+      y: 4)
+    .disabled(isDisabled)
+    .opacity(isDisabled ? 0.72 : 1)
+    .help("\(help) · \(shortcut)")
+    .accessibilityHint(help)
   }
 }
 
@@ -491,7 +566,13 @@ private struct PolyformAuthenticationControls: View {
           Button("Cancel") { store.cancelSignIn() }
         }
       case .signedOut:
+        Text("Your email").font(.caption.weight(.semibold))
         TextField("you@company.com", text: $email).textFieldStyle(.roundedBorder)
+          .textContentType(.emailAddress)
+        Text(
+          "We use this to send your secure sign-in link. If product analytics is enabled, JesSee identifies the signed-in account with an opaque ID—not your email."
+        )
+        .font(.caption2).foregroundStyle(.secondary)
         Button("Email me a sign-in link") { store.beginSignIn(email) }
           .buttonStyle(.borderedProminent).tint(accent).disabled(email.isEmpty)
       }
@@ -605,6 +686,13 @@ private struct SetupCompleteStep: View {
       .font(.subheadline).foregroundStyle(.secondary)
 
       MenuBarLocationGuide()
+
+      Label(
+        "Product analytics are on by default. JesSee never sends your media, narration, story text, email, or filenames. Polyform sign-in uses an opaque account ID, and you can opt out in Settings.",
+        systemImage: "chart.bar.xaxis"
+      )
+      .font(.caption)
+      .foregroundStyle(.secondary)
 
       Button("Start using JesSee") {
         store.finishSetup()
@@ -1001,14 +1089,14 @@ struct SettingsView: View {
             : "Only narration, timestamps, and screenshot timing are used to plan the story."
         ).font(.caption).foregroundStyle(.secondary)
         Toggle(
-          "Share product analytics",
+          "Opt out of product analytics",
           isOn: Binding(
-            get: { store.configuration.shareAnonymousFeatureUsage },
-            set: { store.setAnonymousFeatureUsageSharing($0) }
+            get: { !store.configuration.shareAnonymousFeatureUsage },
+            set: { store.setAnonymousFeatureUsageSharing(!$0) }
           )
         )
         Text(
-          "Sends completed feature names, app version, counts, and a random installation ID directly to Google Analytics. It never sends your email, recordings, screenshots, narration, story text, filenames, or API keys. Turning this off removes the local analytics ID."
+          "Analytics are on by default. Turn on this opt-out to stop sharing and remove local analytics identifiers. JesSee sends completed feature names, app version, counts, and a random installation ID directly to Google Analytics. After Polyform sign-in, events also use an opaque account ID. Your email, recordings, screenshots, narration, story text, filenames, and API keys are never sent."
         ).font(.caption).foregroundStyle(.secondary)
       }
       Section("Software Updates") {

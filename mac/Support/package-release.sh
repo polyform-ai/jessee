@@ -102,7 +102,10 @@ This release is signed by Polyform, notarized by Apple, and can update itself fr
 - Let JesSee prioritize marked evidence while preserving useful screenshots from across the full recording.
 - Edit rich text, choose alternate screenshots, add highlights or redactions, retain a webpage source link, and export one continuous PDF.
 - Generate and copy a public PDF link directly beside the editor's save controls.
-- Start a recording with ⌥⇧S, or capture a screenshot, upload it through Polyform, and copy its public link with ⌥⇧C.
+- Start a recording with ⌥⇧S, or use ⌥⇧C to drag over part of the screen, press Space to choose a window, upload the screenshot through Polyform, and copy its public link.
+- See a confirmation in JesSee and a Mac notification when a screenshot URL is copied to the clipboard.
+- Share anonymous, media-free product analytics by default, with a clear opt-out in Settings.
+- Ask for email inside Polyform Covered and associate signed-in analytics with an opaque account ID without sending the email or grant ID.
 - Open the Library automatically whenever a configured JesSee app launches.
 - Preserve the active webpage URL automatically when a recording starts from a supported browser on macOS 15.2 or newer.
 - Use the refreshed JesSee identity across the native app and website.

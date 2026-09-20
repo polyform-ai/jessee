@@ -17,7 +17,7 @@ Use it for:
 
 - A guided choice between Polyform Covered and Bring Your Own Key, plus output folder and microphone access
 - Menu-bar recording for any selected window, app, or display
-- One-click screenshot capture that uploads a public image and copies its URL
+- Mac-style screenshot capture: drag to select an area or press Space for a window, then copy its public URL
 - Automatic source webpage URLs for recordings started from supported browsers on macOS 15.2+
 - A live timer, microphone meter, drawing and highlighting controls
 - Global recording shortcuts, including `⌥S` to stop and process
@@ -31,7 +31,7 @@ Use it for:
 
 JesSee requires macOS 15 or newer. **Polyform Covered** lets you sign in by email while Polyform covers transcription and AI costs. **Bring Your Own Key** stores your OpenAI API key in the Mac Keychain and sends narration and selected screenshots directly to OpenAI. Recordings, generated story screenshots, generated files, and PDFs remain in the output folder you choose. Public screenshot and PDF links use the same optional Polyform sign-in; only an image or PDF you explicitly choose to publish is uploaded publicly.
 
-Anonymous feature-usage sharing is optional and off by default. When enabled, JesSee sends completed feature names, app version, counts, and a random installation ID directly to GA4. It never includes media, narration, story text, filenames, email, or API keys. See [Feature usage events](docs/FEATURE_USAGE_EVENTS.md) for the exact contract.
+Product analytics are on by default and have a clear opt-out in **Settings → Privacy**. JesSee sends completed feature names, app version, counts, and a random installation ID directly to GA4. After Polyform sign-in, events also carry an opaque ID derived from the authenticated Polyform grant so activity remains associated across app sessions. JesSee never sends media, narration, story text, filenames, email, API keys, or the underlying grant ID. See [Feature usage events](docs/FEATURE_USAGE_EVENTS.md) for the exact contract.
 
 ## Install
 
@@ -51,7 +51,7 @@ The floating recording bar shows the elapsed time and microphone activity. Hover
 | Action | Shortcut |
 | --- | --- |
 | Start a recording | `⌥⇧S` |
-| Copy screenshot URL | `⌥⇧C` |
+| Capture an area or window and copy its URL | `⌥⇧C` |
 | Draw | `⌥D` |
 | Highlight | `⌥H` |
 | Undo | `⌥Z` |

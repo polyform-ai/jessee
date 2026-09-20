@@ -1,6 +1,5 @@
 import AVFoundation
 import Accelerate
-import AppKit
 import CoreVideo
 import Foundation
 import JesSeeCore
@@ -22,7 +21,6 @@ final class RecordingCoordinator: NSObject, ObservableObject {
     case idle
     case choosingRecording
     case choosingScreenshot
-    case capturingScreenshot
     case recording
     case stopping
     case failed(String)
@@ -71,7 +69,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
     guard state == .idle || isFailure else { return }
     pendingBrowserApplication = nil
     state = .choosingScreenshot
-    picker.present()
+    Task { await captureInteractiveScreenshot() }
   }
 
   func stop() {
@@ -177,32 +175,32 @@ final class RecordingCoordinator: NSObject, ObservableObject {
     }
   }
 
-  private func captureScreenshot(filter: SCContentFilter) async {
-    state = .capturingScreenshot
-    let dimensions = CaptureDimensions.fitted(
-      pointWidth: Double(filter.contentRect.width),
-      pointHeight: Double(filter.contentRect.height),
-      pointPixelScale: Double(filter.pointPixelScale)
-    )
-    let configuration = SCStreamConfiguration()
-    configuration.width = dimensions.width
-    configuration.height = dimensions.height
-    configuration.showsCursor = false
+  private func captureInteractiveScreenshot() async {
+    let url = FileManager.default.temporaryDirectory
+      .appendingPathComponent("JesSee-Screenshot-\(UUID().uuidString).png")
     do {
-      let image = try await SCScreenshotManager.captureImage(
-        contentFilter: filter, configuration: configuration)
-      let representation = NSBitmapImageRep(cgImage: image)
-      guard let data = representation.representation(using: .png, properties: [:]) else {
-        throw JesSeeError.invalidResponse("JesSee could not create the screenshot image.")
+      _ = try await Self.runSystemScreenshotCapture(at: url)
+      guard FileManager.default.fileExists(atPath: url.path) else {
+        state = .idle
+        return
       }
-      let url = FileManager.default.temporaryDirectory
-        .appendingPathComponent("JesSee-Screenshot-\(UUID().uuidString).png")
-      try data.write(to: url, options: .atomic)
       state = .idle
       onScreenshotCaptured?(ScreenshotResult(url: url))
     } catch {
+      try? FileManager.default.removeItem(at: url)
       finishWithError(error.localizedDescription)
     }
+  }
+
+  private nonisolated static func runSystemScreenshotCapture(at url: URL) async throws -> Int32 {
+    try await Task.detached(priority: .userInitiated) {
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+      process.arguments = ["-i", "-Jselection", "-t", "png", url.path]
+      try process.run()
+      process.waitUntilExit()
+      return process.terminationStatus
+    }.value
   }
 
   private func selectedSourceURL(for filter: SCContentFilter) -> String? {
@@ -248,8 +246,6 @@ extension RecordingCoordinator: SCContentSharingPickerObserver {
   ) {
     Task { @MainActor in
       switch self.state {
-      case .choosingScreenshot:
-        await self.captureScreenshot(filter: filter)
       case .choosingRecording:
         await self.startRecording(filter: filter)
       default:

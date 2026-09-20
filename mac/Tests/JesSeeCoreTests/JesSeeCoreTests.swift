@@ -798,12 +798,19 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect((color?.redComponent ?? 0) > (color?.greenComponent ?? 1))
 }
 
-@Test func configurationFromOlderBuildGetsSafePrivacyDefault() throws {
+@Test func configurationFromOlderBuildGetsCurrentPrivacyDefaults() throws {
   let data = Data(#"{"email":"a@b.com","outputFolderPath":"/tmp","setupCompleted":true}"#.utf8)
   let configuration = try JesSeeJSON.decoder().decode(JesSeeConfiguration.self, from: data)
   #expect(configuration.shareScreenshotsForStory)
-  #expect(!configuration.shareAnonymousFeatureUsage)
+  #expect(configuration.shareAnonymousFeatureUsage)
   #expect(configuration.aiProviderMode == .bringYourOwnKey)
+}
+
+@Test func configurationPreservesExplicitAnalyticsOptOut() throws {
+  let original = JesSeeConfiguration(shareAnonymousFeatureUsage: false)
+  let data = try JesSeeJSON.encoder().encode(original)
+  let decoded = try JesSeeJSON.decoder().decode(JesSeeConfiguration.self, from: data)
+  #expect(!decoded.shareAnonymousFeatureUsage)
 }
 
 @Test func featureUsageWritesAGA4ReadyEventWithoutEmail() async throws {
@@ -830,14 +837,15 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(!line.contains("email"))
   #expect(!line.contains("filename"))
   #expect(FileManager.default.fileExists(atPath: clientIDURL.path))
-  await recorder.resetClientID()
+  await recorder.resetAllAnalyticsData()
   #expect(!FileManager.default.fileExists(atPath: clientIDURL.path))
+  #expect(!FileManager.default.fileExists(atPath: fileURL.path))
 }
 
 @Test func featureUsageBuildsDirectGA4PayloadWithoutIdentityData() throws {
   let event = FeatureUsageEvent(
     activityID: UUID().uuidString.lowercased(), occurredAt: Date(),
-    activity: FeatureUsageActivity.captureAdded.rawValue, clientID: "123.456",
+    activity: FeatureUsageActivity.captureAdded.rawValue, clientID: "123.456", userID: nil,
     product: "jessee", appVersion: "test", feature: "video_import", status: "completed",
     source: nil, mode: nil, itemCount: nil)
   let data = try #require(FeatureUsageRecorder.ga4Payload(event))
@@ -848,6 +856,35 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(events.first?["name"] as? String == "capture_added")
   #expect(String(decoding: data, as: UTF8.self).contains("email") == false)
   #expect(String(decoding: data, as: UTF8.self).contains("user_id") == false)
+}
+
+@Test func featureUsageIdentifiesPolyformUsersWithoutSendingEmailOrGrantID() async throws {
+  let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+    UUID().uuidString, isDirectory: true)
+  try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: temporary) }
+
+  let recorder = FeatureUsageRecorder(
+    product: "jessee", appVersion: "test", applicationSupportURL: temporary)
+  let login = try #require(await recorder.identify(authenticatedID: "grant-secret"))
+  let event = await recorder.record(.captureAdded, feature: "recording")
+  let payloadData = try #require(FeatureUsageRecorder.ga4Payload(event))
+  let payload = try #require(
+    JSONSerialization.jsonObject(with: payloadData) as? [String: Any])
+  let userID = try #require(payload["user_id"] as? String)
+  let log = try String(
+    contentsOf: temporary.appendingPathComponent("jessee/feature-usage.jsonl"), encoding: .utf8)
+
+  #expect(login.activity == "login")
+  #expect(login.userID == userID)
+  #expect(userID.count == 64)
+  #expect(!log.contains("grant-secret"))
+  #expect(!log.contains("email"))
+  await recorder.clearIdentity()
+  let reloadedRecorder = FeatureUsageRecorder(
+    product: "jessee", appVersion: "test", applicationSupportURL: temporary)
+  let anonymousEvent = await reloadedRecorder.record(.captureAdded, feature: "recording")
+  #expect(anonymousEvent.userID == nil)
 }
 
 @Test func captionsPreserveSegmentTiming() {
