@@ -3,6 +3,11 @@ import test from "node:test";
 import { parseHTML } from "linkedom";
 
 import { htmlBlocks, renderBlocks } from "../src/richTextHTML.ts";
+import {
+  containedContentBounds,
+  normalizePointInBounds,
+  pointIsInsideBounds
+} from "../src/annotationCoordinates.ts";
 import { normalizeSourceURL } from "../src/storyURL.ts";
 
 function installDOM(): void {
@@ -44,4 +49,19 @@ test("source URLs are normalized before the editor saves them", () => {
   assert.equal(normalizeSourceURL("https://jira/browse/ABC"), "https://jira/browse/ABC");
   assert.equal(normalizeSourceURL("file:///tmp/private"), undefined);
   assert.equal(normalizeSourceURL("not a URL"), undefined);
+});
+
+test("markup coordinates are normalized to the displayed image bounds", () => {
+  const bounds = containedContentBounds(
+    { left: 40, top: 80, width: 600, height: 500 },
+    400,
+    1_000
+  );
+  assert.deepEqual(bounds, { left: 240, top: 80, width: 200, height: 500 });
+  assert.ok(bounds);
+  assert.deepEqual(normalizePointInBounds(290, 205, bounds), { x: 0.25, y: 0.25 });
+  assert.deepEqual(normalizePointInBounds(100, 700, bounds), { x: 0, y: 1 });
+  assert.equal(pointIsInsideBounds(290, 205, bounds), true);
+  assert.equal(pointIsInsideBounds(200, 205, bounds), false);
+  assert.equal(normalizePointInBounds(290, 205, { ...bounds, width: 0 }), undefined);
 });

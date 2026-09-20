@@ -17,5 +17,5 @@
     "allowImportingTsExtensions": true,
     "types": ["node"]
   },
-  "include": ["src/macEditor.ts", "src/richTextHTML.ts", "tests/macEditorRichText.test.ts", "vite.mac-editor.config.ts"]
+  "include": ["src/macEditor.ts", "src/annotationCoordinates.ts", "src/richTextHTML.ts", "tests/macEditorRichText.test.ts", "vite.mac-editor.config.ts"]
 }

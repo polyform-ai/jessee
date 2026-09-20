@@ -1,6 +1,12 @@
 import { Editor, Node as TiptapNode, mergeAttributes, type JSONContent } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import "./macEditor.css";
+import {
+  containedContentBounds,
+  normalizePointInBounds,
+  pointIsInsideBounds,
+  type RectangleBounds
+} from "./annotationCoordinates";
 import { htmlBlocks, htmlText, narrativeHTML, renderBlocks } from "./richTextHTML";
 import { normalizeSourceURL } from "./storyURL";
 
@@ -138,6 +144,7 @@ let dragStart: { x: number; y: number } | undefined;
 let editRevision = 0;
 let pendingSaveRevision: number | undefined;
 let pendingAction: BridgeMessage["type"] | undefined;
+let markupResizeObserver: ResizeObserver | undefined;
 
 const StoryImage = TiptapNode.create({
   name: "storyImage",
@@ -520,6 +527,8 @@ function openImagePicker(stepIndex: number): void {
 
 function renderPicker(): void {
   if (activeStepIndex === undefined) return;
+  markupResizeObserver?.disconnect();
+  markupResizeObserver = undefined;
   const step = serializeStory().steps[activeStepIndex];
   const frame = candidates[candidateIndex];
   const card = mustFind<HTMLElement>("#pickerCard");
@@ -530,7 +539,7 @@ function renderPicker(): void {
       <div class="markup-tools"><button id="highlightMode" class="${drawingMode === "highlight" ? "active" : ""}">Highlight</button><button id="redactMode" class="${drawingMode === "redaction" ? "active" : ""}">Redact</button><button id="undoMarkup" ${draftAnnotations.length ? "" : "disabled"}>Undo</button><button id="clearMarkup" ${draftAnnotations.length ? "" : "disabled"}>Clear</button></div>
       <span>${frame ? `${candidateIndex + 1} of ${candidates.length}` : "No images"}</span>
     </div>
-    ${frame ? `<div class="picker-stage-row"><button class="arrow" id="previousFrame" data-tooltip="Previous screenshot" aria-label="Previous screenshot" title="Previous screenshot" ${candidateIndex === 0 ? "disabled" : ""}>←</button><figure><div class="markup-stage ${drawingMode ? "drawing" : ""}" id="markupStage"><img src="${escapeAttribute(frame.filename)}" alt="Screenshot ${candidateIndex + 1}" />${draftAnnotations.map((annotation) => annotationElement(annotation).outerHTML).join("")}</div><figcaption><strong>${escapeHTML(frame.filename.split("/").at(-1) || frame.filename)}</strong><span>${formatSeconds(frame.seconds)} · ${Math.abs(frame.seconds - step.endSeconds) < 1 ? "Best timing" : "Nearby moment"}</span></figcaption></figure><button class="arrow" id="nextFrame" data-tooltip="Next screenshot" aria-label="Next screenshot" title="Next screenshot" ${candidateIndex === candidates.length - 1 ? "disabled" : ""}>→</button></div>` : `<div class="empty-picker">No screenshots are available for this recording.</div>`}
+    ${frame ? `<div class="picker-stage-row"><button class="arrow" id="previousFrame" data-tooltip="Previous screenshot" aria-label="Previous screenshot" title="Previous screenshot" ${candidateIndex === 0 ? "disabled" : ""}>←</button><figure><div class="markup-stage ${drawingMode ? "drawing" : ""}" id="markupStage"><img src="${escapeAttribute(frame.filename)}" alt="Screenshot ${candidateIndex + 1}" />${draftAnnotations.map((annotation) => markupAnnotationElement(annotation).outerHTML).join("")}</div><figcaption><strong>${escapeHTML(frame.filename.split("/").at(-1) || frame.filename)}</strong><span>${formatSeconds(frame.seconds)} · ${Math.abs(frame.seconds - step.endSeconds) < 1 ? "Best timing" : "Nearby moment"}</span></figcaption></figure><button class="arrow" id="nextFrame" data-tooltip="Next screenshot" aria-label="Next screenshot" title="Next screenshot" ${candidateIndex === candidates.length - 1 ? "disabled" : ""}>→</button></div>` : `<div class="empty-picker">No screenshots are available for this recording.</div>`}
     <div class="picker-actions"><button class="button secondary" id="textOnly">Use text only</button><span>${drawingMode ? "Drag on the screenshot to add markup." : "Select Highlight or Redact, then drag on the screenshot."}</span><button class="button primary" id="useFrame" ${frame ? "" : "disabled"}>Use this image</button></div>
     <div class="filmstrip">${candidates.map((item, index) => `<button data-frame-index="${index}" class="${index === candidateIndex ? "active" : ""}" aria-label="Choose screenshot ${index + 1}" title="Choose screenshot ${index + 1}"><img src="${escapeAttribute(item.filename)}" alt="" /><span>${String(index + 1).padStart(2, "0")}</span></button>`).join("")}</div>`;
 
@@ -551,8 +560,17 @@ function renderPicker(): void {
     button.onclick = () => { candidateIndex = Number(button.dataset.frameIndex || 0); syncDraftAnnotations(); renderPicker(); };
   });
   const stage = document.querySelector<HTMLElement>("#markupStage");
+  const image = stage?.querySelector<HTMLImageElement>("img");
   stage?.addEventListener("pointerdown", startMarkup);
   stage?.addEventListener("pointerup", finishMarkup);
+  if (stage && image) {
+    const layout = () => layoutMarkupAnnotations(stage, image);
+    image.addEventListener("load", layout, { once: true });
+    markupResizeObserver = new ResizeObserver(layout);
+    markupResizeObserver.observe(stage);
+    markupResizeObserver.observe(image);
+    requestAnimationFrame(layout);
+  }
 }
 
 function changeFrameCollection(showAll: boolean): void {
@@ -581,15 +599,26 @@ function toggleDrawing(mode: AnnotationKind): void {
 
 function startMarkup(event: PointerEvent): void {
   if (!drawingMode) return;
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-  dragStart = { x: clamp((event.clientX - rect.left) / rect.width), y: clamp((event.clientY - rect.top) / rect.height) };
-  (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+  const target = event.currentTarget as HTMLElement;
+  const rect = displayedImageBounds(target.querySelector("img"));
+  if (!rect || !pointIsInsideBounds(event.clientX, event.clientY, rect)) return;
+  dragStart = normalizePointInBounds(event.clientX, event.clientY, rect);
+  if (!dragStart) return;
+  target.setPointerCapture(event.pointerId);
 }
 
 function finishMarkup(event: PointerEvent): void {
   if (!drawingMode || !dragStart) return;
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-  const end = { x: clamp((event.clientX - rect.left) / rect.width), y: clamp((event.clientY - rect.top) / rect.height) };
+  const rect = displayedImageBounds((event.currentTarget as HTMLElement).querySelector("img"));
+  if (!rect) {
+    dragStart = undefined;
+    return;
+  }
+  const end = normalizePointInBounds(event.clientX, event.clientY, rect);
+  if (!end) {
+    dragStart = undefined;
+    return;
+  }
   const annotation: Annotation = {
     id: crypto.randomUUID(), kind: drawingMode,
     x: Math.min(dragStart.x, end.x), y: Math.min(dragStart.y, end.y),
@@ -629,6 +658,8 @@ function applyImage(frame: Frame | undefined, annotations: Annotation[]): void {
 }
 
 function closePicker(): void {
+  markupResizeObserver?.disconnect();
+  markupResizeObserver = undefined;
   mustFind<HTMLDialogElement>("#imagePicker").close();
   activeStepIndex = undefined;
   candidates = [];
@@ -643,6 +674,38 @@ function annotationElement(annotation: Annotation): HTMLSpanElement {
   element.style.width = `${clamp(annotation.width) * 100}%`;
   element.style.height = `${clamp(annotation.height) * 100}%`;
   return element;
+}
+
+function markupAnnotationElement(annotation: Annotation): HTMLSpanElement {
+  const element = annotationElement(annotation);
+  element.dataset.x = String(annotation.x);
+  element.dataset.y = String(annotation.y);
+  element.dataset.width = String(annotation.width);
+  element.dataset.height = String(annotation.height);
+  element.style.visibility = "hidden";
+  return element;
+}
+
+function layoutMarkupAnnotations(stage: HTMLElement, image: HTMLImageElement): void {
+  const stageBounds = stage.getBoundingClientRect();
+  const imageBounds = displayedImageBounds(image);
+  if (!imageBounds) return;
+  for (const element of stage.querySelectorAll<HTMLElement>(".annotation")) {
+    const x = clamp(Number(element.dataset.x));
+    const y = clamp(Number(element.dataset.y));
+    const width = clamp(Number(element.dataset.width));
+    const height = clamp(Number(element.dataset.height));
+    element.style.left = `${imageBounds.left - stageBounds.left + x * imageBounds.width}px`;
+    element.style.top = `${imageBounds.top - stageBounds.top + y * imageBounds.height}px`;
+    element.style.width = `${width * imageBounds.width}px`;
+    element.style.height = `${height * imageBounds.height}px`;
+    element.style.visibility = "visible";
+  }
+}
+
+function displayedImageBounds(image: HTMLImageElement | null): RectangleBounds | undefined {
+  if (!image) return undefined;
+  return containedContentBounds(image.getBoundingClientRect(), image.naturalWidth, image.naturalHeight);
 }
 
 function parseAnnotations(value: unknown): Annotation[] {
