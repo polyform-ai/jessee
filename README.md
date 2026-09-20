@@ -17,6 +17,8 @@ Use it for:
 
 - A guided choice between Polyform Covered and Bring Your Own Key, plus output folder and microphone access
 - Menu-bar recording for any selected window, app, or display
+- One-click screenshot capture that uploads a public image and copies its URL
+- Automatic source webpage URLs for recordings started from supported browsers on macOS 15.2+
 - A live timer, microphone meter, drawing and highlighting controls
 - Global recording shortcuts, including `⌥S` to stop and process
 - Video import for existing walkthroughs
@@ -27,7 +29,7 @@ Use it for:
 - Authenticated Polyform workflows for covered AI processing and public PDF links
 - Signed updates through Sparkle
 
-JesSee requires macOS 15 or newer. **Polyform Covered** lets you sign in by email while Polyform covers transcription and AI costs. **Bring Your Own Key** stores your OpenAI API key in the Mac Keychain and sends narration and selected screenshots directly to OpenAI. Recordings, screenshots, generated files, and PDFs remain in the output folder you choose. Public PDF links use the same optional Polyform sign-in.
+JesSee requires macOS 15 or newer. **Polyform Covered** lets you sign in by email while Polyform covers transcription and AI costs. **Bring Your Own Key** stores your OpenAI API key in the Mac Keychain and sends narration and selected screenshots directly to OpenAI. Recordings, generated story screenshots, generated files, and PDFs remain in the output folder you choose. Public screenshot and PDF links use the same optional Polyform sign-in; only an image or PDF you explicitly choose to publish is uploaded publicly.
 
 Anonymous feature-usage sharing is optional and off by default. When enabled, JesSee sends completed feature names, app version, counts, and a random installation ID directly to GA4. It never includes media, narration, story text, filenames, email, or API keys. See [Feature usage events](docs/FEATURE_USAGE_EVENTS.md) for the exact contract.
 
@@ -38,7 +40,7 @@ Download the latest signed and notarized installer from [jessee.ai](https://jess
 1. Open `JesSee.dmg`.
 2. Drag JesSee to Applications.
 3. Open JesSee from Applications and complete the four-step setup.
-4. Use the menu-bar icon to record, import video, open the library, or check for updates.
+4. Look for the JesSee viewfinder icon at the top-right of your Mac. JesSee stays in the menu bar for recording, screenshots, imports, and updates, even when the Library window is closed.
 
 The browser extensions have been retired. The native app records Safari, Chrome, and other Mac apps without an extension.
 
@@ -48,6 +50,8 @@ The floating recording bar shows the elapsed time and microphone activity. Hover
 
 | Action | Shortcut |
 | --- | --- |
+| Start a recording | `⌥⇧S` |
+| Copy screenshot URL | `⌥⇧C` |
 | Draw | `⌥D` |
 | Highlight | `⌥H` |
 | Undo | `⌥Z` |

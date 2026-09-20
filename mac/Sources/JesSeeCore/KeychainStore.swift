@@ -42,7 +42,7 @@ public enum JesSeeKeychain {
     try save(
       JesSeeJSON.encoder().encode(session), service: service, account: workflowAccount,
       label: "JesSee account",
-      description: "Polyform workflow access used to create stories and publish PDFs.")
+      description: "Polyform workflow access used to create stories and publish public links.")
   }
 
   public static func loadWorkflowSession() throws -> WorkflowAuthSession? {

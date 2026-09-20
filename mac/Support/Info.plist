@@ -30,6 +30,8 @@
     <true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>JesSee records your narration so it can turn the walkthrough into a visual story.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>JesSee reads the current tab address from supported browsers so your story includes its source webpage.</string>
     <key>NSScreenCaptureUsageDescription</key>
     <string>JesSee records only the window, app, or display you choose.</string>
     <key>NSHumanReadableCopyright</key>

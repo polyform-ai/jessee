@@ -144,6 +144,9 @@ public struct CaptureProcessor: Sendable {
           }
         }
       }
+      if let capturedSourceURL = PolyformClient.normalizedWebURL(record.sourceURL) {
+        story.sourceURL = capturedSourceURL
+      }
       try await workspace.write(story, filename: "story.json", for: record)
       let rendered = try await DocumentRenderer.render(story: story, in: directory)
       record.title = story.title.isEmpty ? record.title : story.title

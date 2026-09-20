@@ -17,7 +17,7 @@ struct JesSeeMacApp: App {
     Window("Welcome to JesSee", id: "welcome") {
       WelcomeView(store: store)
     }
-    .defaultSize(width: 500, height: 470)
+    .defaultSize(width: 520, height: 600)
     .defaultLaunchBehavior(store.isConfigured ? .suppressed : .presented)
 
     Window("JesSee Library", id: "library") {
@@ -46,13 +46,19 @@ private struct RecorderMenuIcon: View {
 
   var body: some View {
     Group {
-      switch recorder.state {
-      case .recording, .stopping:
-        Label("JesSee is recording", systemImage: "record.circle.fill")
-      case .choosing:
-        Label("JesSee is choosing a screen", systemImage: "rectangle.dashed.badge.record")
-      default:
-        Label("JesSee", systemImage: "viewfinder.circle.fill")
+      if store.isPublishingScreenshot {
+        Label("JesSee is uploading a screenshot", systemImage: "arrow.up.circle.fill")
+      } else {
+        switch recorder.state {
+        case .recording, .stopping:
+          Label("JesSee is recording", systemImage: "record.circle.fill")
+        case .choosingRecording, .choosingScreenshot:
+          Label("JesSee is choosing a screen", systemImage: "rectangle.dashed.badge.record")
+        case .capturingScreenshot:
+          Label("JesSee is capturing a screenshot", systemImage: "camera.fill")
+        default:
+          Label("JesSee", systemImage: "viewfinder.circle.fill")
+        }
       }
     }
     .task {
@@ -61,6 +67,9 @@ private struct RecorderMenuIcon: View {
         handledLaunchRequest = true
         openSettings()
       } else if ProcessInfo.processInfo.arguments.contains("--open-library") {
+        handledLaunchRequest = true
+        openWindow(id: "library")
+      } else if store.isConfigured {
         handledLaunchRequest = true
         openWindow(id: "library")
       } else {

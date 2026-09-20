@@ -107,13 +107,21 @@ private struct HomeView: View {
       switch recorder.state {
       case .recording, .stopping:
         RecordingControls(recorder: recorder)
-      case .choosing:
+      case .choosingRecording:
         StatusCard(
           icon: "rectangle.dashed.badge.record", title: "Choose what to share",
           detail: "Pick one window, app, or display in the system panel.")
+      case .choosingScreenshot:
+        StatusCard(
+          icon: "camera.viewfinder", title: "Choose a screenshot",
+          detail: "Pick one window, app, or display. JesSee will copy its public link.")
+      case .capturingScreenshot:
+        StatusCard(
+          icon: "camera.fill", title: "Capturing screenshot",
+          detail: "JesSee is preparing the image for upload.")
       case .failed(let message):
         StatusCard(
-          icon: "exclamationmark.triangle", title: "Recording did not start", detail: message,
+          icon: "exclamationmark.triangle", title: "JesSee could not finish", detail: message,
           actionTitle: "Back", action: recorder.dismissError)
       case .idle:
         StartCard(store: store)
@@ -127,19 +135,51 @@ private struct HomeView: View {
 
 private struct StartCard: View {
   @ObservedObject var store: AppStore
+  @Environment(\.openSettings) private var openSettings
 
   var body: some View {
     VStack(spacing: 10) {
-      Button(action: store.recorder.chooseWhatToRecord) {
-        Label("Start a recording", systemImage: "record.circle.fill")
+      Button(action: store.startRecording) {
+        HStack(spacing: 10) {
+          Label("Start a recording", systemImage: "record.circle.fill")
+          Spacer()
+          Text("⌥⇧S").font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.9))
+        }
           .frame(maxWidth: .infinity).padding(.vertical, 7)
       }
       .buttonStyle(.borderedProminent).tint(accent).controlSize(.large)
+      .help("Choose a window, app, or display to record · ⌥⇧S")
+      Button(action: captureScreenshotLink) {
+        HStack(spacing: 10) {
+          Label(
+            store.isPublishingScreenshot ? "Uploading screenshot…" : "Copy screenshot URL",
+            systemImage: "camera.viewfinder"
+          )
+          Spacer()
+          Text("⌥⇧C").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 4)
+      }
+      .buttonStyle(.bordered).controlSize(.large)
+      .disabled(store.isPublishingScreenshot)
+      .help(
+        store.isSignedIntoPolyform
+          ? "Capture a screenshot, upload it, and copy its public URL · ⌥⇧C"
+          : "Sign in with Polyform in Settings to create public screenshot URLs")
       Button(action: store.importVideo) {
         Label("Import a video", systemImage: "square.and.arrow.down")
           .frame(maxWidth: .infinity).padding(.vertical, 4)
       }
       .buttonStyle(.bordered).controlSize(.large)
+    }
+  }
+
+  private func captureScreenshotLink() {
+    if store.isSignedIntoPolyform {
+      store.captureScreenshotLink()
+    } else {
+      openSettings()
+      NSApp.activate(ignoringOtherApps: true)
     }
   }
 }
@@ -551,16 +591,21 @@ private struct SetupCompleteStep: View {
   var onFinished: (() -> Void)?
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 13) {
-      Image(systemName: "checkmark.circle.fill")
-        .font(.system(size: 42, weight: .semibold))
-        .foregroundStyle(.green)
-      Text("Congrats, you're all ready to use JesSee.")
-        .font(.title3.weight(.bold))
+    VStack(alignment: .leading, spacing: 12) {
+      HStack(spacing: 10) {
+        Image(systemName: "checkmark.circle.fill")
+          .font(.system(size: 34, weight: .semibold))
+          .foregroundStyle(.green)
+        Text("Congrats, you're all ready to use JesSee.")
+          .font(.title3.weight(.bold))
+      }
       Text(
-        "JesSee now lives in your menu bar. Start a recording, explain what matters, and press ⌥S when you're ready for JesSee to build the story."
+        "JesSee opens your Library when it launches. Closing the Library does not quit the app—JesSee keeps running in your Mac's menu bar."
       )
       .font(.subheadline).foregroundStyle(.secondary)
+
+      MenuBarLocationGuide()
+
       Button("Start using JesSee") {
         store.finishSetup()
         onFinished?()
@@ -568,6 +613,59 @@ private struct SetupCompleteStep: View {
       .buttonStyle(.borderedProminent).tint(accent).controlSize(.large)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+private struct MenuBarLocationGuide: View {
+  var body: some View {
+    VStack(alignment: .leading, spacing: 9) {
+      HStack(spacing: 8) {
+        Image(systemName: "apple.logo")
+          .foregroundStyle(.secondary)
+        Text("Mac menu bar")
+          .font(.caption.weight(.medium))
+          .foregroundStyle(.secondary)
+        Spacer()
+        Image(systemName: "wifi")
+        Image(systemName: "battery.100percent")
+        ZStack {
+          RoundedRectangle(cornerRadius: 7)
+            .fill(accent.opacity(0.14))
+          Image(systemName: "viewfinder.circle.fill")
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(accent)
+        }
+        .frame(width: 30, height: 26)
+        .overlay(
+          RoundedRectangle(cornerRadius: 7)
+            .stroke(accent.opacity(0.5), lineWidth: 1))
+      }
+      .font(.system(size: 12, weight: .medium))
+
+      HStack(alignment: .top, spacing: 8) {
+        Image(systemName: "arrow.up.right")
+          .foregroundStyle(accent)
+        VStack(alignment: .leading, spacing: 3) {
+          Text("Look for this icon at the top-right of your screen.")
+            .font(.caption.weight(.semibold))
+          Text(
+            "Click it anytime to record, capture a screenshot link, import a video, or reopen your Library. Start a recording with ⌥⇧S."
+          )
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+    }
+    .padding(12)
+    .background(accent.opacity(0.065), in: RoundedRectangle(cornerRadius: 12))
+    .overlay(
+      RoundedRectangle(cornerRadius: 12)
+        .stroke(accent.opacity(0.2), lineWidth: 1))
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(
+      "JesSee stays in the Mac menu bar. Look for the viewfinder icon at the top-right of the screen."
+    )
   }
 }
 
@@ -706,7 +804,7 @@ private struct CaptureDetailView: View {
                 store.openPDF(recordID: record.id)
                 completion(true, "PDF updated and opened", nil)
               } else if action == "saveAndPublishPDF" {
-                guard store.isPublicPDFPublishingAvailable else {
+                guard store.isPublicLinkPublishingAvailable else {
                   completion(false, "Public links are unavailable in this build.", nil)
                   return
                 }
@@ -859,10 +957,10 @@ struct SettingsView: View {
           }
         }
       }
-      if store.isPublicPDFPublishingAvailable {
-        Section("Public PDF links") {
+      if store.isPublicLinkPublishingAvailable {
+        Section("Public links") {
           Text(
-            "Sign in with Polyform to upload a finished PDF, generate a public URL, and copy it for sharing. Your local story and source files stay on this Mac."
+            "Sign in with Polyform to upload a screenshot or finished PDF, generate a public URL, and copy it for sharing. Your local story and source files stay on this Mac."
           )
           .font(.caption).foregroundStyle(.secondary)
           PolyformAuthenticationControls(store: store, allowsSignOut: true)
@@ -884,7 +982,9 @@ struct SettingsView: View {
             }
           }
         }
-        Text("You choose one window, app, or display each time a recording starts.")
+        Text(
+          "You choose one window, app, or display each time. On macOS 15.2 or newer, when a supported browser is active, JesSee also reads its current webpage URL so the finished story keeps its source. macOS may ask for browser access the first time."
+        )
           .font(.caption).foregroundStyle(.secondary)
       }
       Section("Privacy") {
