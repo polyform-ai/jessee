@@ -45,6 +45,7 @@ interface EditorPayload {
   story: Story;
   frames: Frame[];
   publicPDFURL?: string;
+  canPublishImage: boolean;
   canCopyImage: boolean;
   canCopyPDF: boolean;
 }
@@ -53,6 +54,7 @@ interface BridgeMessage {
   type:
     | "save"
     | "saveAndOpenPDF"
+    | "saveAndPublishImage"
     | "saveAndPublishPDF"
     | "saveAndCopyImage"
     | "saveAndCopyPDF";
@@ -234,7 +236,7 @@ window.jesseeDidSave = (success, message, publicURL) => {
   const hasNewerEdits = savedRevision !== undefined && savedRevision !== editRevision;
   setStatus(
     success && hasNewerEdits
-      ? completedAction === "saveAndPublishPDF"
+      ? isPublishAction(completedAction)
         ? "Link copied · New edits not saved"
         : "Earlier version saved · New edits not saved"
       : message,
@@ -279,7 +281,9 @@ function bindShellEvents(): void {
   });
   mustFind<HTMLButtonElement>("#saveStory").addEventListener("click", () => send("save"));
   mustFind<HTMLButtonElement>("#openPDF").addEventListener("click", () => send("saveAndOpenPDF"));
-  mustFind<HTMLButtonElement>("#getLink").addEventListener("click", () => send("saveAndPublishPDF"));
+  mustFind<HTMLButtonElement>("#getLink").addEventListener("click", () =>
+    send(payload.canPublishImage ? "saveAndPublishImage" : "saveAndPublishPDF")
+  );
   document.querySelector<HTMLButtonElement>("#copyImage")
     ?.addEventListener("click", () => send("saveAndCopyImage"));
   document.querySelector<HTMLButtonElement>("#copyPDF")
@@ -373,8 +377,8 @@ function send(type: BridgeMessage["type"]): void {
   if (bridge) bridge.postMessage(message);
   else window.jesseeDidSave?.(
     true,
-    type === "saveAndPublishPDF" ? "Copied" : "Preview saved",
-    type === "saveAndPublishPDF" ? "https://example.com/jessee-preview.pdf" : undefined
+    isPublishAction(type) ? "Copied" : "Preview saved",
+    isPublishAction(type) ? "https://example.com/jessee-preview" : undefined
   );
 }
 
@@ -390,7 +394,11 @@ function setActionPending(action?: BridgeMessage["type"]): void {
       ?.toggleAttribute("disabled", action !== undefined);
   }
   mustFind<HTMLButtonElement>("#getLink").textContent =
-    action === "saveAndPublishPDF" ? "Generating…" : "Get link";
+    isPublishAction(action) ? "Generating…" : "Get link";
+}
+
+function isPublishAction(action?: BridgeMessage["type"]): boolean {
+  return action === "saveAndPublishImage" || action === "saveAndPublishPDF";
 }
 
 function showPublicLink(publicURL: string, status = ""): void {

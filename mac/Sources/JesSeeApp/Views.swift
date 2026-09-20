@@ -131,7 +131,6 @@ private struct HomeView: View {
 
 private struct StartCard: View {
   @ObservedObject var store: AppStore
-  @Environment(\.openSettings) private var openSettings
 
   var body: some View {
     VStack(spacing: 10) {
@@ -144,19 +143,19 @@ private struct StartCard: View {
         help: "Choose a window, app, or display to record",
         action: store.startRecording)
       CaptureActionButton(
-        title: store.isPublishingScreenshot ? "Uploading screenshot…" : "Capture screenshot",
+        title: store.isSavingScreenshot ? "Saving screenshot…" : "Capture screenshot",
         detail: store.isSignedIntoPolyform
-          ? "Save to Library and copy a public URL"
+          ? "Save to Library, edit, then create a link"
           : "Save to Library for markup, text, and PDF",
         systemImage: "camera.viewfinder",
         shortcut: "⌥⇧C",
         style: .secondary,
-        isLoading: store.isPublishingScreenshot,
-        isDisabled: store.isPublishingScreenshot,
+        isLoading: store.isSavingScreenshot,
+        isDisabled: store.isSavingScreenshot,
         help: store.isSignedIntoPolyform
-          ? "Capture an area or window, save it, and copy its public URL"
+          ? "Capture an area or window, then review it before generating a public URL"
           : "Capture an area or window and open it in your Library",
-        action: captureScreenshotLink)
+        action: store.captureScreenshotLink)
       Button(action: store.importVideo) {
         Label("Import a video", systemImage: "square.and.arrow.down")
           .frame(maxWidth: .infinity).padding(.vertical, 4)
@@ -165,14 +164,6 @@ private struct StartCard: View {
     }
   }
 
-  private func captureScreenshotLink() {
-    if store.isSignedIntoPolyform {
-      store.captureScreenshotLink()
-    } else {
-      openSettings()
-      NSApp.activate(ignoringOtherApps: true)
-    }
-  }
 }
 
 private enum CaptureActionStyle {
@@ -906,7 +897,7 @@ private struct CaptureDetailView: View {
               } else if action == "saveAndCopyPDF" {
                 let copied = store.copyPDF(recordID: record.id)
                 completion(copied, copied ? "PDF copied" : "JesSee could not copy the PDF", nil)
-              } else if action == "saveAndPublishPDF" {
+              } else if action == "saveAndPublishImage" || action == "saveAndPublishPDF" {
                 guard store.isPublicLinkPublishingAvailable else {
                   completion(false, "Public links are unavailable in this build.", nil)
                   return
@@ -916,7 +907,10 @@ private struct CaptureDetailView: View {
                   presentSettings()
                   return
                 }
-                if let publicURL = await store.publishPDF(recordID: record.id) {
+                let publicURL = action == "saveAndPublishImage"
+                  ? await store.publishPrimaryImage(recordID: record.id)
+                  : await store.publishPDF(recordID: record.id)
+                if let publicURL {
                   completion(true, "Copied", publicURL)
                 } else {
                   completion(false, "JesSee could not generate the public link.", nil)

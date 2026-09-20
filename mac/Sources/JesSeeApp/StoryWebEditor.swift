@@ -12,6 +12,7 @@ struct StoryWebEditor: NSViewRepresentable {
     var story: StoryDocument
     var frames: [Frame]
     var publicPDFURL: String?
+    var canPublishImage: Bool
     var canCopyImage: Bool
     var canCopyPDF: Bool
   }
@@ -72,6 +73,7 @@ struct StoryWebEditor: NSViewRepresentable {
       story: story,
       frames: frames,
       publicPDFURL: record.publicPDFURL,
+      canPublishImage: record.source == .screenshot,
       canCopyImage: record.source == .screenshot,
       canCopyPDF: record.pdfFilename != nil)
     guard let data = try? JesSeeJSON.encoder().encode(payload),

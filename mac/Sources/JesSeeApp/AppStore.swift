@@ -41,7 +41,7 @@ final class AppStore: ObservableObject {
   @Published private(set) var notice: Notice?
   @Published private(set) var authenticationState: AuthenticationState
   @Published private(set) var publishingCaptureID: String?
-  @Published private(set) var isPublishingScreenshot = false
+  @Published private(set) var isSavingScreenshot = false
   @Published private(set) var hasAPIKey: Bool
   @Published private(set) var isTestingAPIKey = false
   @Published private(set) var readyCaptureID: String?
@@ -108,7 +108,7 @@ final class AppStore: ObservableObject {
       }
     }
     recorder.onScreenshotCaptured = { [weak self] result in
-      Task { @MainActor in await self?.publishScreenshot(result) }
+      Task { @MainActor in await self?.saveScreenshot(result) }
     }
     recorder.onStopRequested = { [weak self] in
       self?.postSystemNotification(
@@ -375,7 +375,7 @@ final class AppStore: ObservableObject {
   }
 
   func captureScreenshotLink() {
-    guard !isPublishingScreenshot else { return }
+    guard !isSavingScreenshot else { return }
     guard isConfigured else {
       show(.error("Finish JesSee setup before capturing a screenshot."))
       return
@@ -402,25 +402,58 @@ final class AppStore: ObservableObject {
   }
 
   func copyPrimaryImage(recordID: String) async -> Bool {
-    guard let workspace, let record = captures.first(where: { $0.id == recordID }) else {
-      return false
-    }
-    let story = await loadStory(for: record)
-    let step = story?.steps.first(where: { $0.imageFilename != nil })
-    let filename = step?.imageFilename ?? record.imageFilenames.first ?? record.mediaFilename
-    let imageURL = workspace.directoryURL(for: record).appendingPathComponent(filename)
-    guard let image = NSImage(contentsOf: imageURL) else {
+    guard let image = await primaryImageWithAnnotations(recordID: recordID) else {
       show(.error("JesSee could not copy this screenshot."), asSystemNotification: true)
       return false
     }
-    let copiedImage = imageWithAnnotations(image, annotations: step?.imageAnnotations ?? [])
     NSPasteboard.general.clearContents()
-    guard NSPasteboard.general.writeObjects([copiedImage]) else {
+    guard NSPasteboard.general.writeObjects([image]) else {
       show(.error("JesSee could not copy this screenshot."), asSystemNotification: true)
       return false
     }
     show(.success("Screenshot copied to clipboard."), asSystemNotification: true)
     return true
+  }
+
+  func publishPrimaryImage(recordID: String) async -> String? {
+    guard publishingCaptureID == nil,
+      let record = captures.first(where: { $0.id == recordID })
+    else { return nil }
+    publishingCaptureID = record.id
+    defer { publishingCaptureID = nil }
+
+    do {
+      guard let image = await primaryImageWithAnnotations(recordID: recordID),
+        let tiff = image.tiffRepresentation,
+        let bitmap = NSBitmapImageRep(data: tiff),
+        let png = bitmap.representation(using: .png, properties: [:])
+      else {
+        throw JesSeeError.invalidResponse("JesSee could not prepare the edited screenshot.")
+      }
+      let temporaryURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("jessee-edited-screenshot-\(UUID().uuidString).png")
+      defer { try? FileManager.default.removeItem(at: temporaryURL) }
+      try png.write(to: temporaryURL, options: .atomic)
+
+      let upload = try await withPolyformAuthentication { client, token in
+        try await client.publishImage(
+          at: temporaryURL, contentType: "image/png", accessToken: token)
+      }
+      guard let publicURL = upload.publicURL else {
+        throw JesSeeError.invalidResponse("Polyform did not return a public screenshot link.")
+      }
+      copyToPasteboard(publicURL.absoluteString)
+      recordUsage(.screenshotPublished, feature: "public_screenshot")
+      postSystemNotification(
+        title: "Screenshot URL copied to clipboard",
+        body: "JesSee uploaded the saved, edited screenshot.",
+        identifier: "screenshot-\(upload.id)")
+      show(.success("Screenshot URL copied to clipboard."))
+      return publicURL.absoluteString
+    } catch {
+      show(.error(authenticationAwareError(error).localizedDescription))
+      return nil
+    }
   }
 
   func copyPDF(recordID: String) -> Bool {
@@ -588,14 +621,14 @@ final class AppStore: ObservableObject {
     }
   }
 
-  private func publishScreenshot(_ result: RecordingCoordinator.ScreenshotResult) async {
-    guard !isPublishingScreenshot else {
+  private func saveScreenshot(_ result: RecordingCoordinator.ScreenshotResult) async {
+    guard !isSavingScreenshot else {
       try? FileManager.default.removeItem(at: result.url)
       return
     }
-    isPublishingScreenshot = true
+    isSavingScreenshot = true
     defer {
-      isPublishingScreenshot = false
+      isSavingScreenshot = false
       try? FileManager.default.removeItem(at: result.url)
     }
     guard let workspace else {
@@ -617,25 +650,7 @@ final class AppStore: ObservableObject {
       selectedCaptureID = record.id
       readyCaptureID = record.id
       recordUsage(.captureAdded, feature: "screenshot", source: CaptureSource.screenshot.rawValue)
-
-      if polyformClient != nil, workflowSession != nil {
-        let upload = try await withPolyformAuthentication { client, token in
-          try await client.publishImage(
-            at: result.url, contentType: "image/png", accessToken: token)
-        }
-        guard let publicURL = upload.publicURL else {
-          throw JesSeeError.invalidResponse("Polyform did not return a public screenshot link.")
-        }
-        copyToPasteboard(publicURL.absoluteString)
-        recordUsage(.screenshotPublished, feature: "public_screenshot")
-        show(.success("Screenshot saved. URL copied to clipboard."))
-        postSystemNotification(
-          title: "Screenshot URL copied to clipboard",
-          body: "The screenshot is also open in your JesSee Library for markup and notes.",
-          identifier: "screenshot-\(upload.id)")
-      } else {
-        show(.success("Screenshot saved and opened in your Library."), asSystemNotification: true)
-      }
+      show(.success("Screenshot saved and opened in your Library."), asSystemNotification: true)
     } catch {
       show(.error(authenticationAwareError(error).localizedDescription), asSystemNotification: true)
     }
@@ -1236,6 +1251,18 @@ final class AppStore: ObservableObject {
     }
     rendered.unlockFocus()
     return rendered
+  }
+
+  private func primaryImageWithAnnotations(recordID: String) async -> NSImage? {
+    guard let workspace, let record = captures.first(where: { $0.id == recordID }) else {
+      return nil
+    }
+    let story = await loadStory(for: record)
+    let step = story?.steps.first(where: { $0.imageFilename != nil })
+    let filename = step?.imageFilename ?? record.imageFilenames.first ?? record.mediaFilename
+    let imageURL = workspace.directoryURL(for: record).appendingPathComponent(filename)
+    guard let image = NSImage(contentsOf: imageURL) else { return nil }
+    return imageWithAnnotations(image, annotations: step?.imageAnnotations ?? [])
   }
 }
 
