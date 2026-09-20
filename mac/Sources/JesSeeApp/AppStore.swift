@@ -128,10 +128,14 @@ final class AppStore: ObservableObject {
     }
     Task {
       if configuration.aiProviderMode == .polyformCovered { _ = try? await accessToken() }
-      if configuration.shareAnonymousFeatureUsage, let session = workflowSession {
-        await featureUsage.identify(authenticatedID: session.grantID, emitLoginEvent: false)
+      if configuration.shareAnonymousFeatureUsage {
+        if let session = workflowSession {
+          await featureUsage.identify(authenticatedID: session.grantID, emitLoginEvent: false)
+        } else {
+          await featureUsage.clearIdentity()
+        }
       } else {
-        await featureUsage.clearIdentity()
+        await featureUsage.resetAllAnalyticsData()
       }
       await loadLibrary()
     }
@@ -309,7 +313,7 @@ final class AppStore: ObservableObject {
     configuration.shareAnonymousFeatureUsage = enabled
     persistConfiguration()
     if !enabled {
-      Task { await featureUsage.resetClientID() }
+      Task { await featureUsage.resetAllAnalyticsData() }
     } else if let session = workflowSession {
       Task {
         await featureUsage.identify(authenticatedID: session.grantID, emitLoginEvent: false)

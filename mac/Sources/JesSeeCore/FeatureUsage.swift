@@ -129,7 +129,7 @@ public actor FeatureUsageRecorder {
       at: eventFileURL.deletingLastPathComponent().appendingPathComponent("ga4-user-id"))
   }
 
-  public func resetClientID() {
+  public func resetAllAnalyticsData() {
     clientID = nil
     clearIdentity()
     let directory = eventFileURL.deletingLastPathComponent()

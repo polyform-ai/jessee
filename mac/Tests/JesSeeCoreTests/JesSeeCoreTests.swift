@@ -837,7 +837,7 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(!line.contains("email"))
   #expect(!line.contains("filename"))
   #expect(FileManager.default.fileExists(atPath: clientIDURL.path))
-  await recorder.resetClientID()
+  await recorder.resetAllAnalyticsData()
   #expect(!FileManager.default.fileExists(atPath: clientIDURL.path))
   #expect(!FileManager.default.fileExists(atPath: fileURL.path))
 }
