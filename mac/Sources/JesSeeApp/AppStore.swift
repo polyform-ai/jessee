@@ -130,6 +130,8 @@ final class AppStore: ObservableObject {
       if configuration.aiProviderMode == .polyformCovered { _ = try? await accessToken() }
       if configuration.shareAnonymousFeatureUsage, let session = workflowSession {
         await featureUsage.identify(authenticatedID: session.grantID, emitLoginEvent: false)
+      } else {
+        await featureUsage.clearIdentity()
       }
       await loadLibrary()
     }
@@ -254,12 +256,7 @@ final class AppStore: ObservableObject {
 
   func signOut() {
     signInTask?.cancel()
-    refreshTask?.cancel()
-    refreshTask = nil
-    try? JesSeeKeychain.removeWorkflowSession()
-    workflowSession = nil
-    authenticationState = .signedOut
-    Task { await featureUsage.clearIdentity() }
+    clearWorkflowSession()
     if configuration.aiProviderMode == .polyformCovered {
       configuration.setupCompleted = false
       setupStep = 0
@@ -1036,16 +1033,21 @@ final class AppStore: ObservableObject {
   }
 
   private func signOutAfterAuthenticationFailure() {
-    refreshTask?.cancel()
-    refreshTask = nil
-    try? JesSeeKeychain.removeWorkflowSession()
-    workflowSession = nil
-    authenticationState = .signedOut
+    clearWorkflowSession()
     if configuration.aiProviderMode == .polyformCovered {
       configuration.setupCompleted = false
       setupStep = 0
     }
     persistConfiguration()
+  }
+
+  private func clearWorkflowSession() {
+    refreshTask?.cancel()
+    refreshTask = nil
+    try? JesSeeKeychain.removeWorkflowSession()
+    workflowSession = nil
+    authenticationState = .signedOut
+    Task { await featureUsage.clearIdentity() }
   }
 
   private func withPolyformAuthentication<Value: Sendable>(

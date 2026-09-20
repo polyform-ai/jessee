@@ -880,7 +880,9 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(!log.contains("grant-secret"))
   #expect(!log.contains("email"))
   await recorder.clearIdentity()
-  let anonymousEvent = await recorder.record(.captureAdded, feature: "recording")
+  let reloadedRecorder = FeatureUsageRecorder(
+    product: "jessee", appVersion: "test", applicationSupportURL: temporary)
+  let anonymousEvent = await reloadedRecorder.record(.captureAdded, feature: "recording")
   #expect(anonymousEvent.userID == nil)
 }
 
