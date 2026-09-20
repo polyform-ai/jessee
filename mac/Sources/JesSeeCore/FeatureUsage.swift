@@ -136,6 +136,7 @@ public actor FeatureUsageRecorder {
     try? FileManager.default.removeItem(at: directory.appendingPathComponent("ga4-client-id"))
     try? FileManager.default.removeItem(
       at: directory.appendingPathComponent("feature-usage-installation-id"))
+    try? FileManager.default.removeItem(at: eventFileURL)
   }
 
   private func send(_ event: FeatureUsageEvent) async {

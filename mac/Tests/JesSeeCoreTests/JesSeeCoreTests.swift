@@ -839,6 +839,7 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(FileManager.default.fileExists(atPath: clientIDURL.path))
   await recorder.resetClientID()
   #expect(!FileManager.default.fileExists(atPath: clientIDURL.path))
+  #expect(!FileManager.default.fileExists(atPath: fileURL.path))
 }
 
 @Test func featureUsageBuildsDirectGA4PayloadWithoutIdentityData() throws {
