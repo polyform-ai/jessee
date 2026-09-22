@@ -427,7 +427,7 @@ final class AppStore: ObservableObject {
       show(.error("JesSee could not copy this screenshot."), asSystemNotification: true)
       return false
     }
-    guard isCurrentWorkspace(sourceWorkspace) else { return false }
+    guard isCurrentWorkspaceLocation(sourceWorkspace) else { return false }
     NSPasteboard.general.clearContents()
     guard NSPasteboard.general.writeObjects([prepared.image]) else {
       show(.error("JesSee could not copy this screenshot."), asSystemNotification: true)
@@ -492,7 +492,7 @@ final class AppStore: ObservableObject {
         }
         throw error
       }
-      replace(updated, from: sourceWorkspace)
+      replacePublication(updated, from: sourceWorkspace)
 
       var failedCleanupIDs: [String] = []
       for uploadID in cleanupIDs {
@@ -506,8 +506,8 @@ final class AppStore: ObservableObject {
       }
       updated.publicImageCleanupUploadIDs = failedCleanupIDs.isEmpty ? nil : failedCleanupIDs
       try await sourceWorkspace.save(updated)
-      replace(updated, from: sourceWorkspace)
-      guard isCurrentWorkspace(sourceWorkspace) else { return nil }
+      replacePublication(updated, from: sourceWorkspace)
+      guard isCurrentWorkspaceLocation(sourceWorkspace) else { return nil }
       copyToPasteboard(publicURL.absoluteString)
       recordUsage(.screenshotPublished, feature: "public_screenshot")
       if announceSuccess {
@@ -525,7 +525,7 @@ final class AppStore: ObservableObject {
       }
       return publicURL.absoluteString
     } catch {
-      if isCurrentWorkspace(sourceWorkspace) {
+      if isCurrentWorkspaceLocation(sourceWorkspace) {
         show(.error(authenticationAwareError(error).localizedDescription))
       }
       return nil
@@ -542,7 +542,7 @@ final class AppStore: ObservableObject {
         == story.primaryImagePublicationState(
           fallbackFilename: record.imageFilenames.first ?? record.mediaFilename),
       let publicURL = record.publicImageURL,
-      isCurrentWorkspace(sourceWorkspace)
+      isCurrentWorkspaceLocation(sourceWorkspace)
     else { return nil }
     copyToPasteboard(publicURL)
     show(.success("Screenshot URL copied to clipboard."))
@@ -644,7 +644,7 @@ final class AppStore: ObservableObject {
         }
         throw error
       }
-      replace(updated, from: sourceWorkspace)
+      replacePublication(updated, from: sourceWorkspace)
 
       var failedCleanupIDs: [String] = []
       for uploadID in cleanupIDs {
@@ -658,8 +658,8 @@ final class AppStore: ObservableObject {
       }
       updated.publicPDFCleanupUploadIDs = failedCleanupIDs.isEmpty ? nil : failedCleanupIDs
       try await sourceWorkspace.save(updated)
-      replace(updated, from: sourceWorkspace)
-      guard isCurrentWorkspace(sourceWorkspace) else { return nil }
+      replacePublication(updated, from: sourceWorkspace)
+      guard isCurrentWorkspaceLocation(sourceWorkspace) else { return nil }
       copyToPasteboard(publicURL.absoluteString)
       recordUsage(.pdfPublished, feature: "public_pdf")
       if failedCleanupIDs.isEmpty {
@@ -671,7 +671,7 @@ final class AppStore: ObservableObject {
       }
       return publicURL.absoluteString
     } catch {
-      if isCurrentWorkspace(sourceWorkspace) {
+      if isCurrentWorkspaceLocation(sourceWorkspace) {
         show(.error(authenticationAwareError(error).localizedDescription))
       }
       return nil
@@ -741,14 +741,14 @@ final class AppStore: ObservableObject {
       record.htmlFilename = rendered.html
       record.pdfFilename = rendered.pdf
       try await workspace.save(record)
-      guard isCurrentWorkspace(workspace) else { return }
+      guard isCurrentWorkspaceLocation(workspace) else { return }
       let shouldPublish = isPublicLinkPublishingAvailable && isSignedIntoPolyform
       let publicURL = shouldPublish
         ? await publishPrimaryImage(
           recordID: record.id, in: workspace, announceSuccess: false) : nil
-      guard isCurrentWorkspace(workspace) else { return }
+      guard isCurrentWorkspaceLocation(workspace) else { return }
       captures = await workspace.allRecords()
-      guard isCurrentWorkspace(workspace) else { return }
+      guard isCurrentWorkspaceLocation(workspace) else { return }
       selectedCaptureID = record.id
       readyCaptureID = record.id
       recordUsage(.captureAdded, feature: "screenshot", source: CaptureSource.screenshot.rawValue)
@@ -906,6 +906,13 @@ final class AppStore: ObservableObject {
 
   private func replace(_ record: CaptureRecord, from sourceWorkspace: CaptureWorkspace) {
     guard isCurrentWorkspace(sourceWorkspace) else { return }
+    replace(record)
+  }
+
+  private func replacePublication(
+    _ record: CaptureRecord, from sourceWorkspace: CaptureWorkspace
+  ) {
+    guard isCurrentWorkspaceLocation(sourceWorkspace) else { return }
     replace(record)
   }
 
