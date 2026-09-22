@@ -6,6 +6,7 @@ struct StoryWebEditor: NSViewRepresentable {
   fileprivate struct PublicationSnapshot: Encodable, Equatable {
     var publicImageURL: String?
     var publicImagePublicationState: StoryImagePublicationState?
+    var publicPDFURL: String?
   }
 
   struct Frame: Encodable {
@@ -39,7 +40,8 @@ struct StoryWebEditor: NSViewRepresentable {
   private var publicationSnapshot: PublicationSnapshot {
     PublicationSnapshot(
       publicImageURL: record.publicImageURL,
-      publicImagePublicationState: record.publicImagePublicationState)
+      publicImagePublicationState: record.publicImagePublicationState,
+      publicPDFURL: record.publicPDFURL)
   }
 
   func makeCoordinator() -> Coordinator { Coordinator(onAction: onAction) }

@@ -63,6 +63,7 @@ final class AppStore: ObservableObject {
   private let polyformClient: PolyformClient?
   private let polyformManagedAIAvailable: Bool
   private var workspace: CaptureWorkspace?
+  private var workspacesByRootURL: [URL: CaptureWorkspace] = [:]
   private var processingTasks: [ProcessingTaskKey: Task<Void, Never>] = [:]
   private var processingNotificationTasks: [ProcessingTaskKey: Task<Void, Never>] = [:]
   private var refreshTask: Task<WorkflowAuthSession, Error>?
@@ -101,8 +102,10 @@ final class AppStore: ObservableObject {
     setupStep = configuration.pendingSetupStep(
       hasPolyformSession: workflowSession != nil, hasAPIKey: hasAPIKey)
     if !configuration.outputFolderPath.isEmpty {
-      workspace = CaptureWorkspace(
+      let initialWorkspace = CaptureWorkspace(
         rootURL: URL(fileURLWithPath: configuration.outputFolderPath, isDirectory: true))
+      workspace = initialWorkspace
+      workspacesByRootURL[initialWorkspace.rootURL.standardizedFileURL] = initialWorkspace
     }
     recorder.onFinished = { [weak self] result in
       Task { @MainActor in
@@ -299,7 +302,7 @@ final class AppStore: ObservableObject {
     panel.canChooseFiles = false
     panel.canCreateDirectories = true
     guard panel.runModal() == .OK, let url = panel.url else { return false }
-    let selectedWorkspace = CaptureWorkspace(rootURL: url)
+    let selectedWorkspace = captureWorkspace(for: url)
     if let workspace, workspace.rootURL == selectedWorkspace.rootURL {
       configuration.outputFolderPath = url.path
       persistConfiguration()
@@ -1067,6 +1070,14 @@ final class AppStore: ObservableObject {
 
   private func isCurrentWorkspace(_ candidate: CaptureWorkspace) -> Bool {
     workspace === candidate
+  }
+
+  private func captureWorkspace(for rootURL: URL) -> CaptureWorkspace {
+    let candidate = CaptureWorkspace(rootURL: rootURL)
+    let key = candidate.rootURL.standardizedFileURL
+    if let existing = workspacesByRootURL[key] { return existing }
+    workspacesByRootURL[key] = candidate
+    return candidate
   }
 
   private func beginPublication(for captureID: String) async {

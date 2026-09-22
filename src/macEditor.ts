@@ -84,6 +84,7 @@ declare global {
     jesseeDidUpdatePublicationState?: (update: {
       publicImageURL?: string;
       publicImagePublicationState?: PublishedImageState;
+      publicPDFURL?: string;
     }) => void;
     webkit?: {
       messageHandlers?: {
@@ -279,8 +280,10 @@ window.jesseeDidSave = (success, message, publicURL) => {
 window.jesseeDidUpdatePublicationState = (update) => {
   payload.publicImageURL = update.publicImageURL;
   payload.publicImagePublicationState = update.publicImagePublicationState;
+  payload.publicPDFURL = update.publicPDFURL;
   publishedImageState = serializedImagePublicationState(update.publicImagePublicationState);
   updateScreenshotURLAction();
+  updatePublicPDFLink();
 };
 
 function renderShell(): void {
@@ -521,6 +524,16 @@ function showPublicLink(publicURL: string, status = ""): void {
   link.textContent = publicURL;
   mustFind<HTMLElement>("#publicLinkStatus").textContent = status;
   row.hidden = false;
+}
+
+function updatePublicPDFLink(): void {
+  if (payload.canPublishImage) return;
+  const row = mustFind<HTMLElement>("#publicLinkRow");
+  const link = mustFind<HTMLElement>("#publicLink");
+  const status = mustFind<HTMLElement>("#publicLinkStatus");
+  link.textContent = payload.publicPDFURL || "";
+  status.textContent = "";
+  row.hidden = !payload.publicPDFURL;
 }
 
 function addStep(): void {
