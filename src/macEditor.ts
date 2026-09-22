@@ -8,6 +8,7 @@ import {
   type RectangleBounds
 } from "./annotationCoordinates";
 import { htmlBlocks, htmlText, narrativeHTML, renderBlocks } from "./richTextHTML";
+import { imagePublicationState } from "./imagePublicationState";
 import { normalizeSourceURL } from "./storyURL";
 
 type AnnotationKind = "highlight" | "redaction";
@@ -145,8 +146,11 @@ let drawingMode: AnnotationKind | undefined;
 let draftAnnotations: Annotation[] = [];
 let dragStart: { x: number; y: number } | undefined;
 let editRevision = 0;
-let publishedImageRevision: number | undefined = payload.publicImageIsCurrent ? 0 : undefined;
+let publishedImageState = payload.publicImageIsCurrent
+  ? imagePublicationState(payload.story)
+  : undefined;
 let pendingSaveRevision: number | undefined;
+let pendingImageState: string | undefined;
 let pendingAction: BridgeMessage["type"] | undefined;
 let markupResizeObserver: ResizeObserver | undefined;
 
@@ -241,13 +245,15 @@ if (payload.publicImageURL) showPublicLink(payload.publicImageURL);
 
 window.jesseeDidSave = (success, message, publicURL) => {
   const savedRevision = pendingSaveRevision;
+  const savedImageState = pendingImageState;
   const completedAction = pendingAction;
   pendingSaveRevision = undefined;
+  pendingImageState = undefined;
   pendingAction = undefined;
   setActionPending();
   const hasNewerEdits = savedRevision !== undefined && savedRevision !== editRevision;
-  if (success && completedAction === "saveAndPublishImage" && savedRevision !== undefined) {
-    publishedImageRevision = savedRevision;
+  if (success && completedAction === "saveAndPublishImage") {
+    publishedImageState = savedImageState;
   }
   setStatus(
     success && hasNewerEdits
@@ -274,12 +280,12 @@ function renderShell(): void {
   const standardActions = payload.canPublishImage ? "" : `<button class="button primary" id="openPDF">Save & open PDF</button><button class="button secondary" id="getLink" data-tooltip="Generate public link" title="Generate public link">Get link</button>`;
   const screenshotOptions = payload.canPublishImage ? `
       <section class="share-options" aria-labelledby="shareOptionsTitle">
-        <div class="share-options-heading"><p class="kicker">Ready to share</p><h2 id="shareOptionsTitle">Choose the format you need</h2><p>${payload.publicImageURL ? "Your screenshot URL was copied automatically after capture. Copy it again here, or use the PDF version." : "Create and copy a screenshot URL here, or use the PDF version."}</p></div>
+        <div class="share-options-heading"><p class="kicker">Ready to share</p><h2 id="shareOptionsTitle">Choose the format you need</h2><p id="screenshotShareGuidance">${payload.publicImageURL && payload.publicImageIsCurrent ? "Your screenshot URL was copied automatically after capture. Copy it again here, or use the PDF version." : payload.publicImageURL ? "Your screenshot changed. Update its URL before sharing, or use the PDF version." : "Create and copy a screenshot URL here, or use the PDF version."}</p></div>
         <div class="share-option-grid">
           <article class="share-option featured">
             <div class="share-option-icon" aria-hidden="true">↗</div>
-            <div class="share-option-copy"><p class="share-option-label">Option 1</p><h3>Screenshot URL</h3><p>Share the screenshot as a public link.</p><p class="share-option-value" id="screenshotPublicURL">${payload.publicImageURL ? escapeHTML(payload.publicImageURL) : "Create a public URL when you are ready."}</p></div>
-            <button class="button primary" id="screenshotURLAction">${payload.publicImageURL ? "Copy URL" : "Create & copy URL"}</button>
+            <div class="share-option-copy"><p class="share-option-label">Option 1</p><h3>Screenshot URL</h3><p>Share the screenshot as a public link.</p><p class="share-option-value" id="screenshotPublicURL">${payload.publicImageURL && payload.publicImageIsCurrent ? escapeHTML(payload.publicImageURL) : payload.publicImageURL ? "Update the URL to match this screenshot." : "Create a public URL when you are ready."}</p></div>
+            <button class="button primary" id="screenshotURLAction">${payload.publicImageURL && payload.publicImageIsCurrent ? "Copy URL" : payload.publicImageURL ? "Update & copy URL" : "Create & copy URL"}</button>
           </article>
           <article class="share-option">
             <div class="share-option-icon pdf-mark" aria-hidden="true">PDF</div>
@@ -319,7 +325,7 @@ function bindShellEvents(): void {
     ?.addEventListener("click", () => send("saveAndPublishPDF"));
   document.querySelector<HTMLButtonElement>("#screenshotURLAction")
     ?.addEventListener("click", () =>
-      send(payload.publicImageURL && publishedImageRevision === editRevision
+      send(payload.publicImageURL && screenshotImageIsPublished()
         ? "saveAndCopyPublicImageURL" : "saveAndPublishImage")
     );
   document.querySelector<HTMLButtonElement>("#copyImage")
@@ -413,7 +419,9 @@ function send(type: BridgeMessage["type"]): void {
   pendingSaveRevision = editRevision;
   pendingAction = type;
   setActionPending(type);
-  const message: BridgeMessage = { type, story: serializeStory() };
+  const story = serializeStory();
+  pendingImageState = imagePublicationState(story);
+  const message: BridgeMessage = { type, story };
   const bridge = window.webkit?.messageHandlers?.storyEditor;
   if (bridge) bridge.postMessage(message);
   else window.jesseeDidSave?.(
@@ -448,13 +456,35 @@ function setActionPending(action?: BridgeMessage["type"]): void {
 
 function updateScreenshotURLAction(): void {
   if (pendingAction) return;
+  const isCurrent = screenshotImageIsPublished();
   const action = document.querySelector<HTMLButtonElement>("#screenshotURLAction");
   if (action) action.textContent = screenshotURLActionLabel();
+  const value = document.querySelector<HTMLElement>("#screenshotPublicURL");
+  if (value) {
+    value.textContent = payload.publicImageURL && isCurrent
+      ? payload.publicImageURL
+      : payload.publicImageURL
+        ? "Update the URL to match this screenshot."
+        : "Create a public URL when you are ready.";
+  }
+  const guidance = document.querySelector<HTMLElement>("#screenshotShareGuidance");
+  if (guidance) {
+    guidance.textContent = payload.publicImageURL && isCurrent
+      ? "Your screenshot URL was copied automatically after capture. Copy it again here, or use the PDF version."
+      : payload.publicImageURL
+        ? "Your screenshot changed. Update its URL before sharing, or use the PDF version."
+        : "Create and copy a screenshot URL here, or use the PDF version.";
+  }
 }
 
 function screenshotURLActionLabel(): string {
   if (!payload.publicImageURL) return "Create & copy URL";
-  return publishedImageRevision === editRevision ? "Copy URL" : "Update & copy URL";
+  return screenshotImageIsPublished() ? "Copy URL" : "Update & copy URL";
+}
+
+function screenshotImageIsPublished(): boolean {
+  return publishedImageState !== undefined
+    && publishedImageState === imagePublicationState(serializeStory());
 }
 
 function isPublishAction(action?: BridgeMessage["type"]): boolean {
@@ -465,8 +495,7 @@ function isPublishAction(action?: BridgeMessage["type"]): boolean {
 function showPublicLink(publicURL: string, status = ""): void {
   if (payload.canPublishImage) {
     payload.publicImageURL = publicURL;
-    const value = document.querySelector<HTMLElement>("#screenshotPublicURL");
-    if (value) value.textContent = publicURL;
+    updateScreenshotURLAction();
     const action = document.querySelector<HTMLButtonElement>("#screenshotURLAction");
     if (action) action.textContent = status ? `${status} · Copy again` : screenshotURLActionLabel();
     return;

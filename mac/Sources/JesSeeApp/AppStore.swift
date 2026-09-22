@@ -25,6 +25,11 @@ final class AppStore: ObservableObject {
     }
   }
 
+  private struct PublicationWaiter {
+    var captureID: String
+    var continuation: CheckedContinuation<Void, Never>
+  }
+
   enum Notice: Equatable {
     case success(String)
     case error(String)
@@ -64,6 +69,7 @@ final class AppStore: ObservableObject {
   private var signInTask: Task<Void, Never>?
   private var workflowSession: WorkflowAuthSession?
   private var appHotKeys: GlobalHotKeyController?
+  private var publicationWaiters: [PublicationWaiter] = []
 
   init() {
     let notificationCenter = UNUserNotificationCenter.current()
@@ -435,12 +441,11 @@ final class AppStore: ObservableObject {
     recordID: String, in preferredWorkspace: CaptureWorkspace? = nil,
     announceSuccess: Bool = true
   ) async -> String? {
-    guard publishingCaptureID == nil,
-      let sourceWorkspace = preferredWorkspace ?? workspace,
+    guard let sourceWorkspace = preferredWorkspace ?? workspace,
       let record = await sourceWorkspace.record(id: recordID)
     else { return nil }
-    publishingCaptureID = record.id
-    defer { publishingCaptureID = nil }
+    await beginPublication(for: record.id)
+    defer { finishPublication() }
 
     do {
       guard let prepared = await primaryImageWithAnnotations(
@@ -520,7 +525,9 @@ final class AppStore: ObservableObject {
       }
       return publicURL.absoluteString
     } catch {
-      show(.error(authenticationAwareError(error).localizedDescription))
+      if isCurrentWorkspace(sourceWorkspace) {
+        show(.error(authenticationAwareError(error).localizedDescription))
+      }
       return nil
     }
   }
@@ -595,24 +602,24 @@ final class AppStore: ObservableObject {
   }
 
   func publishPDF(recordID: String) async -> String? {
-    guard publishingCaptureID == nil,
-      let record = captures.first(where: { $0.id == recordID })
+    guard let sourceWorkspace = workspace,
+      let record = await sourceWorkspace.record(id: recordID)
     else { return nil }
-    publishingCaptureID = record.id
-    defer { publishingCaptureID = nil }
+    await beginPublication(for: record.id)
+    defer { finishPublication() }
     do {
-      guard let workspace, let filename = record.pdfFilename else {
+      guard let filename = record.pdfFilename else {
         throw JesSeeError.invalidResponse("Create the PDF before publishing it.")
       }
       let upload = try await withPolyformAuthentication { client, token in
         try await client.publishPDF(
-          at: workspace.directoryURL(for: record).appendingPathComponent(filename),
+          at: sourceWorkspace.directoryURL(for: record).appendingPathComponent(filename),
           accessToken: token)
       }
       guard let publicURL = upload.publicURL else {
         throw JesSeeError.invalidResponse("Polyform did not return a public PDF link.")
       }
-      var updated = await workspace.record(id: record.id) ?? record
+      var updated = await sourceWorkspace.record(id: record.id) ?? record
       let cleanupIDs = ([updated.publicPDFUploadID].compactMap { $0 }
         + (updated.publicPDFCleanupUploadIDs ?? []))
         .filter { $0 != upload.id }
@@ -623,7 +630,7 @@ final class AppStore: ObservableObject {
       updated.publicPDFURL = publicURL.absoluteString
       updated.publicPDFCleanupUploadIDs = cleanupIDs.isEmpty ? nil : cleanupIDs
       do {
-        try await workspace.save(updated)
+        try await sourceWorkspace.save(updated)
       } catch {
         do {
           try await withPolyformAuthentication { client, token in
@@ -635,7 +642,7 @@ final class AppStore: ObservableObject {
         }
         throw error
       }
-      replace(updated)
+      replace(updated, from: sourceWorkspace)
 
       var failedCleanupIDs: [String] = []
       for uploadID in cleanupIDs {
@@ -648,8 +655,9 @@ final class AppStore: ObservableObject {
         }
       }
       updated.publicPDFCleanupUploadIDs = failedCleanupIDs.isEmpty ? nil : failedCleanupIDs
-      try await workspace.save(updated)
-      replace(updated)
+      try await sourceWorkspace.save(updated)
+      replace(updated, from: sourceWorkspace)
+      guard isCurrentWorkspace(sourceWorkspace) else { return nil }
       copyToPasteboard(publicURL.absoluteString)
       recordUsage(.pdfPublished, feature: "public_pdf")
       if failedCleanupIDs.isEmpty {
@@ -661,7 +669,9 @@ final class AppStore: ObservableObject {
       }
       return publicURL.absoluteString
     } catch {
-      show(.error(authenticationAwareError(error).localizedDescription))
+      if isCurrentWorkspace(sourceWorkspace) {
+        show(.error(authenticationAwareError(error).localizedDescription))
+      }
       return nil
     }
   }
@@ -1047,6 +1057,27 @@ final class AppStore: ObservableObject {
 
   private func isCurrentWorkspace(_ candidate: CaptureWorkspace) -> Bool {
     workspace === candidate
+  }
+
+  private func beginPublication(for captureID: String) async {
+    guard publishingCaptureID != nil else {
+      publishingCaptureID = captureID
+      return
+    }
+    await withCheckedContinuation { continuation in
+      publicationWaiters.append(
+        PublicationWaiter(captureID: captureID, continuation: continuation))
+    }
+  }
+
+  private func finishPublication() {
+    guard !publicationWaiters.isEmpty else {
+      publishingCaptureID = nil
+      return
+    }
+    let next = publicationWaiters.removeFirst()
+    publishingCaptureID = next.captureID
+    next.continuation.resume()
   }
 
   private func isCurrentWorkspaceLocation(_ candidate: CaptureWorkspace) -> Bool {
