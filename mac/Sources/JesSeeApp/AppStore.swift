@@ -2,6 +2,7 @@ import AVFoundation
 import AppKit
 import Carbon.HIToolbox
 import JesSeeCore
+import ServiceManagement
 import SwiftUI
 @preconcurrency import UserNotifications
 
@@ -22,6 +23,11 @@ final class AppStore: ObservableObject {
       workspaceRootURL = workspace.rootURL
       self.captureID = captureID
     }
+  }
+
+  private struct PublicationWaiter {
+    var captureID: String
+    var continuation: CheckedContinuation<Void, Never>
   }
 
   enum Notice: Equatable {
@@ -57,12 +63,14 @@ final class AppStore: ObservableObject {
   private let polyformClient: PolyformClient?
   private let polyformManagedAIAvailable: Bool
   private var workspace: CaptureWorkspace?
+  private var workspacesByRootURL: [URL: CaptureWorkspace] = [:]
   private var processingTasks: [ProcessingTaskKey: Task<Void, Never>] = [:]
   private var processingNotificationTasks: [ProcessingTaskKey: Task<Void, Never>] = [:]
   private var refreshTask: Task<WorkflowAuthSession, Error>?
   private var signInTask: Task<Void, Never>?
   private var workflowSession: WorkflowAuthSession?
   private var appHotKeys: GlobalHotKeyController?
+  private var publicationWaiters: [PublicationWaiter] = []
 
   init() {
     let notificationCenter = UNUserNotificationCenter.current()
@@ -94,8 +102,10 @@ final class AppStore: ObservableObject {
     setupStep = configuration.pendingSetupStep(
       hasPolyformSession: workflowSession != nil, hasAPIKey: hasAPIKey)
     if !configuration.outputFolderPath.isEmpty {
-      workspace = CaptureWorkspace(
+      let initialWorkspace = CaptureWorkspace(
         rootURL: URL(fileURLWithPath: configuration.outputFolderPath, isDirectory: true))
+      workspace = initialWorkspace
+      workspacesByRootURL[initialWorkspace.rootURL.standardizedFileURL] = initialWorkspace
     }
     recorder.onFinished = { [weak self] result in
       Task { @MainActor in
@@ -138,6 +148,7 @@ final class AppStore: ObservableObject {
       }
     }
     Task {
+      if configuration.setupCompleted { applyOpenAtLoginPreference(announce: false) }
       if configuration.aiProviderMode == .polyformCovered { _ = try? await accessToken() }
       if configuration.shareAnonymousFeatureUsage {
         if let session = workflowSession {
@@ -167,6 +178,9 @@ final class AppStore: ObservableObject {
   var isSignedIntoPolyform: Bool {
     if case .signedIn = authenticationState { return true }
     return false
+  }
+  var openAtLoginNeedsApproval: Bool {
+    configuration.openAtLogin && SMAppService.mainApp.status == .requiresApproval
   }
 
   func selectProvider(_ mode: AIProviderMode) {
@@ -288,7 +302,7 @@ final class AppStore: ObservableObject {
     panel.canChooseFiles = false
     panel.canCreateDirectories = true
     guard panel.runModal() == .OK, let url = panel.url else { return false }
-    let selectedWorkspace = CaptureWorkspace(rootURL: url)
+    let selectedWorkspace = captureWorkspace(for: url)
     if let workspace, workspace.rootURL == selectedWorkspace.rootURL {
       configuration.outputFolderPath = url.path
       persistConfiguration()
@@ -308,6 +322,7 @@ final class AppStore: ObservableObject {
   func finishSetup() {
     configuration.setupCompleted = true
     persistConfiguration()
+    applyOpenAtLoginPreference(announce: false)
     show(.success("JesSee is ready."))
     Task {
       _ = try? await UNUserNotificationCenter.current().requestAuthorization(
@@ -318,6 +333,12 @@ final class AppStore: ObservableObject {
   func setScreenshotSharing(_ enabled: Bool) {
     configuration.shareScreenshotsForStory = enabled
     persistConfiguration()
+  }
+
+  func setOpenAtLogin(_ enabled: Bool) {
+    configuration.openAtLogin = enabled
+    persistConfiguration()
+    applyOpenAtLoginPreference(announce: true)
   }
 
   func setAnonymousFeatureUsageSharing(_ enabled: Bool) {
@@ -402,12 +423,16 @@ final class AppStore: ObservableObject {
   }
 
   func copyPrimaryImage(recordID: String) async -> Bool {
-    guard let image = await primaryImageWithAnnotations(recordID: recordID) else {
+    guard let sourceWorkspace = workspace,
+      let record = captures.first(where: { $0.id == recordID }),
+      let prepared = await primaryImageWithAnnotations(record: record, in: sourceWorkspace)
+    else {
       show(.error("JesSee could not copy this screenshot."), asSystemNotification: true)
       return false
     }
+    guard isCurrentWorkspaceLocation(sourceWorkspace) else { return false }
     NSPasteboard.general.clearContents()
-    guard NSPasteboard.general.writeObjects([image]) else {
+    guard NSPasteboard.general.writeObjects([prepared.image]) else {
       show(.error("JesSee could not copy this screenshot."), asSystemNotification: true)
       return false
     }
@@ -415,16 +440,20 @@ final class AppStore: ObservableObject {
     return true
   }
 
-  func publishPrimaryImage(recordID: String) async -> String? {
-    guard publishingCaptureID == nil,
-      let record = captures.first(where: { $0.id == recordID })
+  func publishPrimaryImage(
+    recordID: String, in preferredWorkspace: CaptureWorkspace? = nil,
+    announceSuccess: Bool = true
+  ) async -> String? {
+    guard let sourceWorkspace = preferredWorkspace ?? workspace,
+      let record = await sourceWorkspace.record(id: recordID)
     else { return nil }
-    publishingCaptureID = record.id
-    defer { publishingCaptureID = nil }
+    await beginPublication(for: record.id)
+    defer { finishPublication() }
 
     do {
-      guard let image = await primaryImageWithAnnotations(recordID: recordID),
-        let tiff = image.tiffRepresentation,
+      guard let prepared = await primaryImageWithAnnotations(
+        record: record, in: sourceWorkspace),
+        let tiff = prepared.image.tiffRepresentation,
         let bitmap = NSBitmapImageRep(data: tiff),
         let png = bitmap.representation(using: .png, properties: [:])
       else {
@@ -442,18 +471,87 @@ final class AppStore: ObservableObject {
       guard let publicURL = upload.publicURL else {
         throw JesSeeError.invalidResponse("Polyform did not return a public screenshot link.")
       }
+      var updated = await sourceWorkspace.record(id: record.id) ?? record
+      let cleanupIDs = ([updated.publicImageUploadID].compactMap { $0 }
+        + (updated.publicImageCleanupUploadIDs ?? []))
+        .filter { $0 != upload.id }
+        .reduce(into: [String]()) { result, id in
+          if !result.contains(id) { result.append(id) }
+        }
+      updated.publicImageUploadID = upload.id
+      updated.publicImageURL = publicURL.absoluteString
+      updated.publicImagePublicationState = prepared.publicationState
+      updated.publicImageCleanupUploadIDs = cleanupIDs.isEmpty ? nil : cleanupIDs
+      do {
+        try await sourceWorkspace.save(updated)
+      } catch {
+        do {
+          try await withPolyformAuthentication { client, token in
+            try await client.deleteUpload(id: upload.id, accessToken: token)
+          }
+        } catch let rollbackError {
+          throw JesSeeError.serviceUnavailable(
+            "JesSee could not save or roll back the new screenshot URL. Upload \(upload.id) may need cleanup: \(rollbackError.localizedDescription)")
+        }
+        throw error
+      }
+      replacePublication(updated, from: sourceWorkspace)
+
+      var failedCleanupIDs: [String] = []
+      for uploadID in cleanupIDs {
+        do {
+          try await withPolyformAuthentication { client, token in
+            try await client.deleteUpload(id: uploadID, accessToken: token)
+          }
+        } catch {
+          failedCleanupIDs.append(uploadID)
+        }
+      }
+      updated.publicImageCleanupUploadIDs = failedCleanupIDs.isEmpty ? nil : failedCleanupIDs
+      try await sourceWorkspace.save(updated)
+      replacePublication(updated, from: sourceWorkspace)
+      guard isCurrentWorkspaceLocation(sourceWorkspace) else { return nil }
       copyToPasteboard(publicURL.absoluteString)
       recordUsage(.screenshotPublished, feature: "public_screenshot")
-      postSystemNotification(
-        title: "Screenshot URL copied to clipboard",
-        body: "JesSee uploaded the saved, edited screenshot.",
-        identifier: "screenshot-\(upload.id)")
-      show(.success("Screenshot URL copied to clipboard."))
+      if announceSuccess {
+        postSystemNotification(
+          title: "Screenshot URL copied to clipboard",
+          body: "JesSee uploaded the saved, edited screenshot.",
+          identifier: "screenshot-\(upload.id)")
+      }
+      if failedCleanupIDs.isEmpty {
+        if announceSuccess { show(.success("Screenshot URL copied to clipboard.")) }
+      } else {
+        show(
+          .error(
+            "The screenshot URL was copied, but JesSee could not retire a previous upload. JesSee will retry when you update the screenshot URL."))
+      }
       return publicURL.absoluteString
     } catch {
-      show(.error(authenticationAwareError(error).localizedDescription))
+      if isCurrentWorkspaceLocation(sourceWorkspace) {
+        show(.error(authenticationAwareError(error).localizedDescription))
+      }
       return nil
     }
+  }
+
+  func copyPublicImageURL(
+    recordID: String, in preferredWorkspace: CaptureWorkspace? = nil
+  ) async -> String? {
+    guard let sourceWorkspace = preferredWorkspace ?? workspace,
+      let record = await sourceWorkspace.record(id: recordID),
+      let storyFilename = record.storyFilename,
+      let story = try? await sourceWorkspace.read(
+        StoryDocument.self, filename: storyFilename, for: record),
+      record.publicImagePublicationState
+        == story.primaryImagePublicationState(
+          fallbackFilename: record.imageFilenames.first ?? record.mediaFilename),
+      let publicURL = record.publicImageURL,
+      isCurrentWorkspaceLocation(sourceWorkspace)
+    else { return nil }
+    copyToPasteboard(publicURL)
+    show(.success("Screenshot URL copied to clipboard."))
+    return publicURL
   }
 
   func copyPDF(recordID: String) -> Bool {
@@ -475,30 +573,41 @@ final class AppStore: ObservableObject {
     return try? await workspace.read(StoryDocument.self, filename: filename, for: record)
   }
 
-  func saveStory(_ story: StoryDocument, for record: CaptureRecord) async -> Bool {
-    guard let workspace else { return false }
+  func saveStory(
+    _ story: StoryDocument, for record: CaptureRecord,
+    in sourceWorkspace: CaptureWorkspace
+  ) async -> Bool {
     guard publishingCaptureID != record.id else {
       show(.error("Wait for the public-link update to finish before saving more edits."))
       return false
     }
     do {
-      try await workspace.write(story, filename: "story.json", for: record)
+      try await sourceWorkspace.write(story, filename: "story.json", for: record)
       let rendered = try DocumentRenderer.render(
-        story: story, in: workspace.directoryURL(for: record))
-      var updated = await workspace.record(id: record.id) ?? record
+        story: story, in: sourceWorkspace.directoryURL(for: record))
+      var updated = await sourceWorkspace.record(id: record.id) ?? record
       updated.title = story.title
       updated.storyFilename = "story.json"
       updated.htmlFilename = rendered.html
       updated.pdfFilename = rendered.pdf
-      try await workspace.save(updated)
-      replace(updated)
-      show(.success("Story and PDF updated."))
+      try await sourceWorkspace.save(updated)
+      replace(updated, from: sourceWorkspace)
+      if isCurrentWorkspaceLocation(sourceWorkspace) {
+        show(.success("Story and PDF updated."))
+      }
       recordUsage(.storyEdited, feature: "story_editor")
       return true
     } catch {
-      show(.error("JesSee could not save this story: \(error.localizedDescription)"))
+      if isCurrentWorkspaceLocation(sourceWorkspace) {
+        show(.error("JesSee could not save this story: \(error.localizedDescription)"))
+      }
       return false
     }
+  }
+
+  func workspaceForEditorAction(recordID: String) -> CaptureWorkspace? {
+    guard captures.contains(where: { $0.id == recordID }) else { return nil }
+    return workspace
   }
 
   func imageURL(filename: String, record: CaptureRecord) -> URL? {
@@ -510,25 +619,27 @@ final class AppStore: ObservableObject {
     workspace?.directoryURL(for: record)
   }
 
-  func publishPDF(recordID: String) async -> String? {
-    guard publishingCaptureID == nil,
-      let record = captures.first(where: { $0.id == recordID })
+  func publishPDF(
+    recordID: String, in preferredWorkspace: CaptureWorkspace? = nil
+  ) async -> String? {
+    guard let sourceWorkspace = preferredWorkspace ?? workspace,
+      let record = await sourceWorkspace.record(id: recordID)
     else { return nil }
-    publishingCaptureID = record.id
-    defer { publishingCaptureID = nil }
+    await beginPublication(for: record.id)
+    defer { finishPublication() }
     do {
-      guard let workspace, let filename = record.pdfFilename else {
+      guard let filename = record.pdfFilename else {
         throw JesSeeError.invalidResponse("Create the PDF before publishing it.")
       }
       let upload = try await withPolyformAuthentication { client, token in
         try await client.publishPDF(
-          at: workspace.directoryURL(for: record).appendingPathComponent(filename),
+          at: sourceWorkspace.directoryURL(for: record).appendingPathComponent(filename),
           accessToken: token)
       }
       guard let publicURL = upload.publicURL else {
         throw JesSeeError.invalidResponse("Polyform did not return a public PDF link.")
       }
-      var updated = await workspace.record(id: record.id) ?? record
+      var updated = await sourceWorkspace.record(id: record.id) ?? record
       let cleanupIDs = ([updated.publicPDFUploadID].compactMap { $0 }
         + (updated.publicPDFCleanupUploadIDs ?? []))
         .filter { $0 != upload.id }
@@ -539,7 +650,7 @@ final class AppStore: ObservableObject {
       updated.publicPDFURL = publicURL.absoluteString
       updated.publicPDFCleanupUploadIDs = cleanupIDs.isEmpty ? nil : cleanupIDs
       do {
-        try await workspace.save(updated)
+        try await sourceWorkspace.save(updated)
       } catch {
         do {
           try await withPolyformAuthentication { client, token in
@@ -551,7 +662,7 @@ final class AppStore: ObservableObject {
         }
         throw error
       }
-      replace(updated)
+      replacePublication(updated, from: sourceWorkspace)
 
       var failedCleanupIDs: [String] = []
       for uploadID in cleanupIDs {
@@ -564,8 +675,9 @@ final class AppStore: ObservableObject {
         }
       }
       updated.publicPDFCleanupUploadIDs = failedCleanupIDs.isEmpty ? nil : failedCleanupIDs
-      try await workspace.save(updated)
-      replace(updated)
+      try await sourceWorkspace.save(updated)
+      replacePublication(updated, from: sourceWorkspace)
+      guard isCurrentWorkspaceLocation(sourceWorkspace) else { return nil }
       copyToPasteboard(publicURL.absoluteString)
       recordUsage(.pdfPublished, feature: "public_pdf")
       if failedCleanupIDs.isEmpty {
@@ -577,7 +689,9 @@ final class AppStore: ObservableObject {
       }
       return publicURL.absoluteString
     } catch {
-      show(.error(authenticationAwareError(error).localizedDescription))
+      if isCurrentWorkspaceLocation(sourceWorkspace) {
+        show(.error(authenticationAwareError(error).localizedDescription))
+      }
       return nil
     }
   }
@@ -645,12 +759,26 @@ final class AppStore: ObservableObject {
       record.htmlFilename = rendered.html
       record.pdfFilename = rendered.pdf
       try await workspace.save(record)
-      guard isCurrentWorkspace(workspace) else { return }
+      guard isCurrentWorkspaceLocation(workspace) else { return }
+      let shouldPublish = isPublicLinkPublishingAvailable && isSignedIntoPolyform
+      let publicURL = shouldPublish
+        ? await publishPrimaryImage(
+          recordID: record.id, in: workspace, announceSuccess: false) : nil
+      guard isCurrentWorkspaceLocation(workspace) else { return }
       captures = await workspace.allRecords()
+      guard isCurrentWorkspaceLocation(workspace) else { return }
       selectedCaptureID = record.id
       readyCaptureID = record.id
       recordUsage(.captureAdded, feature: "screenshot", source: CaptureSource.screenshot.rawValue)
-      show(.success("Screenshot saved and opened in your Library."), asSystemNotification: true)
+      if shouldPublish, publicURL == nil {
+        // publishPrimaryImage already surfaced the upload error; still open the local result.
+      } else if publicURL != nil {
+        show(
+          .success("Screenshot URL copied. Choose Screenshot URL or PDF in your Library."),
+          asSystemNotification: true)
+      } else {
+        show(.success("Screenshot saved. Sign in with Polyform to create its URL."), asSystemNotification: true)
+      }
     } catch {
       show(.error(authenticationAwareError(error).localizedDescription), asSystemNotification: true)
     }
@@ -796,6 +924,13 @@ final class AppStore: ObservableObject {
 
   private func replace(_ record: CaptureRecord, from sourceWorkspace: CaptureWorkspace) {
     guard isCurrentWorkspace(sourceWorkspace) else { return }
+    replace(record)
+  }
+
+  private func replacePublication(
+    _ record: CaptureRecord, from sourceWorkspace: CaptureWorkspace
+  ) {
+    guard isCurrentWorkspaceLocation(sourceWorkspace) else { return }
     replace(record)
   }
 
@@ -950,6 +1085,35 @@ final class AppStore: ObservableObject {
 
   private func isCurrentWorkspace(_ candidate: CaptureWorkspace) -> Bool {
     workspace === candidate
+  }
+
+  private func captureWorkspace(for rootURL: URL) -> CaptureWorkspace {
+    let candidate = CaptureWorkspace(rootURL: rootURL)
+    let key = candidate.rootURL.standardizedFileURL
+    if let existing = workspacesByRootURL[key] { return existing }
+    workspacesByRootURL[key] = candidate
+    return candidate
+  }
+
+  private func beginPublication(for captureID: String) async {
+    guard publishingCaptureID != nil else {
+      publishingCaptureID = captureID
+      return
+    }
+    await withCheckedContinuation { continuation in
+      publicationWaiters.append(
+        PublicationWaiter(captureID: captureID, continuation: continuation))
+    }
+  }
+
+  private func finishPublication() {
+    guard !publicationWaiters.isEmpty else {
+      publishingCaptureID = nil
+      return
+    }
+    let next = publicationWaiters.removeFirst()
+    publishingCaptureID = next.captureID
+    next.continuation.resume()
   }
 
   private func isCurrentWorkspaceLocation(_ candidate: CaptureWorkspace) -> Bool {
@@ -1180,6 +1344,32 @@ final class AppStore: ObservableObject {
     setupStep = 3
   }
 
+  private func applyOpenAtLoginPreference(announce: Bool) {
+    let service = SMAppService.mainApp
+    do {
+      if configuration.openAtLogin {
+        if service.status == .notRegistered { try service.register() }
+        if announce {
+          if service.status == .requiresApproval {
+            show(.success("Approve JesSee in System Settings → General → Login Items."))
+          } else {
+            show(.success("JesSee will open when you log in."))
+          }
+        }
+      } else {
+        if service.status != .notRegistered { try service.unregister() }
+        if announce { show(.success("JesSee will no longer open at login.")) }
+      }
+    } catch {
+      configuration.openAtLogin =
+        service.status == .enabled || service.status == .requiresApproval
+      persistConfiguration()
+      if announce {
+        show(.error("JesSee could not update the login setting: \(error.localizedDescription)"))
+      }
+    }
+  }
+
   private func copyToPasteboard(_ value: String) {
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(value, forType: .string)
@@ -1253,17 +1443,30 @@ final class AppStore: ObservableObject {
     return rendered
   }
 
-  private func primaryImageWithAnnotations(recordID: String) async -> NSImage? {
-    guard let workspace, let record = captures.first(where: { $0.id == recordID }) else {
-      return nil
+  private func primaryImageWithAnnotations(
+    record: CaptureRecord, in sourceWorkspace: CaptureWorkspace
+  ) async -> PreparedPublishedImage? {
+    let story: StoryDocument? = if let filename = record.storyFilename {
+      try? await sourceWorkspace.read(StoryDocument.self, filename: filename, for: record)
+    } else {
+      nil
     }
-    let story = await loadStory(for: record)
-    let step = story?.steps.first(where: { $0.imageFilename != nil })
-    let filename = step?.imageFilename ?? record.imageFilenames.first ?? record.mediaFilename
-    let imageURL = workspace.directoryURL(for: record).appendingPathComponent(filename)
+    let fallbackFilename = record.imageFilenames.first ?? record.mediaFilename
+    let publicationState = story?.primaryImagePublicationState(
+      fallbackFilename: fallbackFilename)
+      ?? StoryImagePublicationState(filename: fallbackFilename, annotations: [])
+    let imageURL = sourceWorkspace.directoryURL(for: record).appendingPathComponent(
+      publicationState.filename)
     guard let image = NSImage(contentsOf: imageURL) else { return nil }
-    return imageWithAnnotations(image, annotations: step?.imageAnnotations ?? [])
+    return PreparedPublishedImage(
+      image: imageWithAnnotations(image, annotations: publicationState.annotations),
+      publicationState: publicationState)
   }
+}
+
+private struct PreparedPublishedImage {
+  var image: NSImage
+  var publicationState: StoryImagePublicationState
 }
 
 private struct ProcessingServiceContext {

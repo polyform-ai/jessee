@@ -8,6 +8,10 @@ import {
   normalizePointInBounds,
   pointIsInsideBounds
 } from "../src/annotationCoordinates.ts";
+import {
+  imagePublicationState,
+  serializedImagePublicationState
+} from "../src/imagePublicationState.ts";
 import { normalizeSourceURL } from "../src/storyURL.ts";
 
 function installDOM(): void {
@@ -64,4 +68,36 @@ test("markup coordinates are normalized to the displayed image bounds", () => {
   assert.equal(pointIsInsideBounds(290, 205, bounds), true);
   assert.equal(pointIsInsideBounds(200, 205, bounds), false);
   assert.equal(normalizePointInBounds(290, 205, { ...bounds, width: 0 }), undefined);
+});
+
+test("publication state changes only with the shared screenshot", () => {
+  const story = {
+    title: "Original title",
+    steps: [{ imageFilename: "images/shot.png", imageAnnotations: [] }]
+  };
+  const published = imagePublicationState(story);
+  assert.equal(imagePublicationState({ ...story, title: "Edited title" }), published);
+  assert.notEqual(imagePublicationState({
+    ...story,
+    steps: [{
+      imageFilename: "images/shot.png",
+      imageAnnotations: [{ id: "redaction", kind: "redaction", x: 0, y: 0, width: 1, height: 1 }]
+    }]
+  }), published);
+  assert.notEqual(imagePublicationState({
+    ...story,
+    steps: [{ imageFilename: "images/other.png", imageAnnotations: [] }]
+  }), published);
+  assert.equal(
+    imagePublicationState({ ...story, steps: [{ imageAnnotations: [] }] }, "images/shot.png"),
+    published
+  );
+  const annotation = { id: "mark", kind: "highlight", x: 0.1, y: 0.2, width: 0.3, height: 0.4 };
+  assert.equal(
+    imagePublicationState({ ...story, steps: [{ imageFilename: "images/shot.png", imageAnnotations: [annotation] }] }),
+    serializedImagePublicationState({
+      filename: "images/shot.png",
+      annotations: [{ height: 0.4, width: 0.3, y: 0.2, x: 0.1, kind: "highlight", id: "mark" }]
+    })
+  );
 });

@@ -32,6 +32,7 @@ let package = Package(
       linkerSettings: [
         .linkedFramework("Carbon"),
         .linkedFramework("ScreenCaptureKit"),
+        .linkedFramework("ServiceManagement"),
         .linkedFramework("UserNotifications"),
         .linkedFramework("WebKit"),
       ]

@@ -180,6 +180,10 @@ private struct WorkflowTestValue: Decodable, Equatable {
   object.removeValue(forKey: "processingRetryPolicyVersion")
   object.removeValue(forKey: "processingProviderMode")
   object.removeValue(forKey: "processingRecovery")
+  object.removeValue(forKey: "publicImageUploadID")
+  object.removeValue(forKey: "publicImageURL")
+  object.removeValue(forKey: "publicImagePublicationState")
+  object.removeValue(forKey: "publicImageCleanupUploadIDs")
   let legacy = try JSONSerialization.data(withJSONObject: object)
 
   let decoded = try JesSeeJSON.decoder().decode(CaptureRecord.self, from: legacy)
@@ -187,6 +191,50 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(decoded.automaticProcessingRetryAt == nil)
   #expect(decoded.processingRetryPolicyVersion == nil)
   #expect(decoded.processingProviderMode == nil)
+  #expect(decoded.publicImageUploadID == nil)
+  #expect(decoded.publicImageURL == nil)
+  #expect(decoded.publicImagePublicationState == nil)
+}
+
+@Test func publishedScreenshotStateTracksTheSelectedImageAndAnnotations() {
+  let annotation = StoryAnnotation(
+    id: "redaction", kind: .redaction, x: 0.1, y: 0.2, width: 0.3, height: 0.4)
+  let original = StoryDocument(
+    title: "Original", summary: "Before", keyPoints: [],
+    steps: [
+      StoryStep(
+        id: "step", startSeconds: 0, endSeconds: 1, title: "Step", narrative: "Text",
+        transcript: "", imageFilename: "screenshot.png")
+    ])
+  var textOnlyEdit = original
+  textOnlyEdit.title = "Edited title"
+  var redacted = textOnlyEdit
+  redacted.steps[0].imageAnnotations = [annotation]
+
+  #expect(original.primaryImagePublicationState() == textOnlyEdit.primaryImagePublicationState())
+  #expect(original.primaryImagePublicationState() != redacted.primaryImagePublicationState())
+
+  let textOnly = StoryDocument(
+    title: "Text only", summary: "Fallback", keyPoints: [],
+    steps: [
+      StoryStep(
+        id: "step", startSeconds: 0, endSeconds: 1, title: "Step", narrative: "Text",
+        transcript: "")
+    ])
+  #expect(
+    textOnly.primaryImagePublicationState(fallbackFilename: "screenshot.png")
+      == StoryImagePublicationState(filename: "screenshot.png", annotations: []))
+}
+
+@Test func configurationOpensAtLoginByDefaultAndPreservesAnOptOut() throws {
+  let legacy = Data(#"{"email":"","outputFolderPath":"","setupCompleted":false,"shareScreenshotsForStory":true,"shareAnonymousFeatureUsage":true}"#.utf8)
+  let decodedLegacy = try JesSeeJSON.decoder().decode(JesSeeConfiguration.self, from: legacy)
+  #expect(decodedLegacy.openAtLogin)
+
+  let optedOut = JesSeeConfiguration(openAtLogin: false)
+  let encoded = try JesSeeJSON.encoder().encode(optedOut)
+  let decoded = try JesSeeJSON.decoder().decode(JesSeeConfiguration.self, from: encoded)
+  #expect(!decoded.openAtLogin)
 }
 
 @Test func captureRecordPersistsTheProviderThatOwnsProcessing() throws {

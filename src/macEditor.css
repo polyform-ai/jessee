@@ -23,6 +23,23 @@ body.is-dirty #saveStatus { color: #9a6100; }
 .public-link-row[hidden] { display: none; }
 .public-link-value { min-width: 0; overflow: hidden; color: #5148ef; text-overflow: ellipsis; white-space: nowrap; user-select: text; }
 .public-link-row span { flex: 0 0 auto; color: #178447; font-weight: 700; }
+.share-options { max-width: 920px; margin: 0 auto 18px; padding: 18px; border: 1px solid #dcd9ea; border-radius: 16px; background: linear-gradient(145deg,#fff 0%,#f7f5ff 100%); box-shadow: 0 12px 35px rgba(42,34,91,.08); }
+.share-options-heading { margin-bottom: 13px; }
+.share-options-heading h2 { margin: 0; font-size: 20px; letter-spacing: -.02em; }
+.share-options-heading > p:last-child { margin: 5px 0 0; color: #686774; font-size: 12px; }
+.share-option-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.share-option { display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 12px; min-height: 150px; padding: 16px; border: 1px solid #dedce8; border-radius: 13px; background: rgba(255,255,255,.86); }
+.share-option.featured { border-color: #bcb8ff; box-shadow: inset 0 0 0 1px rgba(90,82,255,.08); }
+.share-option-icon { display: grid; place-items: center; width: 42px; height: 42px; align-self: start; color: #fff; background: #5a52ff; border-radius: 12px; font-size: 20px; font-weight: 800; }
+.share-option-icon.pdf-mark { color: #5148ef; background: #eeedff; font-size: 10px; letter-spacing: -.02em; }
+.share-option-copy { min-width: 0; }
+.share-option-label { margin: 0 0 3px; color: #6e67e9; font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.share-option h3 { margin: 0; font-size: 16px; }
+.share-option-copy > p:not(.share-option-label):not(.share-option-value) { margin: 4px 0 0; color: #686774; font-size: 12px; }
+.share-option-value { margin: 9px 0 0; overflow: hidden; color: #5148ef; font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; user-select: text; }
+.share-option > .button, .share-option-actions { grid-column: 1 / -1; }
+.share-option > .button { justify-self: stretch; }
+.share-option-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .button, .tool, .segmented button, .markup-tools button, .icon, .arrow, .header-icon { border: 1px solid #d8d6e1; background: #fff; color: #232229; border-radius: 9px; cursor: pointer; }
 [data-tooltip] { position: relative; }
 [data-tooltip]::after {
@@ -123,6 +140,7 @@ button:disabled { opacity: .38; cursor: default; }
   .editor-header { align-items: flex-start; flex-direction: column; }
   .header-sharing, .header-actions { width: 100%; align-items: flex-start; justify-content: flex-start; }
   .public-link-row { max-width: 100%; justify-content: flex-start; }
+  .share-option-grid { grid-template-columns: 1fr; }
   [data-story-overview], [data-story-step] { padding-left: 28px; padding-right: 28px; }
   .toolbar-tip { display: none; }
 }

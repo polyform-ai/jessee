@@ -145,7 +145,7 @@ private struct StartCard: View {
       CaptureActionButton(
         title: store.isSavingScreenshot ? "Saving screenshot…" : "Capture screenshot",
         detail: store.isSignedIntoPolyform
-          ? "Save to Library, edit, then create a link"
+          ? "Upload, copy its URL, then choose URL or PDF"
           : "Save to Library for markup, text, and PDF",
         systemImage: "camera.viewfinder",
         shortcut: "⌥⇧C",
@@ -153,7 +153,7 @@ private struct StartCard: View {
         isLoading: store.isSavingScreenshot,
         isDisabled: store.isSavingScreenshot,
         help: store.isSignedIntoPolyform
-          ? "Capture an area or window, then review it before generating a public URL"
+          ? "Capture an area or window, upload it, and copy its public URL"
           : "Capture an area or window and open it in your Library",
         action: store.captureScreenshotLink)
       Button(action: store.importVideo) {
@@ -883,8 +883,13 @@ private struct CaptureDetailView: View {
       {
         StoryWebEditor(story: loadedStory.document, record: record, directoryURL: directory) {
           updatedStory, action, completion in
+          guard let actionWorkspace = store.workspaceForEditorAction(recordID: record.id) else {
+            completion(false, "JesSee could not find this story's Library.", nil)
+            return
+          }
           Task {
-            let saved = await store.saveStory(updatedStory, for: record)
+            let saved = await store.saveStory(
+              updatedStory, for: record, in: actionWorkspace)
             if saved {
               self.loadedStory = LoadedStory(recordID: record.id, document: updatedStory)
               if action == "saveAndOpenPDF" {
@@ -897,6 +902,14 @@ private struct CaptureDetailView: View {
               } else if action == "saveAndCopyPDF" {
                 let copied = store.copyPDF(recordID: record.id)
                 completion(copied, copied ? "PDF copied" : "JesSee could not copy the PDF", nil)
+              } else if action == "saveAndCopyPublicImageURL" {
+                if let publicURL = await store.copyPublicImageURL(
+                  recordID: record.id, in: actionWorkspace)
+                {
+                  completion(true, "Copied", publicURL)
+                } else {
+                  completion(false, "JesSee could not find the screenshot URL.", nil)
+                }
               } else if action == "saveAndPublishImage" || action == "saveAndPublishPDF" {
                 guard store.isPublicLinkPublishingAvailable else {
                   completion(false, "Public links are unavailable in this build.", nil)
@@ -908,8 +921,8 @@ private struct CaptureDetailView: View {
                   return
                 }
                 let publicURL = action == "saveAndPublishImage"
-                  ? await store.publishPrimaryImage(recordID: record.id)
-                  : await store.publishPDF(recordID: record.id)
+                  ? await store.publishPrimaryImage(recordID: record.id, in: actionWorkspace)
+                  : await store.publishPDF(recordID: record.id, in: actionWorkspace)
                 if let publicURL {
                   completion(true, "Copied", publicURL)
                 } else {
@@ -1062,6 +1075,20 @@ struct SettingsView: View {
           .font(.caption).foregroundStyle(.secondary)
           PolyformAuthenticationControls(store: store, allowsSignOut: true)
         }
+      }
+      Section("App") {
+        Toggle(
+          "Open JesSee at login",
+          isOn: Binding(
+            get: { store.configuration.openAtLogin },
+            set: { store.setOpenAtLogin($0) }
+          )
+        )
+        Text(
+          store.openAtLoginNeedsApproval
+            ? "macOS needs your approval in System Settings → General → Login Items."
+            : "JesSee starts with your Mac so the Library and menu-bar shortcuts are ready."
+        ).font(.caption).foregroundStyle(.secondary)
       }
       Section("Library") {
         Text(

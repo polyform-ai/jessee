@@ -17,7 +17,7 @@ Use it for:
 
 - A guided choice between Polyform Covered and Bring Your Own Key, plus output folder and microphone access
 - Menu-bar recording for any selected window, app, or display
-- Mac-style screenshot capture: drag to select an area or press Space for a window, then edit it in the Library and optionally copy its public URL
+- Mac-style screenshot capture: drag to select an area or press Space for a window; when signed in with Polyform, JesSee uploads it, copies its public URL, and opens the Library with clear Screenshot URL and PDF choices
 - Automatic source webpage URLs for recordings started from supported browsers on macOS 15.2+
 - A live timer, microphone meter, drawing and highlighting controls
 - One global `⌥⇧S` shortcut to start or stop and process a recording
@@ -29,7 +29,7 @@ Use it for:
 - Authenticated Polyform workflows for covered AI processing and public PDF links
 - Signed updates through Sparkle
 
-JesSee requires macOS 15 or newer. **Polyform Covered** lets you sign in by email while Polyform covers transcription and AI costs. **Bring Your Own Key** stores your OpenAI API key in the Mac Keychain and sends narration and selected screenshots directly to OpenAI. Recordings, generated story screenshots, generated files, and PDFs remain in the output folder you choose. Public screenshot and PDF links use the same optional Polyform sign-in; only an image or PDF you explicitly choose to publish is uploaded publicly.
+JesSee requires macOS 15 or newer. **Polyform Covered** lets you sign in by email while Polyform covers transcription and AI costs. **Bring Your Own Key** stores your OpenAI API key in the Mac Keychain and sends narration and selected screenshots directly to OpenAI. Recordings, generated story screenshots, generated files, and PDFs remain in the output folder you choose. When you capture a screenshot while signed in with Polyform, JesSee treats that capture as the publish action: it uploads the screenshot, copies its public URL, and keeps the URL with the Library item. PDF links remain opt-in.
 
 Product analytics are on by default and have a clear opt-out in **Settings → Privacy**. JesSee sends completed feature names, app version, counts, and a random installation ID directly to GA4. After Polyform sign-in, events also carry an opaque ID derived from the authenticated Polyform grant so activity remains associated across app sessions. JesSee never sends media, narration, story text, filenames, email, API keys, or the underlying grant ID. See [Feature usage events](docs/FEATURE_USAGE_EVENTS.md) for the exact contract.
 
@@ -41,6 +41,7 @@ Download the latest signed and notarized installer from [jessee.ai](https://jess
 2. Drag JesSee to Applications.
 3. Open JesSee from Applications and complete the four-step setup.
 4. Look for the JesSee viewfinder icon at the top-right of your Mac. JesSee stays in the menu bar for recording, screenshots, imports, and updates, even when the Library window is closed.
+5. JesSee opens at login by default so its menu-bar shortcuts are ready. You can turn this off in **Settings → App**.
 
 The browser extensions have been retired. The native app records Safari, Chrome, and other Mac apps without an extension.
 

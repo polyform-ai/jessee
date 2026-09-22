@@ -80,7 +80,7 @@ For local end-to-end testing, build the app with `JESSEE_MANAGED_AI_ENABLED=1` p
 
 ## Public links
 
-Public links are opt-in and independent of the selected AI provider. JesSee authenticates through the same workflow-auth group. It uploads a PDF only after the user chooses **Generate public link**, stores the returned upload ID and URL with that local capture, and replaces the prior upload after the user publishes an updated PDF. It uploads a PNG only after the user chooses **Copy screenshot URL**, copies the returned public URL, and removes the temporary local PNG.
+Public links are independent of the selected AI provider and use the same workflow-auth group. A screenshot capture made while signed in with Polyform is the explicit publish action: JesSee uploads the PNG, copies the returned public URL, stores its upload ID and URL with the local capture, and opens the Library item with separate **Screenshot URL** and **PDF version** choices. **Copy URL** copies the stored URL again; republishing an edited screenshot replaces the prior upload. PDF publishing remains opt-in through **Generate public link**. Temporary rendered PNGs are removed after upload.
 
 The Polyform backend must allow both `application/pdf` and `image/png` for workflow-auth managed uploads before enabling public upload access for the group. If PNG uploads are not yet allowed, JesSee will show the backend error and no screenshot link will be copied. Do not enable this for a release until the backend change has been deployed and a signed build has completed an end-to-end upload test.
 

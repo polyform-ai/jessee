@@ -3,6 +3,12 @@ import SwiftUI
 import WebKit
 
 struct StoryWebEditor: NSViewRepresentable {
+  fileprivate struct PublicationSnapshot: Encodable, Equatable {
+    var publicImageURL: String?
+    var publicImagePublicationState: StoryImagePublicationState?
+    var publicPDFURL: String?
+  }
+
   struct Frame: Encodable {
     var filename: String
     var seconds: Double
@@ -11,6 +17,10 @@ struct StoryWebEditor: NSViewRepresentable {
   struct Payload: Encodable {
     var story: StoryDocument
     var frames: [Frame]
+    var fallbackImageFilename: String
+    var publicImageURL: String?
+    var publicImagePublicationState: StoryImagePublicationState?
+    var publicImageIsCurrent: Bool
     var publicPDFURL: String?
     var canPublishImage: Bool
     var canCopyImage: Bool
@@ -27,6 +37,13 @@ struct StoryWebEditor: NSViewRepresentable {
   let directoryURL: URL
   let onAction: (StoryDocument, String, @escaping (Bool, String, String?) -> Void) -> Void
 
+  private var publicationSnapshot: PublicationSnapshot {
+    PublicationSnapshot(
+      publicImageURL: record.publicImageURL,
+      publicImagePublicationState: record.publicImagePublicationState,
+      publicPDFURL: record.publicPDFURL)
+  }
+
   func makeCoordinator() -> Coordinator { Coordinator(onAction: onAction) }
 
   func makeNSView(context: Context) -> WKWebView {
@@ -38,12 +55,18 @@ struct StoryWebEditor: NSViewRepresentable {
     let webView = WKWebView(frame: .zero, configuration: configuration)
     webView.setValue(false, forKey: "drawsBackground")
     context.coordinator.webView = webView
+    webView.navigationDelegate = context.coordinator
+    context.coordinator.publicationSnapshot = publicationSnapshot
     load(in: webView)
     return webView
   }
 
   func updateNSView(_ webView: WKWebView, context: Context) {
     context.coordinator.onAction = onAction
+    let nextSnapshot = publicationSnapshot
+    guard context.coordinator.publicationSnapshot != nextSnapshot else { return }
+    context.coordinator.publicationSnapshot = nextSnapshot
+    context.coordinator.sendPublicationSnapshot()
   }
 
   static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
@@ -72,6 +95,13 @@ struct StoryWebEditor: NSViewRepresentable {
     let payload = Payload(
       story: story,
       frames: frames,
+      fallbackImageFilename: record.imageFilenames.first ?? record.mediaFilename,
+      publicImageURL: record.publicImageURL,
+      publicImagePublicationState: record.publicImagePublicationState,
+      publicImageIsCurrent: record.publicImageURL != nil
+        && record.publicImagePublicationState
+          == story.primaryImagePublicationState(
+            fallbackFilename: record.imageFilenames.first ?? record.mediaFilename),
       publicPDFURL: record.publicPDFURL,
       canPublishImage: record.source == .screenshot,
       canCopyImage: record.source == .screenshot,
@@ -106,9 +136,10 @@ struct StoryWebEditor: NSViewRepresentable {
   }
 
   @MainActor
-  final class Coordinator: NSObject, WKScriptMessageHandler {
+  final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     weak var webView: WKWebView?
     var onAction: (StoryDocument, String, @escaping (Bool, String, String?) -> Void) -> Void
+    fileprivate var publicationSnapshot: PublicationSnapshot?
 
     init(
       onAction: @escaping (StoryDocument, String, @escaping (Bool, String, String?) -> Void) -> Void
@@ -141,6 +172,19 @@ struct StoryWebEditor: NSViewRepresentable {
         let arguments = String(data: data, encoding: .utf8)
       else { return }
       webView?.evaluateJavaScript("window.jesseeDidSave(...\(arguments))")
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+      sendPublicationSnapshot()
+    }
+
+    fileprivate func sendPublicationSnapshot() {
+      guard let webView, let publicationSnapshot,
+        let data = try? JesSeeJSON.encoder().encode(publicationSnapshot),
+        var json = String(data: data, encoding: .utf8)
+      else { return }
+      json = json.replacingOccurrences(of: "<", with: "\\u003c")
+      webView.evaluateJavaScript("window.jesseeDidUpdatePublicationState?.(\(json))")
     }
   }
 }

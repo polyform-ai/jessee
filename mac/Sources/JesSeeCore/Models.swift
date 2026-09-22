@@ -282,6 +282,30 @@ public struct StoryDocument: Codable, Sendable, Equatable {
   }
 }
 
+public struct StoryImagePublicationState: Codable, Sendable, Equatable {
+  public var filename: String
+  public var annotations: [StoryAnnotation]
+
+  public init(filename: String, annotations: [StoryAnnotation]) {
+    self.filename = filename
+    self.annotations = annotations
+  }
+}
+
+extension StoryDocument {
+  public func primaryImagePublicationState(
+    fallbackFilename: String? = nil
+  ) -> StoryImagePublicationState? {
+    if let step = steps.first(where: { $0.imageFilename != nil }),
+      let filename = step.imageFilename
+    {
+      return StoryImagePublicationState(filename: filename, annotations: step.imageAnnotations)
+    }
+    guard let fallbackFilename else { return nil }
+    return StoryImagePublicationState(filename: fallbackFilename, annotations: [])
+  }
+}
+
 public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
   public var id: String
   public var createdAt: Date
@@ -296,6 +320,10 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
   public var storyFilename: String?
   public var htmlFilename: String?
   public var pdfFilename: String?
+  public var publicImageUploadID: String?
+  public var publicImageURL: String?
+  public var publicImagePublicationState: StoryImagePublicationState?
+  public var publicImageCleanupUploadIDs: [String]?
   public var publicPDFUploadID: String?
   public var publicPDFURL: String?
   public var publicPDFCleanupUploadIDs: [String]?
@@ -323,6 +351,10 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     storyFilename: String? = nil,
     htmlFilename: String? = nil,
     pdfFilename: String? = nil,
+    publicImageUploadID: String? = nil,
+    publicImageURL: String? = nil,
+    publicImagePublicationState: StoryImagePublicationState? = nil,
+    publicImageCleanupUploadIDs: [String]? = nil,
     publicPDFUploadID: String? = nil,
     publicPDFURL: String? = nil,
     publicPDFCleanupUploadIDs: [String]? = nil,
@@ -349,6 +381,10 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     self.storyFilename = storyFilename
     self.htmlFilename = htmlFilename
     self.pdfFilename = pdfFilename
+    self.publicImageUploadID = publicImageUploadID
+    self.publicImageURL = publicImageURL
+    self.publicImagePublicationState = publicImagePublicationState
+    self.publicImageCleanupUploadIDs = publicImageCleanupUploadIDs
     self.publicPDFUploadID = publicPDFUploadID
     self.publicPDFURL = publicPDFURL
     self.publicPDFCleanupUploadIDs = publicPDFCleanupUploadIDs
@@ -449,12 +485,14 @@ public struct JesSeeConfiguration: Codable, Sendable, Equatable {
   public var outputFolderPath: String
   public var setupCompleted: Bool
   public var aiProviderMode: AIProviderMode?
+  public var openAtLogin: Bool
   public var shareScreenshotsForStory: Bool
   public var shareAnonymousFeatureUsage: Bool
 
   public init(
     email: String = "", outputFolderPath: String = "", setupCompleted: Bool = false,
     aiProviderMode: AIProviderMode? = nil,
+    openAtLogin: Bool = true,
     shareScreenshotsForStory: Bool = true,
     shareAnonymousFeatureUsage: Bool = true
   ) {
@@ -462,6 +500,7 @@ public struct JesSeeConfiguration: Codable, Sendable, Equatable {
     self.outputFolderPath = outputFolderPath
     self.setupCompleted = setupCompleted
     self.aiProviderMode = aiProviderMode
+    self.openAtLogin = openAtLogin
     self.shareScreenshotsForStory = shareScreenshotsForStory
     self.shareAnonymousFeatureUsage = shareAnonymousFeatureUsage
   }
@@ -471,6 +510,7 @@ public struct JesSeeConfiguration: Codable, Sendable, Equatable {
     case outputFolderPath
     case setupCompleted
     case aiProviderMode
+    case openAtLogin
     case shareScreenshotsForStory
     case shareScreenshotsWithOpenAI
     case shareAnonymousFeatureUsage
@@ -483,6 +523,7 @@ public struct JesSeeConfiguration: Codable, Sendable, Equatable {
     setupCompleted = try container.decodeIfPresent(Bool.self, forKey: .setupCompleted) ?? false
     aiProviderMode = try container.decodeIfPresent(AIProviderMode.self, forKey: .aiProviderMode)
     if aiProviderMode == nil, setupCompleted { aiProviderMode = .bringYourOwnKey }
+    openAtLogin = try container.decodeIfPresent(Bool.self, forKey: .openAtLogin) ?? true
     shareScreenshotsForStory =
       try container.decodeIfPresent(Bool.self, forKey: .shareScreenshotsForStory)
       ?? container.decodeIfPresent(Bool.self, forKey: .shareScreenshotsWithOpenAI)
@@ -497,6 +538,7 @@ public struct JesSeeConfiguration: Codable, Sendable, Equatable {
     try container.encode(outputFolderPath, forKey: .outputFolderPath)
     try container.encode(setupCompleted, forKey: .setupCompleted)
     try container.encodeIfPresent(aiProviderMode, forKey: .aiProviderMode)
+    try container.encode(openAtLogin, forKey: .openAtLogin)
     try container.encode(shareScreenshotsForStory, forKey: .shareScreenshotsForStory)
     try container.encode(shareAnonymousFeatureUsage, forKey: .shareAnonymousFeatureUsage)
   }
