@@ -898,7 +898,7 @@ private struct CaptureDetailView: View {
                 let copied = store.copyPDF(recordID: record.id)
                 completion(copied, copied ? "PDF copied" : "JesSee could not copy the PDF", nil)
               } else if action == "saveAndCopyPublicImageURL" {
-                if let publicURL = store.copyPublicImageURL(recordID: record.id) {
+                if let publicURL = await store.copyPublicImageURL(recordID: record.id) {
                   completion(true, "Copied", publicURL)
                 } else {
                   completion(false, "JesSee could not find the screenshot URL.", nil)

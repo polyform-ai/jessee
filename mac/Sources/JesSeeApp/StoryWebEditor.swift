@@ -12,6 +12,7 @@ struct StoryWebEditor: NSViewRepresentable {
     var story: StoryDocument
     var frames: [Frame]
     var publicImageURL: String?
+    var publicImageIsCurrent: Bool
     var publicPDFURL: String?
     var canPublishImage: Bool
     var canCopyImage: Bool
@@ -74,6 +75,8 @@ struct StoryWebEditor: NSViewRepresentable {
       story: story,
       frames: frames,
       publicImageURL: record.publicImageURL,
+      publicImageIsCurrent: record.publicImageURL != nil
+        && record.publicImagePublicationState == story.primaryImagePublicationState,
       publicPDFURL: record.publicPDFURL,
       canPublishImage: record.source == .screenshot,
       canCopyImage: record.source == .screenshot,

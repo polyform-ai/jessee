@@ -51,6 +51,7 @@ interface EditorPayload {
   story: Story;
   frames: Frame[];
   publicImageURL?: string;
+  publicImageIsCurrent: boolean;
   publicPDFURL?: string;
   canPublishImage: boolean;
   canCopyImage: boolean;
@@ -144,7 +145,7 @@ let drawingMode: AnnotationKind | undefined;
 let draftAnnotations: Annotation[] = [];
 let dragStart: { x: number; y: number } | undefined;
 let editRevision = 0;
-let publishedImageRevision = 0;
+let publishedImageRevision: number | undefined = payload.publicImageIsCurrent ? 0 : undefined;
 let pendingSaveRevision: number | undefined;
 let pendingAction: BridgeMessage["type"] | undefined;
 let markupResizeObserver: ResizeObserver | undefined;
@@ -318,7 +319,7 @@ function bindShellEvents(): void {
     ?.addEventListener("click", () => send("saveAndPublishPDF"));
   document.querySelector<HTMLButtonElement>("#screenshotURLAction")
     ?.addEventListener("click", () =>
-      send(payload.publicImageURL && editRevision === publishedImageRevision
+      send(payload.publicImageURL && publishedImageRevision === editRevision
         ? "saveAndCopyPublicImageURL" : "saveAndPublishImage")
     );
   document.querySelector<HTMLButtonElement>("#copyImage")
@@ -453,7 +454,7 @@ function updateScreenshotURLAction(): void {
 
 function screenshotURLActionLabel(): string {
   if (!payload.publicImageURL) return "Create & copy URL";
-  return editRevision === publishedImageRevision ? "Copy URL" : "Update & copy URL";
+  return publishedImageRevision === editRevision ? "Copy URL" : "Update & copy URL";
 }
 
 function isPublishAction(action?: BridgeMessage["type"]): boolean {

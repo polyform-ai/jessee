@@ -414,12 +414,16 @@ final class AppStore: ObservableObject {
   }
 
   func copyPrimaryImage(recordID: String) async -> Bool {
-    guard let image = await primaryImageWithAnnotations(recordID: recordID) else {
+    guard let sourceWorkspace = workspace,
+      let record = captures.first(where: { $0.id == recordID }),
+      let prepared = await primaryImageWithAnnotations(record: record, in: sourceWorkspace)
+    else {
       show(.error("JesSee could not copy this screenshot."), asSystemNotification: true)
       return false
     }
+    guard isCurrentWorkspace(sourceWorkspace) else { return false }
     NSPasteboard.general.clearContents()
-    guard NSPasteboard.general.writeObjects([image]) else {
+    guard NSPasteboard.general.writeObjects([prepared.image]) else {
       show(.error("JesSee could not copy this screenshot."), asSystemNotification: true)
       return false
     }
@@ -427,16 +431,21 @@ final class AppStore: ObservableObject {
     return true
   }
 
-  func publishPrimaryImage(recordID: String, announceSuccess: Bool = true) async -> String? {
+  func publishPrimaryImage(
+    recordID: String, in preferredWorkspace: CaptureWorkspace? = nil,
+    announceSuccess: Bool = true
+  ) async -> String? {
     guard publishingCaptureID == nil,
-      let record = captures.first(where: { $0.id == recordID })
+      let sourceWorkspace = preferredWorkspace ?? workspace,
+      let record = await sourceWorkspace.record(id: recordID)
     else { return nil }
     publishingCaptureID = record.id
     defer { publishingCaptureID = nil }
 
     do {
-      guard let image = await primaryImageWithAnnotations(recordID: recordID),
-        let tiff = image.tiffRepresentation,
+      guard let prepared = await primaryImageWithAnnotations(
+        record: record, in: sourceWorkspace),
+        let tiff = prepared.image.tiffRepresentation,
         let bitmap = NSBitmapImageRep(data: tiff),
         let png = bitmap.representation(using: .png, properties: [:])
       else {
@@ -454,10 +463,7 @@ final class AppStore: ObservableObject {
       guard let publicURL = upload.publicURL else {
         throw JesSeeError.invalidResponse("Polyform did not return a public screenshot link.")
       }
-      guard let workspace else {
-        throw JesSeeError.outputFolderUnavailable
-      }
-      var updated = await workspace.record(id: record.id) ?? record
+      var updated = await sourceWorkspace.record(id: record.id) ?? record
       let cleanupIDs = ([updated.publicImageUploadID].compactMap { $0 }
         + (updated.publicImageCleanupUploadIDs ?? []))
         .filter { $0 != upload.id }
@@ -466,9 +472,10 @@ final class AppStore: ObservableObject {
         }
       updated.publicImageUploadID = upload.id
       updated.publicImageURL = publicURL.absoluteString
+      updated.publicImagePublicationState = prepared.publicationState
       updated.publicImageCleanupUploadIDs = cleanupIDs.isEmpty ? nil : cleanupIDs
       do {
-        try await workspace.save(updated)
+        try await sourceWorkspace.save(updated)
       } catch {
         do {
           try await withPolyformAuthentication { client, token in
@@ -480,7 +487,7 @@ final class AppStore: ObservableObject {
         }
         throw error
       }
-      replace(updated)
+      replace(updated, from: sourceWorkspace)
 
       var failedCleanupIDs: [String] = []
       for uploadID in cleanupIDs {
@@ -493,8 +500,9 @@ final class AppStore: ObservableObject {
         }
       }
       updated.publicImageCleanupUploadIDs = failedCleanupIDs.isEmpty ? nil : failedCleanupIDs
-      try await workspace.save(updated)
-      replace(updated)
+      try await sourceWorkspace.save(updated)
+      replace(updated, from: sourceWorkspace)
+      guard isCurrentWorkspace(sourceWorkspace) else { return nil }
       copyToPasteboard(publicURL.absoluteString)
       recordUsage(.screenshotPublished, feature: "public_screenshot")
       if announceSuccess {
@@ -517,10 +525,16 @@ final class AppStore: ObservableObject {
     }
   }
 
-  func copyPublicImageURL(recordID: String) -> String? {
-    guard let publicURL = captures.first(where: { $0.id == recordID })?.publicImageURL else {
-      return nil
-    }
+  func copyPublicImageURL(recordID: String) async -> String? {
+    guard let sourceWorkspace = workspace,
+      let record = await sourceWorkspace.record(id: recordID),
+      let storyFilename = record.storyFilename,
+      let story = try? await sourceWorkspace.read(
+        StoryDocument.self, filename: storyFilename, for: record),
+      record.publicImagePublicationState == story.primaryImagePublicationState,
+      let publicURL = record.publicImageURL,
+      isCurrentWorkspace(sourceWorkspace)
+    else { return nil }
     copyToPasteboard(publicURL)
     show(.success("Screenshot URL copied to clipboard."))
     return publicURL
@@ -720,7 +734,9 @@ final class AppStore: ObservableObject {
       selectedCaptureID = record.id
       let shouldPublish = isPublicLinkPublishingAvailable && isSignedIntoPolyform
       let publicURL = shouldPublish
-        ? await publishPrimaryImage(recordID: record.id, announceSuccess: false) : nil
+        ? await publishPrimaryImage(
+          recordID: record.id, in: workspace, announceSuccess: false) : nil
+      guard isCurrentWorkspace(workspace) else { return }
       readyCaptureID = record.id
       recordUsage(.captureAdded, feature: "screenshot", source: CaptureSource.screenshot.rawValue)
       if shouldPublish, publicURL == nil {
@@ -1360,17 +1376,29 @@ final class AppStore: ObservableObject {
     return rendered
   }
 
-  private func primaryImageWithAnnotations(recordID: String) async -> NSImage? {
-    guard let workspace, let record = captures.first(where: { $0.id == recordID }) else {
-      return nil
+  private func primaryImageWithAnnotations(
+    record: CaptureRecord, in sourceWorkspace: CaptureWorkspace
+  ) async -> PreparedPublishedImage? {
+    let story: StoryDocument? = if let filename = record.storyFilename {
+      try? await sourceWorkspace.read(StoryDocument.self, filename: filename, for: record)
+    } else {
+      nil
     }
-    let story = await loadStory(for: record)
     let step = story?.steps.first(where: { $0.imageFilename != nil })
     let filename = step?.imageFilename ?? record.imageFilenames.first ?? record.mediaFilename
-    let imageURL = workspace.directoryURL(for: record).appendingPathComponent(filename)
+    let imageURL = sourceWorkspace.directoryURL(for: record).appendingPathComponent(filename)
     guard let image = NSImage(contentsOf: imageURL) else { return nil }
-    return imageWithAnnotations(image, annotations: step?.imageAnnotations ?? [])
+    let annotations = step?.imageAnnotations ?? []
+    return PreparedPublishedImage(
+      image: imageWithAnnotations(image, annotations: annotations),
+      publicationState: StoryImagePublicationState(
+        filename: filename, annotations: annotations))
   }
+}
+
+private struct PreparedPublishedImage {
+  var image: NSImage
+  var publicationState: StoryImagePublicationState
 }
 
 private struct ProcessingServiceContext {

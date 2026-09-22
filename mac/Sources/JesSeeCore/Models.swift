@@ -282,6 +282,25 @@ public struct StoryDocument: Codable, Sendable, Equatable {
   }
 }
 
+public struct StoryImagePublicationState: Codable, Sendable, Equatable {
+  public var filename: String
+  public var annotations: [StoryAnnotation]
+
+  public init(filename: String, annotations: [StoryAnnotation]) {
+    self.filename = filename
+    self.annotations = annotations
+  }
+}
+
+extension StoryDocument {
+  public var primaryImagePublicationState: StoryImagePublicationState? {
+    guard let step = steps.first(where: { $0.imageFilename != nil }),
+      let filename = step.imageFilename
+    else { return nil }
+    return StoryImagePublicationState(filename: filename, annotations: step.imageAnnotations)
+  }
+}
+
 public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
   public var id: String
   public var createdAt: Date
@@ -298,6 +317,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
   public var pdfFilename: String?
   public var publicImageUploadID: String?
   public var publicImageURL: String?
+  public var publicImagePublicationState: StoryImagePublicationState?
   public var publicImageCleanupUploadIDs: [String]?
   public var publicPDFUploadID: String?
   public var publicPDFURL: String?
@@ -328,6 +348,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     pdfFilename: String? = nil,
     publicImageUploadID: String? = nil,
     publicImageURL: String? = nil,
+    publicImagePublicationState: StoryImagePublicationState? = nil,
     publicImageCleanupUploadIDs: [String]? = nil,
     publicPDFUploadID: String? = nil,
     publicPDFURL: String? = nil,
@@ -357,6 +378,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     self.pdfFilename = pdfFilename
     self.publicImageUploadID = publicImageUploadID
     self.publicImageURL = publicImageURL
+    self.publicImagePublicationState = publicImagePublicationState
     self.publicImageCleanupUploadIDs = publicImageCleanupUploadIDs
     self.publicPDFUploadID = publicPDFUploadID
     self.publicPDFURL = publicPDFURL

@@ -182,6 +182,7 @@ private struct WorkflowTestValue: Decodable, Equatable {
   object.removeValue(forKey: "processingRecovery")
   object.removeValue(forKey: "publicImageUploadID")
   object.removeValue(forKey: "publicImageURL")
+  object.removeValue(forKey: "publicImagePublicationState")
   object.removeValue(forKey: "publicImageCleanupUploadIDs")
   let legacy = try JSONSerialization.data(withJSONObject: object)
 
@@ -192,6 +193,26 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(decoded.processingProviderMode == nil)
   #expect(decoded.publicImageUploadID == nil)
   #expect(decoded.publicImageURL == nil)
+  #expect(decoded.publicImagePublicationState == nil)
+}
+
+@Test func publishedScreenshotStateTracksTheSelectedImageAndAnnotations() {
+  let annotation = StoryAnnotation(
+    id: "redaction", kind: .redaction, x: 0.1, y: 0.2, width: 0.3, height: 0.4)
+  let original = StoryDocument(
+    title: "Original", summary: "Before", keyPoints: [],
+    steps: [
+      StoryStep(
+        id: "step", startSeconds: 0, endSeconds: 1, title: "Step", narrative: "Text",
+        transcript: "", imageFilename: "screenshot.png")
+    ])
+  var textOnlyEdit = original
+  textOnlyEdit.title = "Edited title"
+  var redacted = textOnlyEdit
+  redacted.steps[0].imageAnnotations = [annotation]
+
+  #expect(original.primaryImagePublicationState == textOnlyEdit.primaryImagePublicationState)
+  #expect(original.primaryImagePublicationState != redacted.primaryImagePublicationState)
 }
 
 @Test func configurationOpensAtLoginByDefaultAndPreservesAnOptOut() throws {
