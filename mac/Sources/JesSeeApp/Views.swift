@@ -883,8 +883,13 @@ private struct CaptureDetailView: View {
       {
         StoryWebEditor(story: loadedStory.document, record: record, directoryURL: directory) {
           updatedStory, action, completion in
+          guard let actionWorkspace = store.workspaceForEditorAction(recordID: record.id) else {
+            completion(false, "JesSee could not find this story's Library.", nil)
+            return
+          }
           Task {
-            let saved = await store.saveStory(updatedStory, for: record)
+            let saved = await store.saveStory(
+              updatedStory, for: record, in: actionWorkspace)
             if saved {
               self.loadedStory = LoadedStory(recordID: record.id, document: updatedStory)
               if action == "saveAndOpenPDF" {
@@ -898,7 +903,9 @@ private struct CaptureDetailView: View {
                 let copied = store.copyPDF(recordID: record.id)
                 completion(copied, copied ? "PDF copied" : "JesSee could not copy the PDF", nil)
               } else if action == "saveAndCopyPublicImageURL" {
-                if let publicURL = await store.copyPublicImageURL(recordID: record.id) {
+                if let publicURL = await store.copyPublicImageURL(
+                  recordID: record.id, in: actionWorkspace)
+                {
                   completion(true, "Copied", publicURL)
                 } else {
                   completion(false, "JesSee could not find the screenshot URL.", nil)
@@ -914,8 +921,8 @@ private struct CaptureDetailView: View {
                   return
                 }
                 let publicURL = action == "saveAndPublishImage"
-                  ? await store.publishPrimaryImage(recordID: record.id)
-                  : await store.publishPDF(recordID: record.id)
+                  ? await store.publishPrimaryImage(recordID: record.id, in: actionWorkspace)
+                  : await store.publishPDF(recordID: record.id, in: actionWorkspace)
                 if let publicURL {
                   completion(true, "Copied", publicURL)
                 } else {

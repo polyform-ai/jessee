@@ -535,8 +535,10 @@ final class AppStore: ObservableObject {
     }
   }
 
-  func copyPublicImageURL(recordID: String) async -> String? {
-    guard let sourceWorkspace = workspace,
+  func copyPublicImageURL(
+    recordID: String, in preferredWorkspace: CaptureWorkspace? = nil
+  ) async -> String? {
+    guard let sourceWorkspace = preferredWorkspace ?? workspace,
       let record = await sourceWorkspace.record(id: recordID),
       let storyFilename = record.storyFilename,
       let story = try? await sourceWorkspace.read(
@@ -571,30 +573,41 @@ final class AppStore: ObservableObject {
     return try? await workspace.read(StoryDocument.self, filename: filename, for: record)
   }
 
-  func saveStory(_ story: StoryDocument, for record: CaptureRecord) async -> Bool {
-    guard let workspace else { return false }
+  func saveStory(
+    _ story: StoryDocument, for record: CaptureRecord,
+    in sourceWorkspace: CaptureWorkspace
+  ) async -> Bool {
     guard publishingCaptureID != record.id else {
       show(.error("Wait for the public-link update to finish before saving more edits."))
       return false
     }
     do {
-      try await workspace.write(story, filename: "story.json", for: record)
+      try await sourceWorkspace.write(story, filename: "story.json", for: record)
       let rendered = try DocumentRenderer.render(
-        story: story, in: workspace.directoryURL(for: record))
-      var updated = await workspace.record(id: record.id) ?? record
+        story: story, in: sourceWorkspace.directoryURL(for: record))
+      var updated = await sourceWorkspace.record(id: record.id) ?? record
       updated.title = story.title
       updated.storyFilename = "story.json"
       updated.htmlFilename = rendered.html
       updated.pdfFilename = rendered.pdf
-      try await workspace.save(updated)
-      replace(updated)
-      show(.success("Story and PDF updated."))
+      try await sourceWorkspace.save(updated)
+      replace(updated, from: sourceWorkspace)
+      if isCurrentWorkspaceLocation(sourceWorkspace) {
+        show(.success("Story and PDF updated."))
+      }
       recordUsage(.storyEdited, feature: "story_editor")
       return true
     } catch {
-      show(.error("JesSee could not save this story: \(error.localizedDescription)"))
+      if isCurrentWorkspaceLocation(sourceWorkspace) {
+        show(.error("JesSee could not save this story: \(error.localizedDescription)"))
+      }
       return false
     }
+  }
+
+  func workspaceForEditorAction(recordID: String) -> CaptureWorkspace? {
+    guard captures.contains(where: { $0.id == recordID }) else { return nil }
+    return workspace
   }
 
   func imageURL(filename: String, record: CaptureRecord) -> URL? {
@@ -606,8 +619,10 @@ final class AppStore: ObservableObject {
     workspace?.directoryURL(for: record)
   }
 
-  func publishPDF(recordID: String) async -> String? {
-    guard let sourceWorkspace = workspace,
+  func publishPDF(
+    recordID: String, in preferredWorkspace: CaptureWorkspace? = nil
+  ) async -> String? {
+    guard let sourceWorkspace = preferredWorkspace ?? workspace,
       let record = await sourceWorkspace.record(id: recordID)
     else { return nil }
     await beginPublication(for: record.id)
