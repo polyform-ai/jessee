@@ -85,4 +85,8 @@ test("publication state changes only with the shared screenshot", () => {
     ...story,
     steps: [{ imageFilename: "images/other.png", imageAnnotations: [] }]
   }), published);
+  assert.equal(
+    imagePublicationState({ ...story, steps: [{ imageAnnotations: [] }] }, "images/shot.png"),
+    published
+  );
 });

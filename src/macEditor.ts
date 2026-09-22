@@ -51,6 +51,7 @@ interface Frame {
 interface EditorPayload {
   story: Story;
   frames: Frame[];
+  fallbackImageFilename: string;
   publicImageURL?: string;
   publicImageIsCurrent: boolean;
   publicPDFURL?: string;
@@ -147,7 +148,7 @@ let draftAnnotations: Annotation[] = [];
 let dragStart: { x: number; y: number } | undefined;
 let editRevision = 0;
 let publishedImageState = payload.publicImageIsCurrent
-  ? imagePublicationState(payload.story)
+  ? imagePublicationState(payload.story, payload.fallbackImageFilename)
   : undefined;
 let pendingSaveRevision: number | undefined;
 let pendingImageState: string | undefined;
@@ -420,7 +421,7 @@ function send(type: BridgeMessage["type"]): void {
   pendingAction = type;
   setActionPending(type);
   const story = serializeStory();
-  pendingImageState = imagePublicationState(story);
+  pendingImageState = imagePublicationState(story, payload.fallbackImageFilename);
   const message: BridgeMessage = { type, story };
   const bridge = window.webkit?.messageHandlers?.storyEditor;
   if (bridge) bridge.postMessage(message);
@@ -484,7 +485,8 @@ function screenshotURLActionLabel(): string {
 
 function screenshotImageIsPublished(): boolean {
   return publishedImageState !== undefined
-    && publishedImageState === imagePublicationState(serializeStory());
+    && publishedImageState
+      === imagePublicationState(serializeStory(), payload.fallbackImageFilename);
 }
 
 function isPublishAction(action?: BridgeMessage["type"]): boolean {

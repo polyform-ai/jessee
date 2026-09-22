@@ -11,6 +11,7 @@ struct StoryWebEditor: NSViewRepresentable {
   struct Payload: Encodable {
     var story: StoryDocument
     var frames: [Frame]
+    var fallbackImageFilename: String
     var publicImageURL: String?
     var publicImageIsCurrent: Bool
     var publicPDFURL: String?
@@ -74,9 +75,12 @@ struct StoryWebEditor: NSViewRepresentable {
     let payload = Payload(
       story: story,
       frames: frames,
+      fallbackImageFilename: record.imageFilenames.first ?? record.mediaFilename,
       publicImageURL: record.publicImageURL,
       publicImageIsCurrent: record.publicImageURL != nil
-        && record.publicImagePublicationState == story.primaryImagePublicationState,
+        && record.publicImagePublicationState
+          == story.primaryImagePublicationState(
+            fallbackFilename: record.imageFilenames.first ?? record.mediaFilename),
       publicPDFURL: record.publicPDFURL,
       canPublishImage: record.source == .screenshot,
       canCopyImage: record.source == .screenshot,

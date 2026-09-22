@@ -5,11 +5,12 @@ export interface ImagePublicationStep {
 
 export function imagePublicationState<T extends {
   steps: readonly ImagePublicationStep[];
-}>(story: T): string | undefined {
+}>(story: T, fallbackFilename?: string): string | undefined {
   const step = story.steps.find((candidate) => candidate.imageFilename);
-  if (!step?.imageFilename) return undefined;
+  const filename = step?.imageFilename || fallbackFilename;
+  if (!filename) return undefined;
   return JSON.stringify({
-    filename: step.imageFilename,
-    annotations: step.imageAnnotations || []
+    filename,
+    annotations: step?.imageAnnotations || []
   });
 }

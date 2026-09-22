@@ -293,11 +293,16 @@ public struct StoryImagePublicationState: Codable, Sendable, Equatable {
 }
 
 extension StoryDocument {
-  public var primaryImagePublicationState: StoryImagePublicationState? {
-    guard let step = steps.first(where: { $0.imageFilename != nil }),
+  public func primaryImagePublicationState(
+    fallbackFilename: String? = nil
+  ) -> StoryImagePublicationState? {
+    if let step = steps.first(where: { $0.imageFilename != nil }),
       let filename = step.imageFilename
-    else { return nil }
-    return StoryImagePublicationState(filename: filename, annotations: step.imageAnnotations)
+    {
+      return StoryImagePublicationState(filename: filename, annotations: step.imageAnnotations)
+    }
+    guard let fallbackFilename else { return nil }
+    return StoryImagePublicationState(filename: fallbackFilename, annotations: [])
   }
 }
 

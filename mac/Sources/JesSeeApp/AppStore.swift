@@ -538,7 +538,9 @@ final class AppStore: ObservableObject {
       let storyFilename = record.storyFilename,
       let story = try? await sourceWorkspace.read(
         StoryDocument.self, filename: storyFilename, for: record),
-      record.publicImagePublicationState == story.primaryImagePublicationState,
+      record.publicImagePublicationState
+        == story.primaryImagePublicationState(
+          fallbackFilename: record.imageFilenames.first ?? record.mediaFilename),
       let publicURL = record.publicImageURL,
       isCurrentWorkspace(sourceWorkspace)
     else { return nil }
@@ -740,13 +742,14 @@ final class AppStore: ObservableObject {
       record.pdfFilename = rendered.pdf
       try await workspace.save(record)
       guard isCurrentWorkspace(workspace) else { return }
-      captures = await workspace.allRecords()
-      selectedCaptureID = record.id
       let shouldPublish = isPublicLinkPublishingAvailable && isSignedIntoPolyform
       let publicURL = shouldPublish
         ? await publishPrimaryImage(
           recordID: record.id, in: workspace, announceSuccess: false) : nil
       guard isCurrentWorkspace(workspace) else { return }
+      captures = await workspace.allRecords()
+      guard isCurrentWorkspace(workspace) else { return }
+      selectedCaptureID = record.id
       readyCaptureID = record.id
       recordUsage(.captureAdded, feature: "screenshot", source: CaptureSource.screenshot.rawValue)
       if shouldPublish, publicURL == nil {
@@ -1415,15 +1418,16 @@ final class AppStore: ObservableObject {
     } else {
       nil
     }
-    let step = story?.steps.first(where: { $0.imageFilename != nil })
-    let filename = step?.imageFilename ?? record.imageFilenames.first ?? record.mediaFilename
-    let imageURL = sourceWorkspace.directoryURL(for: record).appendingPathComponent(filename)
+    let fallbackFilename = record.imageFilenames.first ?? record.mediaFilename
+    let publicationState = story?.primaryImagePublicationState(
+      fallbackFilename: fallbackFilename)
+      ?? StoryImagePublicationState(filename: fallbackFilename, annotations: [])
+    let imageURL = sourceWorkspace.directoryURL(for: record).appendingPathComponent(
+      publicationState.filename)
     guard let image = NSImage(contentsOf: imageURL) else { return nil }
-    let annotations = step?.imageAnnotations ?? []
     return PreparedPublishedImage(
-      image: imageWithAnnotations(image, annotations: annotations),
-      publicationState: StoryImagePublicationState(
-        filename: filename, annotations: annotations))
+      image: imageWithAnnotations(image, annotations: publicationState.annotations),
+      publicationState: publicationState)
   }
 }
 

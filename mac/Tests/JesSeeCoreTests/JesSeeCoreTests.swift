@@ -211,8 +211,19 @@ private struct WorkflowTestValue: Decodable, Equatable {
   var redacted = textOnlyEdit
   redacted.steps[0].imageAnnotations = [annotation]
 
-  #expect(original.primaryImagePublicationState == textOnlyEdit.primaryImagePublicationState)
-  #expect(original.primaryImagePublicationState != redacted.primaryImagePublicationState)
+  #expect(original.primaryImagePublicationState() == textOnlyEdit.primaryImagePublicationState())
+  #expect(original.primaryImagePublicationState() != redacted.primaryImagePublicationState())
+
+  let textOnly = StoryDocument(
+    title: "Text only", summary: "Fallback", keyPoints: [],
+    steps: [
+      StoryStep(
+        id: "step", startSeconds: 0, endSeconds: 1, title: "Step", narrative: "Text",
+        transcript: "")
+    ])
+  #expect(
+    textOnly.primaryImagePublicationState(fallbackFilename: "screenshot.png")
+      == StoryImagePublicationState(filename: "screenshot.png", annotations: []))
 }
 
 @Test func configurationOpensAtLoginByDefaultAndPreservesAnOptOut() throws {
