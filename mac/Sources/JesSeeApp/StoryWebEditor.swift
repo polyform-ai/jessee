@@ -11,6 +11,7 @@ struct StoryWebEditor: NSViewRepresentable {
   struct Payload: Encodable {
     var story: StoryDocument
     var frames: [Frame]
+    var publicImageURL: String?
     var publicPDFURL: String?
     var canPublishImage: Bool
     var canCopyImage: Bool
@@ -72,6 +73,7 @@ struct StoryWebEditor: NSViewRepresentable {
     let payload = Payload(
       story: story,
       frames: frames,
+      publicImageURL: record.publicImageURL,
       publicPDFURL: record.publicPDFURL,
       canPublishImage: record.source == .screenshot,
       canCopyImage: record.source == .screenshot,

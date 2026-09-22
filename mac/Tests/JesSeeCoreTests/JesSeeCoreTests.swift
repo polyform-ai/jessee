@@ -180,6 +180,9 @@ private struct WorkflowTestValue: Decodable, Equatable {
   object.removeValue(forKey: "processingRetryPolicyVersion")
   object.removeValue(forKey: "processingProviderMode")
   object.removeValue(forKey: "processingRecovery")
+  object.removeValue(forKey: "publicImageUploadID")
+  object.removeValue(forKey: "publicImageURL")
+  object.removeValue(forKey: "publicImageCleanupUploadIDs")
   let legacy = try JSONSerialization.data(withJSONObject: object)
 
   let decoded = try JesSeeJSON.decoder().decode(CaptureRecord.self, from: legacy)
@@ -187,6 +190,19 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(decoded.automaticProcessingRetryAt == nil)
   #expect(decoded.processingRetryPolicyVersion == nil)
   #expect(decoded.processingProviderMode == nil)
+  #expect(decoded.publicImageUploadID == nil)
+  #expect(decoded.publicImageURL == nil)
+}
+
+@Test func configurationOpensAtLoginByDefaultAndPreservesAnOptOut() throws {
+  let legacy = Data(#"{"email":"","outputFolderPath":"","setupCompleted":false,"shareScreenshotsForStory":true,"shareAnonymousFeatureUsage":true}"#.utf8)
+  let decodedLegacy = try JesSeeJSON.decoder().decode(JesSeeConfiguration.self, from: legacy)
+  #expect(decodedLegacy.openAtLogin)
+
+  let optedOut = JesSeeConfiguration(openAtLogin: false)
+  let encoded = try JesSeeJSON.encoder().encode(optedOut)
+  let decoded = try JesSeeJSON.decoder().decode(JesSeeConfiguration.self, from: encoded)
+  #expect(!decoded.openAtLogin)
 }
 
 @Test func captureRecordPersistsTheProviderThatOwnsProcessing() throws {

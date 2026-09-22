@@ -2,6 +2,7 @@ import AVFoundation
 import AppKit
 import Carbon.HIToolbox
 import JesSeeCore
+import ServiceManagement
 import SwiftUI
 @preconcurrency import UserNotifications
 
@@ -138,6 +139,7 @@ final class AppStore: ObservableObject {
       }
     }
     Task {
+      if configuration.setupCompleted { applyOpenAtLoginPreference(announce: false) }
       if configuration.aiProviderMode == .polyformCovered { _ = try? await accessToken() }
       if configuration.shareAnonymousFeatureUsage {
         if let session = workflowSession {
@@ -167,6 +169,9 @@ final class AppStore: ObservableObject {
   var isSignedIntoPolyform: Bool {
     if case .signedIn = authenticationState { return true }
     return false
+  }
+  var openAtLoginNeedsApproval: Bool {
+    configuration.openAtLogin && SMAppService.mainApp.status == .requiresApproval
   }
 
   func selectProvider(_ mode: AIProviderMode) {
@@ -308,6 +313,7 @@ final class AppStore: ObservableObject {
   func finishSetup() {
     configuration.setupCompleted = true
     persistConfiguration()
+    applyOpenAtLoginPreference(announce: false)
     show(.success("JesSee is ready."))
     Task {
       _ = try? await UNUserNotificationCenter.current().requestAuthorization(
@@ -318,6 +324,12 @@ final class AppStore: ObservableObject {
   func setScreenshotSharing(_ enabled: Bool) {
     configuration.shareScreenshotsForStory = enabled
     persistConfiguration()
+  }
+
+  func setOpenAtLogin(_ enabled: Bool) {
+    configuration.openAtLogin = enabled
+    persistConfiguration()
+    applyOpenAtLoginPreference(announce: true)
   }
 
   func setAnonymousFeatureUsageSharing(_ enabled: Bool) {
@@ -415,7 +427,7 @@ final class AppStore: ObservableObject {
     return true
   }
 
-  func publishPrimaryImage(recordID: String) async -> String? {
+  func publishPrimaryImage(recordID: String, announceSuccess: Bool = true) async -> String? {
     guard publishingCaptureID == nil,
       let record = captures.first(where: { $0.id == recordID })
     else { return nil }
@@ -442,18 +454,76 @@ final class AppStore: ObservableObject {
       guard let publicURL = upload.publicURL else {
         throw JesSeeError.invalidResponse("Polyform did not return a public screenshot link.")
       }
+      guard let workspace else {
+        throw JesSeeError.outputFolderUnavailable
+      }
+      var updated = await workspace.record(id: record.id) ?? record
+      let cleanupIDs = ([updated.publicImageUploadID].compactMap { $0 }
+        + (updated.publicImageCleanupUploadIDs ?? []))
+        .filter { $0 != upload.id }
+        .reduce(into: [String]()) { result, id in
+          if !result.contains(id) { result.append(id) }
+        }
+      updated.publicImageUploadID = upload.id
+      updated.publicImageURL = publicURL.absoluteString
+      updated.publicImageCleanupUploadIDs = cleanupIDs.isEmpty ? nil : cleanupIDs
+      do {
+        try await workspace.save(updated)
+      } catch {
+        do {
+          try await withPolyformAuthentication { client, token in
+            try await client.deleteUpload(id: upload.id, accessToken: token)
+          }
+        } catch let rollbackError {
+          throw JesSeeError.serviceUnavailable(
+            "JesSee could not save or roll back the new screenshot URL. Upload \(upload.id) may need cleanup: \(rollbackError.localizedDescription)")
+        }
+        throw error
+      }
+      replace(updated)
+
+      var failedCleanupIDs: [String] = []
+      for uploadID in cleanupIDs {
+        do {
+          try await withPolyformAuthentication { client, token in
+            try await client.deleteUpload(id: uploadID, accessToken: token)
+          }
+        } catch {
+          failedCleanupIDs.append(uploadID)
+        }
+      }
+      updated.publicImageCleanupUploadIDs = failedCleanupIDs.isEmpty ? nil : failedCleanupIDs
+      try await workspace.save(updated)
+      replace(updated)
       copyToPasteboard(publicURL.absoluteString)
       recordUsage(.screenshotPublished, feature: "public_screenshot")
-      postSystemNotification(
-        title: "Screenshot URL copied to clipboard",
-        body: "JesSee uploaded the saved, edited screenshot.",
-        identifier: "screenshot-\(upload.id)")
-      show(.success("Screenshot URL copied to clipboard."))
+      if announceSuccess {
+        postSystemNotification(
+          title: "Screenshot URL copied to clipboard",
+          body: "JesSee uploaded the saved, edited screenshot.",
+          identifier: "screenshot-\(upload.id)")
+      }
+      if failedCleanupIDs.isEmpty {
+        if announceSuccess { show(.success("Screenshot URL copied to clipboard.")) }
+      } else {
+        show(
+          .error(
+            "The screenshot URL was copied, but JesSee could not retire a previous upload. JesSee will retry when you update the screenshot URL."))
+      }
       return publicURL.absoluteString
     } catch {
       show(.error(authenticationAwareError(error).localizedDescription))
       return nil
     }
+  }
+
+  func copyPublicImageURL(recordID: String) -> String? {
+    guard let publicURL = captures.first(where: { $0.id == recordID })?.publicImageURL else {
+      return nil
+    }
+    copyToPasteboard(publicURL)
+    show(.success("Screenshot URL copied to clipboard."))
+    return publicURL
   }
 
   func copyPDF(recordID: String) -> Bool {
@@ -648,9 +718,20 @@ final class AppStore: ObservableObject {
       guard isCurrentWorkspace(workspace) else { return }
       captures = await workspace.allRecords()
       selectedCaptureID = record.id
+      let shouldPublish = isPublicLinkPublishingAvailable && isSignedIntoPolyform
+      let publicURL = shouldPublish
+        ? await publishPrimaryImage(recordID: record.id, announceSuccess: false) : nil
       readyCaptureID = record.id
       recordUsage(.captureAdded, feature: "screenshot", source: CaptureSource.screenshot.rawValue)
-      show(.success("Screenshot saved and opened in your Library."), asSystemNotification: true)
+      if shouldPublish, publicURL == nil {
+        // publishPrimaryImage already surfaced the upload error; still open the local result.
+      } else if publicURL != nil {
+        show(
+          .success("Screenshot URL copied. Choose Screenshot URL or PDF in your Library."),
+          asSystemNotification: true)
+      } else {
+        show(.success("Screenshot saved. Sign in with Polyform to create its URL."), asSystemNotification: true)
+      }
     } catch {
       show(.error(authenticationAwareError(error).localizedDescription), asSystemNotification: true)
     }
@@ -1178,6 +1259,32 @@ final class AppStore: ObservableObject {
     else { return }
     configuration.setupCompleted = true
     setupStep = 3
+  }
+
+  private func applyOpenAtLoginPreference(announce: Bool) {
+    let service = SMAppService.mainApp
+    do {
+      if configuration.openAtLogin {
+        if service.status == .notRegistered { try service.register() }
+        if announce {
+          if service.status == .requiresApproval {
+            show(.success("Approve JesSee in System Settings → General → Login Items."))
+          } else {
+            show(.success("JesSee will open when you log in."))
+          }
+        }
+      } else {
+        if service.status != .notRegistered { try service.unregister() }
+        if announce { show(.success("JesSee will no longer open at login.")) }
+      }
+    } catch {
+      configuration.openAtLogin =
+        service.status == .enabled || service.status == .requiresApproval
+      persistConfiguration()
+      if announce {
+        show(.error("JesSee could not update the login setting: \(error.localizedDescription)"))
+      }
+    }
   }
 
   private func copyToPasteboard(_ value: String) {
