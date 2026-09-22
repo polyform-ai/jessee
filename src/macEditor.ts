@@ -8,7 +8,11 @@ import {
   type RectangleBounds
 } from "./annotationCoordinates";
 import { htmlBlocks, htmlText, narrativeHTML, renderBlocks } from "./richTextHTML";
-import { imagePublicationState } from "./imagePublicationState";
+import {
+  imagePublicationState,
+  serializedImagePublicationState,
+  type PublishedImageState
+} from "./imagePublicationState";
 import { normalizeSourceURL } from "./storyURL";
 
 type AnnotationKind = "highlight" | "redaction";
@@ -53,6 +57,7 @@ interface EditorPayload {
   frames: Frame[];
   fallbackImageFilename: string;
   publicImageURL?: string;
+  publicImagePublicationState?: PublishedImageState;
   publicImageIsCurrent: boolean;
   publicPDFURL?: string;
   canPublishImage: boolean;
@@ -76,6 +81,10 @@ declare global {
   interface Window {
     __JESSEE_EDITOR__: EditorPayload;
     jesseeDidSave?: (success: boolean, message: string, publicURL?: string) => void;
+    jesseeDidUpdatePublicationState?: (update: {
+      publicImageURL?: string;
+      publicImagePublicationState?: PublishedImageState;
+    }) => void;
     webkit?: {
       messageHandlers?: {
         storyEditor?: { postMessage: (message: BridgeMessage) => void };
@@ -147,9 +156,7 @@ let drawingMode: AnnotationKind | undefined;
 let draftAnnotations: Annotation[] = [];
 let dragStart: { x: number; y: number } | undefined;
 let editRevision = 0;
-let publishedImageState = payload.publicImageIsCurrent
-  ? imagePublicationState(payload.story, payload.fallbackImageFilename)
-  : undefined;
+let publishedImageState = serializedImagePublicationState(payload.publicImagePublicationState);
 let pendingSaveRevision: number | undefined;
 let pendingImageState: string | undefined;
 let pendingAction: BridgeMessage["type"] | undefined;
@@ -266,6 +273,13 @@ window.jesseeDidSave = (success, message, publicURL) => {
   );
   if (success && !hasNewerEdits) document.body.classList.remove("is-dirty");
   if (success && publicURL) showPublicLink(publicURL, "Copied");
+  updateScreenshotURLAction();
+};
+
+window.jesseeDidUpdatePublicationState = (update) => {
+  payload.publicImageURL = update.publicImageURL;
+  payload.publicImagePublicationState = update.publicImagePublicationState;
+  publishedImageState = serializedImagePublicationState(update.publicImagePublicationState);
   updateScreenshotURLAction();
 };
 

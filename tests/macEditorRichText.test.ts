@@ -8,7 +8,10 @@ import {
   normalizePointInBounds,
   pointIsInsideBounds
 } from "../src/annotationCoordinates.ts";
-import { imagePublicationState } from "../src/imagePublicationState.ts";
+import {
+  imagePublicationState,
+  serializedImagePublicationState
+} from "../src/imagePublicationState.ts";
 import { normalizeSourceURL } from "../src/storyURL.ts";
 
 function installDOM(): void {
@@ -88,5 +91,13 @@ test("publication state changes only with the shared screenshot", () => {
   assert.equal(
     imagePublicationState({ ...story, steps: [{ imageAnnotations: [] }] }, "images/shot.png"),
     published
+  );
+  const annotation = { id: "mark", kind: "highlight", x: 0.1, y: 0.2, width: 0.3, height: 0.4 };
+  assert.equal(
+    imagePublicationState({ ...story, steps: [{ imageFilename: "images/shot.png", imageAnnotations: [annotation] }] }),
+    serializedImagePublicationState({
+      filename: "images/shot.png",
+      annotations: [{ height: 0.4, width: 0.3, y: 0.2, x: 0.1, kind: "highlight", id: "mark" }]
+    })
   );
 });
