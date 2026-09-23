@@ -2,7 +2,7 @@
 
 ### Help AI see what you see.
 
-AI is bad at processing video. A walkthrough contains the full story, but sending every frame consumes enormous context, a folder of screenshots loses the sequence, and rewriting the recording as a prompt means doing the work twice.
+AI is bad at processing video. A screen recording contains the full story, but sending every frame consumes enormous context, a folder of screenshots loses the sequence, and rewriting the recording as a prompt means doing the work twice.
 
 JesSee is a native Mac app that records how you explain work, connects the narration to the important screen states, and turns the result into an editable visual story and one continuous PDF.
 
@@ -21,8 +21,8 @@ Use it for:
 - Automatic source webpage URLs for recordings started from supported browsers on macOS 15.2+
 - A live timer, microphone meter, drawing and highlighting controls
 - One global `⌥⇧S` shortcut to start or stop and process a recording
-- Video import for existing walkthroughs
-- Background transcription and story creation with timestamp-aligned screenshots
+- Video import for existing screen recordings
+- Background transcription and AI-chosen document structure with timestamp-aligned screenshots
 - A local library with processing state, retry, replay, and editable history
 - A Tiptap-based visual editor for headings, paragraphs, lists, callouts, image choice, and image markup
 - One continuous PDF plus an HTML copy, captions, transcript, screenshots, narration, and original video in a folder you control

@@ -12,6 +12,8 @@ struct StoryDraft: Decodable {
 
   var title: String
   var sourceURL: String?
+  var documentType: String?
+  var entryLabel: String?
   var summary: String
   var keyPoints: [String]
   var steps: [Step]
@@ -20,8 +22,11 @@ struct StoryDraft: Decodable {
     case title
     case sourceURL
     case sourceUrl
+    case documentType
+    case entryLabel
     case summary
     case keyPoints
+    case entries
     case steps
   }
 
@@ -31,9 +36,13 @@ struct StoryDraft: Decodable {
     sourceURL =
       try container.decodeIfPresent(String.self, forKey: .sourceURL)
       ?? container.decodeIfPresent(String.self, forKey: .sourceUrl)
+    documentType = try container.decodeIfPresent(String.self, forKey: .documentType)
+    entryLabel = try container.decodeIfPresent(String.self, forKey: .entryLabel)
     summary = try container.decode(String.self, forKey: .summary)
     keyPoints = try container.decode([String].self, forKey: .keyPoints)
-    steps = try container.decode([Step].self, forKey: .steps)
+    steps =
+      try container.decodeIfPresent([Step].self, forKey: .entries)
+      ?? container.decode([Step].self, forKey: .steps)
   }
 }
 
@@ -43,13 +52,14 @@ enum StoryRefinement {
 
   static func prompt(round: Int) -> String {
     """
-    Act as the final editor for a complete narrated visual walkthrough. This is refinement pass \(round) of \(maximumRounds).
+    Act as the final editor for a complete narrated visual document. This is refinement pass \(round) of \(maximumRounds).
     Read the entire current story, the full timestamped transcript, and every attached nearby screenshot before changing anything.
     Return the entire revised story as valid JSON matching this exact shape:
     \(DirectOpenAIClient.storyOutputJSON)
-    Make the story coherent from beginning to end. Correct titles, summaries, steps, or visual choices that conflict with the transcript or visible evidence. Merge or remove redundant and generic navigation steps. Preserve concrete requests and the speaker's direct, reader-facing voice.
+    Make the document coherent from beginning to end. Correct titles, summaries, entries, or visual choices that conflict with the transcript or visible evidence. Preserve concrete requests and the speaker's direct, reader-facing voice.
+    Infer the best structure from the speaker's purpose. Choose documentType and entryLabel freely; they are open-ended labels, not an enum or fixed list. Do not force the recording into sequential steps. Preserve ordered instructions for a process; preserve every distinct item for collections of issues, feedback, findings, requests, decisions, examples, or other items; and use clear standalone sections for thematic explanations. Audit the full transcript before returning JSON so no meaningful item is merged away or dropped.
     Never invent an action, requirement, label, or completed result. When the transcript is incomplete or mistranscribed, use clearly visible screenshot evidence only to clarify what is actually on screen; otherwise state the uncertainty or omit that incomplete idea.
-    For every retained step, choose screenshotTimeSeconds from the exact available screenshot times whose imageAttached value is true. Prefer the stable frame that best proves the step, including a useful annotation when present. Compare nearby before/after frames instead of automatically keeping the current image. Avoid loading, blank, transition, menu-hover, or incidental-click states unless that state is the subject of the step.
+    For every retained entry, choose screenshotTimeSeconds from the exact available screenshot times whose imageAttached value is true. Prefer the stable frame that best proves the entry, including a useful annotation when present. Compare nearby before/after frames instead of automatically keeping the current image. Avoid loading, blank, transition, menu-hover, or incidental-click states unless that state is the subject of the entry.
     Keep sourceURL only when it is already supported by the draft or clearly readable in the screenshots. Return JSON only.
     """
   }
@@ -99,9 +109,11 @@ enum StoryRefinement {
     let currentStory: [String: Any] = [
       "title": story.title,
       "sourceURL": story.sourceURL.map { $0 as Any } ?? NSNull(),
+      "documentType": story.documentType.map { $0 as Any } ?? NSNull(),
+      "entryLabel": story.entryLabel.map { $0 as Any } ?? NSNull(),
       "summary": story.summary,
       "keyPoints": story.keyPoints.map(\.text),
-      "steps": story.steps.map { step in
+      "entries": story.steps.map { step in
         [
           "startSeconds": step.startSeconds,
           "endSeconds": step.endSeconds,
@@ -134,10 +146,17 @@ enum StoryRefinement {
       as: UTF8.self)
   }
 
-  static func document(from draft: StoryDraft, eligibleFrames: [CapturedFrame]) -> StoryDocument {
+  static func document(
+    from draft: StoryDraft,
+    eligibleFrames: [CapturedFrame],
+    defaultDocumentType: String? = nil,
+    defaultEntryLabel: String? = nil
+  ) -> StoryDocument {
     StoryDocument(
       title: draft.title,
       sourceURL: PolyformClient.normalizedWebURL(draft.sourceURL),
+      documentType: draft.documentType ?? defaultDocumentType,
+      entryLabel: draft.entryLabel ?? defaultEntryLabel,
       summary: draft.summary,
       keyPoints: draft.keyPoints,
       steps: draft.steps.map { step in

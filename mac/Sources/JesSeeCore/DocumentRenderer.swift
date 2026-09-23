@@ -21,6 +21,7 @@ public enum DocumentRenderer {
   }
 
   private static func html(_ story: StoryDocument) -> String {
+    let sectionLabel = story.resolvedEntryLabel.uppercased()
     let keyPoints = story.keyPoints.map { "<li>\(escape($0.text))</li>" }.joined()
     let steps = story.steps.enumerated().map { index, step in
       let image =
@@ -34,7 +35,7 @@ public enum DocumentRenderer {
       let narrative = step.narrativeHTML ?? "<p>\(escape(step.narrative))</p>"
       return """
         <section class="step">
-          <p class="eyebrow">STEP \(index + 1)</p>
+          <p class="eyebrow">\(escape(sectionLabel)) \(index + 1)</p>
           <h2>\(escape(step.title))</h2>
           <div class="narrative">\(narrative)</div>
           \(image)
@@ -49,7 +50,7 @@ public enum DocumentRenderer {
       <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
       <title>\(escape(story.title))</title><style>
       :root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#17171b;background:#fff}body{max-width:900px;margin:0 auto;padding:64px 40px;line-height:1.55}h1{font-size:46px;line-height:1.05;letter-spacing:-.03em;margin:0 0 20px}h2{font-size:28px;line-height:1.15;margin:6px 0 10px}.summary{font-size:21px;color:#5b5b68}.summary p,.summary ul,.summary ol,.summary blockquote{margin:10px 0}.summary blockquote{border-left:4px solid #655cff;background:#f3f2ff;padding:12px 16px}.source{display:flex;gap:10px;align-items:baseline;margin:18px 0 0;font-size:14px;color:#696775}.source a{color:#4c43de;word-break:break-all}.points{padding:22px 28px;background:#f3f2ff;border-radius:18px;margin:32px 0}.points li{margin:8px 0}.step{border-top:1px solid #dedde8;padding:38px 0}.eyebrow{font-size:12px;font-weight:750;letter-spacing:.12em;color:#5a52ff;margin:0}.narrative{font-size:17px}.narrative p,.narrative ul,.narrative ol,.narrative blockquote{margin:10px 0}.narrative blockquote{border-left:4px solid #655cff;background:#f3f2ff;padding:12px 16px;border-radius:0 10px 10px 0}.step-image{margin:20px 0 0}.image-frame{position:relative;overflow:hidden;border-radius:14px;border:1px solid #dedde8}.step img{display:block;width:100%;height:auto}.annotation{position:absolute;box-sizing:border-box}.annotation.highlight{border:4px solid #ffae00;background:rgba(255,192,0,.18);border-radius:8px}.annotation.redaction{background:#111;border-radius:4px}.footer{border-top:1px solid #dedde8;padding-top:20px;color:#777;font-size:13px}
-      </style></head><body><header><p class="eyebrow">JESSEE VISUAL STORY</p><h1>\(escape(story.title))</h1><div class="summary">\(summary)</div>\(source)</header><div class="points"><strong>Key points</strong><ul>\(keyPoints)</ul></div>\(steps)<p class="footer">Created with JesSee · Turn a walkthrough into a story AI can use.</p></body></html>
+      </style></head><body><header><p class="eyebrow">\(escape(story.resolvedDocumentLabel.uppercased()))</p><h1>\(escape(story.title))</h1><div class="summary">\(summary)</div>\(source)</header><div class="points"><strong>Key points</strong><ul>\(keyPoints)</ul></div>\(steps)<p class="footer">Created with JesSee · Turn a recording into clear, shareable context.</p></body></html>
       """
   }
 
@@ -163,7 +164,8 @@ private final class StoryPDFView: NSView {
     let purple = NSColor(red: 0.35, green: 0.32, blue: 1, alpha: 1)
 
     drawText(
-      "JESSEE VISUAL STORY", in: NSRect(x: x, y: margin, width: contentWidth, height: 22),
+      story.resolvedDocumentLabel.uppercased(),
+      in: NSRect(x: x, y: margin, width: contentWidth, height: 22),
       font: .systemFont(ofSize: 10, weight: .bold), color: purple)
     drawText(
       story.title, in: NSRect(x: x, y: margin + 30, width: contentWidth, height: titleHeight),
@@ -201,7 +203,7 @@ private final class StoryPDFView: NSView {
       lineColor.setFill()
       NSRect(x: x, y: layout.y, width: contentWidth, height: 1).fill()
       drawText(
-        "STEP \(layout.index + 1)",
+        "\(story.resolvedEntryLabel.uppercased()) \(layout.index + 1)",
         in: NSRect(x: x, y: layout.y + 20, width: contentWidth, height: 18),
         font: .systemFont(ofSize: 10, weight: .bold), color: purple)
       let titleY = layout.y + 47

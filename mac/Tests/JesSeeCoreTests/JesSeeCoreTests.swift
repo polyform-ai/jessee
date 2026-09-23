@@ -323,7 +323,7 @@ private struct WorkflowTestValue: Decodable, Equatable {
     .init(
       status: 200,
       data: Data(
-        #"{"success":true,"result":{"output_json":{"title":"Story","source_url":"example.com/page","summary":"Summary","key_points":["Point"],"steps":[{"start_seconds":0,"end_seconds":1,"screenshot_time_seconds":null,"title":"Step","narrative":"Do it.","transcript":"Do it"}]}}}"#.utf8)),
+        #"{"success":true,"result":{"output_json":{"title":"Story","source_url":"example.com/page","document_type":"Product critique","entry_label":"Finding","summary":"Summary","key_points":["Point"],"entries":[{"start_seconds":0,"end_seconds":1,"screenshot_time_seconds":null,"title":"Finding","narrative":"Fix it.","transcript":"Fix it"}]}}}"#.utf8)),
     .init(
       status: 200,
       data: Data(
@@ -347,6 +347,8 @@ private struct WorkflowTestValue: Decodable, Equatable {
     frames: [], captureDirectory: FileManager.default.temporaryDirectory,
     accessToken: session.accessToken, includeScreenshotPixels: false)
   #expect(story.sourceURL == "https://example.com/page")
+  #expect(story.documentType == "Product critique")
+  #expect(story.entryLabel == "Finding")
 
   let temporaryPDF = FileManager.default.temporaryDirectory.appendingPathComponent(
     "\(UUID().uuidString).pdf")
@@ -574,7 +576,8 @@ private struct WorkflowTestValue: Decodable, Equatable {
     to: temporary.appendingPathComponent("screenshots/nearby.jpg"))
   let frames = [CapturedFrame(seconds: 8, filename: "screenshots/nearby.jpg")]
   let current = StoryDocument(
-    title: "Draft", summary: "Needs review", keyPoints: ["Old point"],
+    title: "Draft", documentType: "Design review", entryLabel: "Observation",
+    summary: "Needs review", keyPoints: ["Old point"],
     steps: [
       StoryStep(
         startSeconds: 0, endSeconds: 4, title: "Wrong title",
@@ -590,6 +593,8 @@ private struct WorkflowTestValue: Decodable, Equatable {
     current, transcript: transcript, frames: frames, captureDirectory: temporary, round: 1,
     accessToken: "token")
   #expect(refined.title == "Refined")
+  #expect(refined.documentType == "Design review")
+  #expect(refined.entryLabel == "Observation")
   #expect(refined.steps.first?.imageFilename == "screenshots/nearby.jpg")
 
   let body = try #require(StubURLProtocol.bodies().first ?? nil)
@@ -601,6 +606,10 @@ private struct WorkflowTestValue: Decodable, Equatable {
     JSONSerialization.jsonObject(with: Data(userInput.utf8)) as? [String: Any])
   let draft = try #require(context["currentStory"] as? [String: Any])
   #expect(draft["title"] as? String == "Draft")
+  #expect(draft["documentType"] as? String == "Design review")
+  #expect(draft["entryLabel"] as? String == "Observation")
+  #expect((draft["entries"] as? [[String: Any]])?.count == 1)
+  #expect(draft["steps"] == nil)
   #expect((context["availableScreenshots"] as? [[String: Any]])?.first?["imageAttached"] as? Bool == true)
 }
 
@@ -609,7 +618,7 @@ private struct WorkflowTestValue: Decodable, Equatable {
   configuration.protocolClasses = [StubURLProtocol.self]
   let client = DirectOpenAIClient(session: URLSession(configuration: configuration))
   let modelOutput =
-    #"{"title":"Final","sourceURL":null,"summary":"Clear","keyPoints":["Point"],"steps":[{"startSeconds":0,"endSeconds":4,"screenshotTimeSeconds":8,"title":"Inline auth details","narrative":"Place View auth details inline.","transcript":"this here should be"}]}"#
+    #"{"title":"Final","sourceURL":null,"documentType":"Implementation notes","entryLabel":"Change","summary":"Clear","keyPoints":["Point"],"entries":[{"startSeconds":0,"endSeconds":4,"screenshotTimeSeconds":8,"title":"Inline auth details","narrative":"Place View auth details inline.","transcript":"this here should be"}]}"#
   StubURLProtocol.prepare([
     .init(
       status: 200,
@@ -640,6 +649,8 @@ private struct WorkflowTestValue: Decodable, Equatable {
     current, transcript: transcript, frames: frames, captureDirectory: temporary, round: 2,
     apiKey: "key")
   #expect(refined.title == "Final")
+  #expect(refined.documentType == "Implementation notes")
+  #expect(refined.entryLabel == "Change")
   #expect(refined.steps.first?.imageFilename == "screenshots/nearby.jpg")
 
   let body = try #require(StubURLProtocol.bodies().first ?? nil)
@@ -953,6 +964,26 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(Set(story.keyPoints.map(\.id)).count == 2)
 }
 
+@Test func storyPresentationDefaultsLegacyStoriesAndRoundTripsOpenEndedLabels() throws {
+  let legacy = Data(#"{"title":"Legacy","summary":"Summary","keyPoints":[],"steps":[]}"#.utf8)
+  let legacyStory = try JesSeeJSON.decoder().decode(StoryDocument.self, from: legacy)
+  #expect(legacyStory.documentType == nil)
+  #expect(legacyStory.entryLabel == nil)
+  #expect(legacyStory.resolvedEntryLabel == "Step")
+  #expect(legacyStory.resolvedDocumentLabel == "JesSee visual story")
+
+  let reviewStory = StoryDocument(
+    title: "What I noticed", documentType: "Design critique", entryLabel: "Observation",
+    summary: "Three observations", keyPoints: [],
+    steps: [])
+  let decoded = try JesSeeJSON.decoder().decode(
+    StoryDocument.self, from: JesSeeJSON.encoder().encode(reviewStory))
+  #expect(decoded.documentType == "Design critique")
+  #expect(decoded.entryLabel == "Observation")
+  #expect(decoded.resolvedEntryLabel == "Observation")
+  #expect(decoded.resolvedDocumentLabel == "JesSee Design critique")
+}
+
 @Test func storyStepsDecodeWithoutRichEditorFields() throws {
   let data = Data(
     #"{"title":"Legacy","summary":"Summary","keyPoints":[],"steps":[{"id":"step-1","startSeconds":0,"endSeconds":2,"title":"Open settings","narrative":"Choose Settings.","transcript":"settings"}]}"#
@@ -1164,6 +1195,7 @@ private struct WorkflowTestValue: Decodable, Equatable {
   defer { try? FileManager.default.removeItem(at: temporary) }
   let story = StoryDocument(
     title: "A clearer workflow", sourceURL: "https://example.com/workflow",
+    documentType: "Product critique", entryLabel: "Finding",
     summary: "The finished explanation stands on its own.",
     summaryHTML: "<p>The finished explanation <strong>stands</strong> on its own.</p>",
     keyPoints: ["Capture the intent", "Keep the evidence"],
@@ -1182,6 +1214,10 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(
     try String(contentsOf: temporary.appendingPathComponent(output.html), encoding: .utf8).contains(
       "https://example.com/workflow"))
+  let html = try String(
+    contentsOf: temporary.appendingPathComponent(output.html), encoding: .utf8)
+  #expect(html.contains("JESSEE PRODUCT CRITIQUE"))
+  #expect(html.contains("FINDING 1"))
 }
 
 @Test func mediaToolsReadVideoExtractAudioAndCreateFrames() async throws {

@@ -261,7 +261,9 @@ public struct PolyformClient: Sendable {
         outputJSON: DirectOpenAIClient.storyOutputJSON),
       accessToken: accessToken)
     let eligibleFrames = attachedFrames.isEmpty ? frames : attachedFrames
-    return StoryRefinement.document(from: response.result, eligibleFrames: eligibleFrames)
+    return StoryRefinement.document(
+      from: response.result, eligibleFrames: eligibleFrames,
+      defaultDocumentType: story.documentType, defaultEntryLabel: story.entryLabel)
   }
 
   public func publishPDF(at fileURL: URL, accessToken: String) async throws -> ManagedUpload {

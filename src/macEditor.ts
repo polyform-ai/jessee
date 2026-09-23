@@ -41,6 +41,8 @@ interface StoryStep {
 interface Story {
   title: string;
   sourceURL?: string;
+  documentType?: string;
+  entryLabel?: string;
   summary: string;
   summaryHTML?: string;
   keyPoints: Array<{ id: string; text: string }>;
@@ -97,6 +99,9 @@ declare global {
 const payload = window.__JESSEE_EDITOR__;
 const app = document.querySelector<HTMLElement>("#app")!;
 if (!app || !payload) throw new Error("JesSee editor payload is missing.");
+
+const sectionLabel = normalizeLabel(payload.story.entryLabel, "Step");
+const sectionLabelLower = sectionLabel.toLocaleLowerCase();
 
 const StoryDocument = TiptapNode.create({
   name: "doc",
@@ -315,7 +320,7 @@ function renderShell(): void {
   app.innerHTML = `
     <div class="editor-app">
       <header class="editor-header">
-        <div><p class="kicker">Visual story editor</p><h1>Shape the story before you share it</h1><p>Edit like a document, then choose and mark up the strongest screenshot for each step.</p></div>
+        <div><p class="kicker">Visual story editor</p><h1>Shape the story before you share it</h1><p>Edit like a document, then choose and mark up the strongest screenshot for each ${escapeHTML(sectionLabelLower)}.</p></div>
         <div class="header-sharing">
           <div class="header-actions"><span id="saveStatus">Saved</span>${payload.canPublishImage ? "" : copyActions}<button class="button secondary" id="saveStory">Save</button>${standardActions}</div>
           <div class="public-link-row" id="publicLinkRow" hidden><span class="public-link-value" id="publicLink"></span><span id="publicLinkStatus"></span></div>
@@ -327,7 +332,7 @@ function renderShell(): void {
       </nav>
       <label class="source-field"><span>Source URL</span><input id="sourceURL" type="url" value="${escapeAttribute(payload.story.sourceURL || "")}" placeholder="https://example.com/page" aria-label="Source URL" /></label>
       <section class="paper" id="storyEditor"></section>
-      <footer><span>The PDF follows this same order and keeps every divider, image, list, and callout.</span><button class="button secondary" id="addStep">+ Add another step</button></footer>
+      <footer><span>The PDF follows this same order and keeps every divider, image, list, and callout.</span><button class="button secondary" id="addStep">+ Add another ${escapeHTML(sectionLabelLower)}</button></footer>
     </div>
     <dialog id="imagePicker" class="image-picker"><div class="picker-card" id="pickerCard"></div></dialog>`;
 }
@@ -543,8 +548,8 @@ function addStep(): void {
     id: crypto.randomUUID(),
     startSeconds: previous?.endSeconds ?? 0,
     endSeconds: previous?.endSeconds ?? 0,
-    title: "New step",
-    narrative: "Add the next part of the explanation.",
+    title: `New ${sectionLabelLower}`,
+    narrative: "Add the next part of the document.",
     transcript: "",
     imageFilename: previous?.imageFilename,
     imageAnnotations: []
@@ -555,8 +560,8 @@ function addStep(): void {
 
 function initialDocument(story: Story): JSONContent {
   const steps = story.steps.length ? story.steps : [{
-    id: crypto.randomUUID(), startSeconds: 0, endSeconds: 0, title: "First step",
-    narrative: "Add the first part of the explanation.", transcript: "", imageAnnotations: []
+    id: crypto.randomUUID(), startSeconds: 0, endSeconds: 0, title: `First ${sectionLabelLower}`,
+    narrative: "Add the first part of the document.", transcript: "", imageAnnotations: []
   }];
   return {
     type: "doc",
@@ -586,7 +591,7 @@ function stepNode(step: StoryStep, index: number): JSONContent {
       endSeconds: step.endSeconds,
       transcript: step.transcript,
       stepIndex: index,
-      stepLabel: `Step ${index + 1}`,
+      stepLabel: `${sectionLabel} ${index + 1}`,
       stepMeta: formatRange(step.startSeconds, step.endSeconds)
     },
     content: [
@@ -620,7 +625,7 @@ function serializeStory(): Story {
       id: String(node.attrs?.id || crypto.randomUUID()),
       startSeconds: Number(node.attrs?.startSeconds || 0),
       endSeconds: Number(node.attrs?.endSeconds || 0),
-      title: textOf(children(node).find((child) => child.type === "heading")) || `Step ${index + 1}`,
+      title: textOf(children(node).find((child) => child.type === "heading")) || `${sectionLabel} ${index + 1}`,
       narrative: htmlText(narrativeHTML),
       narrativeHTML,
       transcript: String(node.attrs?.transcript || ""),
@@ -629,7 +634,11 @@ function serializeStory(): Story {
     } satisfies StoryStep;
   });
   const sourceURL = normalizeSourceURL(mustFind<HTMLInputElement>("#sourceURL").value);
-  return { title: title || "Untitled story", sourceURL, summary, summaryHTML, keyPoints, steps };
+  return {
+    title: title || "Untitled story", sourceURL,
+    documentType: payload.story.documentType, entryLabel: payload.story.entryLabel,
+    summary, summaryHTML, keyPoints, steps
+  };
 }
 
 function openImagePicker(stepIndex: number): void {
@@ -653,7 +662,7 @@ function renderPicker(): void {
   const frame = candidates[candidateIndex];
   const card = mustFind<HTMLElement>("#pickerCard");
   card.innerHTML = `
-    <header><div><p class="kicker">Step ${activeStepIndex + 1} visual</p><h2>Choose it, then make the important part obvious</h2><p>${escapeHTML(step.title)}</p></div><button class="icon" id="closePicker" data-tooltip="Close image picker" aria-label="Close image picker" title="Close image picker">×</button></header>
+    <header><div><p class="kicker">${escapeHTML(sectionLabel)} ${activeStepIndex + 1} visual</p><h2>Choose it, then make the important part obvious</h2><p>${escapeHTML(step.title)}</p></div><button class="icon" id="closePicker" data-tooltip="Close image picker" aria-label="Close image picker" title="Close image picker">×</button></header>
     <div class="picker-toolbar">
       <div class="segmented"><button id="bestFrames" class="${showAllFrames ? "" : "active"}">Best matches</button><button id="allFrames" class="${showAllFrames ? "active" : ""}">All images</button></div>
       <div class="markup-tools"><button id="highlightMode" class="${drawingMode === "highlight" ? "active" : ""}">Highlight</button><button id="redactMode" class="${drawingMode === "redaction" ? "active" : ""}">Redact</button><button id="undoMarkup" ${draftAnnotations.length ? "" : "disabled"}>Undo</button><button id="clearMarkup" ${draftAnnotations.length ? "" : "disabled"}>Clear</button></div>
@@ -861,6 +870,11 @@ function formatSeconds(value: number): string {
 
 function clamp(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+function normalizeLabel(value: string | undefined, fallback: string): string {
+  const normalized = value?.trim().replace(/\s+/g, " ").slice(0, 48) || "";
+  return normalized || fallback;
 }
 
 function escapeHTML(value: string): string {
