@@ -263,18 +263,23 @@ public struct StoryKeyPoint: Codable, Sendable, Equatable, Identifiable {
 public struct StoryDocument: Codable, Sendable, Equatable {
   public var title: String
   public var sourceURL: String?
+  public var documentType: String?
+  public var entryLabel: String?
   public var summary: String
   public var summaryHTML: String?
   public var keyPoints: [StoryKeyPoint]
   public var steps: [StoryStep]
 
   public init(
-    title: String, sourceURL: String? = nil, summary: String, summaryHTML: String? = nil,
+    title: String, sourceURL: String? = nil, documentType: String? = nil,
+    entryLabel: String? = nil, summary: String, summaryHTML: String? = nil,
     keyPoints: [String],
     steps: [StoryStep]
   ) {
     self.title = title
     self.sourceURL = sourceURL
+    self.documentType = documentType
+    self.entryLabel = entryLabel
     self.summary = summary
     self.summaryHTML = summaryHTML
     self.keyPoints = keyPoints.map { StoryKeyPoint(text: $0) }
@@ -293,6 +298,13 @@ public struct StoryImagePublicationState: Codable, Sendable, Equatable {
 }
 
 extension StoryDocument {
+  public var resolvedEntryLabel: String { displayLabel(entryLabel, fallback: "Step") }
+
+  public var resolvedDocumentLabel: String {
+    let type = displayLabel(documentType, fallback: "visual story")
+    return "JesSee \(type)"
+  }
+
   public func primaryImagePublicationState(
     fallbackFilename: String? = nil
   ) -> StoryImagePublicationState? {
@@ -304,6 +316,12 @@ extension StoryDocument {
     guard let fallbackFilename else { return nil }
     return StoryImagePublicationState(filename: fallbackFilename, annotations: [])
   }
+}
+
+private func displayLabel(_ value: String?, fallback: String) -> String {
+  let normalized = value?.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ") ?? ""
+  guard !normalized.isEmpty else { return fallback }
+  return String(normalized.prefix(48))
 }
 
 public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {

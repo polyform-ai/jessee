@@ -93,6 +93,7 @@ else
 
 This release is signed by Polyform, notarized by Apple, and can update itself from inside JesSee.
 
+- Let JesSee infer the structure that fits each recording—tutorial steps, issues, findings, decisions, examples, or another useful document shape—without dropping distinct items.
 - Record with a visible timer and live microphone level.
 - Draw, highlight, undo, clear, redo, or stop directly from the floating controls.
 - Press ⌥⇧S again from anywhere to stop and process the recording.

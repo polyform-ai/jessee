@@ -4,17 +4,18 @@ public struct DirectOpenAIClient: Sendable {
   public static let transcriptionModel = "whisper-1"
   public static let storyModel = "gpt-5.6-sol"
   static let storyOutputJSON = """
-    {"title":"string","sourceURL":"string or null","summary":"string","keyPoints":["string"],"steps":[{"startSeconds":0,"endSeconds":5,"screenshotTimeSeconds":4.5,"title":"string","narrative":"string","transcript":"string"}]}
+    {"title":"string","sourceURL":"string or null","documentType":"string","entryLabel":"singular string","summary":"string","keyPoints":["string"],"entries":[{"startSeconds":0,"endSeconds":5,"screenshotTimeSeconds":4.5,"title":"string","narrative":"string","transcript":"string"}]}
     """
   static let storyPrompt = """
-    Turn a narrated screen recording into a polished visual walkthrough that can replace watching the video.
+    Turn a narrated screen recording into a polished visual document that can replace watching the video.
     Write in the speaker's direct, reader-facing voice. Never say "the user said", "the narrator", or "this recording shows".
-    Preserve the speaker's goal, important decisions, concrete details, and chronological actions. Titles and narratives must make sense on their own.
+    Preserve the speaker's goal, important decisions, concrete details, chronological actions, and every distinct idea or request that matters. Titles and narratives must make sense on their own.
     Return only valid JSON matching this example shape:
     \(storyOutputJSON)
-    Use the transcript timestamps. Keep each step focused and choose boundaries that make a useful screenshot possible.
-    For every step, choose screenshotTimeSeconds from the exact available screenshot times. When imageAttached is true for any screenshot, choose only among those attached images. Choose the image that best proves the point, not merely the image nearest the end of the step. Prefer a clearly marked-up image or a stable resulting state. Avoid loading skeletons, blank transitions, and incidental clicks unless the missing or empty state is itself the issue. If the narration contrasts two materially different states, make separate steps so each state has its own visual evidence.
-    Omit generic navigation steps when they do not help explain the requested outcome.
+    Infer the best document structure from the speaker's actual purpose. Choose documentType and entryLabel freely; they are open-ended labels, not an enum. Tutorial, issue report, review notes, decision log, and their entry labels are examples only, not a fixed list.
+    Do not force the recording into sequential steps. If it teaches a process, use ordered instructional entries. If it collects issues, feedback, findings, requests, decisions, examples, or other items, give every distinct item its own entry even when related or mentioned briefly. For thematic explanations, create the clearest standalone sections. Before returning JSON, audit the full transcript so no meaningful item is merged away or dropped.
+    Use the transcript timestamps. Keep each entry focused and choose boundaries that make a useful screenshot possible.
+    For every entry, choose screenshotTimeSeconds from the exact available screenshot times. When imageAttached is true for any screenshot, choose only among those attached images. Choose the image that best proves the point, not merely the image nearest the end of the entry. Prefer a clearly marked-up image or a stable resulting state. Avoid loading skeletons, blank transitions, and incidental clicks unless the missing or empty state is itself the issue. If the narration contrasts two materially different states, make separate entries so each state has its own visual evidence.
     If a browser address is clearly visible, set sourceURL to the most specific readable HTTP or HTTPS URL. A clearly readable host may be normalized to https://host. Otherwise return null. Never infer a URL from unrelated page copy.
     """
 
@@ -105,7 +106,7 @@ public struct DirectOpenAIClient: Sendable {
       userContent.append([
         "type": "input_text",
         "text":
-          "Screenshot option at exactly \(frame.seconds) seconds. Return this exact value as screenshotTimeSeconds when this image best proves a step.",
+          "Screenshot option at exactly \(frame.seconds) seconds. Return this exact value as screenshotTimeSeconds when this image best proves an entry.",
       ])
       userContent.append([
         "type": "input_image", "image_url": "data:image/jpeg;base64,\(data.base64EncodedString())",
@@ -168,7 +169,7 @@ public struct DirectOpenAIClient: Sendable {
       userContent.append([
         "type": "input_text",
         "text":
-          "Nearby screenshot candidate at exactly \(frame.seconds) seconds. Return this exact value as screenshotTimeSeconds when this image best proves a step.",
+          "Nearby screenshot candidate at exactly \(frame.seconds) seconds. Return this exact value as screenshotTimeSeconds when this image best proves an entry.",
       ])
       userContent.append([
         "type": "input_image", "image_url": "data:image/jpeg;base64,\(data.base64EncodedString())",
@@ -201,7 +202,9 @@ public struct DirectOpenAIClient: Sendable {
     }
     let draft: StoryDraft = try decodeResponse(from: json, operation: "Story refinement")
     let eligibleFrames = attachedFrames.isEmpty ? frames : attachedFrames
-    return StoryRefinement.document(from: draft, eligibleFrames: eligibleFrames)
+    return StoryRefinement.document(
+      from: draft, eligibleFrames: eligibleFrames,
+      defaultDocumentType: story.documentType, defaultEntryLabel: story.entryLabel)
   }
 
   private func checkedData(for request: URLRequest, operation: String) async throws -> Data {

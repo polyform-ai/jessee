@@ -36,7 +36,7 @@ const releaseMetadata = {
   schemaVersion: 1,
   version,
   publishedAt: new Date().toISOString(),
-  notes: "JesSee is now a signed native Mac app with menu-bar recording, video import, a local library, and automatic updates.",
+  notes: "JesSee turns narrated recordings into AI-structured visual documents, with menu-bar capture, a local library, and automatic updates.",
   mac: {
     channel: "sparkle",
     automaticUpdates: true,
