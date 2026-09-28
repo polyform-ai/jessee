@@ -13,6 +13,11 @@ import {
   serializedImagePublicationState,
   type PublishedImageState
 } from "./imagePublicationState";
+import {
+  pdfPublicationState,
+  serializedPDFPublicationState,
+  type PDFPublicationState
+} from "./pdfPublicationState";
 import { normalizeSourceURL } from "./storyURL";
 
 type AnnotationKind = "highlight" | "redaction";
@@ -62,6 +67,7 @@ interface EditorPayload {
   publicImagePublicationState?: PublishedImageState;
   publicImageIsCurrent: boolean;
   publicPDFURL?: string;
+  publicPDFPublicationState?: PDFPublicationState;
   publicPDFNeedsCleanup: boolean;
   canPublishImage: boolean;
   canCopyImage: boolean;
@@ -97,6 +103,7 @@ declare global {
       publicImageURL?: string;
       publicImagePublicationState?: PublishedImageState;
       publicPDFURL?: string;
+      publicPDFPublicationState?: PDFPublicationState;
       publicPDFNeedsCleanup?: boolean;
     }) => void;
     webkit?: {
@@ -176,10 +183,13 @@ let editRevision = 0;
 let publishedImageState = serializedImagePublicationState(payload.publicImagePublicationState);
 let pendingSaveRevision: number | undefined;
 let pendingImageState: string | undefined;
+let pendingStoryState: string | undefined;
 let pendingAction: BridgeMessage["type"] | undefined;
 let markupResizeObserver: ResizeObserver | undefined;
 let savedPublicPDFURL = payload.publicPDFURL;
-let publishedPDFStoryState: string | undefined;
+let publishedPDFStoryState = payload.publicPDFPublicationState
+  ? serializedPDFPublicationState(payload.publicPDFPublicationState)
+  : undefined;
 
 const StoryImage = TiptapNode.create({
   name: "storyImage",
@@ -265,7 +275,7 @@ editor = new Editor({
   onSelectionUpdate: updateToolbar,
   onTransaction: updateToolbar
 });
-publishedPDFStoryState = payload.publicPDFURL ? currentStoryState() : undefined;
+publishedPDFStoryState ??= payload.publicPDFURL ? currentStoryState() : undefined;
 bindShellEvents();
 updateToolbar();
 if (payload.publicPDFURL) showPublicLink(payload.publicPDFURL);
@@ -274,9 +284,11 @@ if (payload.publicImageURL) showPublicLink(payload.publicImageURL);
 window.jesseeDidSave = (success, message, publicURL) => {
   const savedRevision = pendingSaveRevision;
   const savedImageState = pendingImageState;
+  const savedStoryState = pendingStoryState;
   const completedAction = pendingAction;
   pendingSaveRevision = undefined;
   pendingImageState = undefined;
+  pendingStoryState = undefined;
   pendingAction = undefined;
   setActionPending();
   const hasNewerEdits = savedRevision !== undefined && savedRevision !== editRevision;
@@ -292,18 +304,29 @@ window.jesseeDidSave = (success, message, publicURL) => {
     !success
   );
   if (success && !hasNewerEdits) document.body.classList.remove("is-dirty");
-  if (success && publicURL) showPublicLink(publicURL, "Copied");
+  if (success && publicURL) showPublicLink(publicURL, "Copied", savedStoryState);
   updateScreenshotURLAction();
 };
 
 window.jesseeDidUpdatePublicationState = (update) => {
   payload.publicImageURL = update.publicImageURL;
   payload.publicImagePublicationState = update.publicImagePublicationState;
-  payload.publicPDFURL = update.publicPDFURL;
   payload.publicPDFNeedsCleanup = update.publicPDFNeedsCleanup ?? false;
   if (!payload.canPublishImage) {
-    savedPublicPDFURL = update.publicPDFURL;
-    publishedPDFStoryState = update.publicPDFURL ? currentStoryState() : undefined;
+    if (!update.publicPDFURL) {
+      payload.publicPDFURL = undefined;
+      savedPublicPDFURL = undefined;
+      publishedPDFStoryState = undefined;
+    } else if (!pendingAction) {
+      payload.publicPDFURL = update.publicPDFURL;
+      savedPublicPDFURL = update.publicPDFURL;
+      publishedPDFStoryState = update.publicPDFPublicationState
+        ? serializedPDFPublicationState(update.publicPDFPublicationState)
+        : currentStoryState();
+      if (publishedPDFStoryState !== currentStoryState()) payload.publicPDFURL = undefined;
+    }
+  } else {
+    payload.publicPDFURL = update.publicPDFURL;
   }
   publishedImageState = serializedImagePublicationState(update.publicImagePublicationState);
   updateScreenshotURLAction();
@@ -480,6 +503,7 @@ function send(type: BridgeMessage["type"]): void {
   pendingAction = type;
   setActionPending(type);
   const story = serializeStory();
+  pendingStoryState = storyState(story);
   pendingImageState = imagePublicationState(story, payload.fallbackImageFilename);
   const message: BridgeMessage = { type, story };
   const bridge = window.webkit?.messageHandlers?.storyEditor;
@@ -568,7 +592,7 @@ function publicPDFActionHelp(): string {
   return payload.publicPDFURL ? "Copy saved public link" : "Generate public link";
 }
 
-function showPublicLink(publicURL: string, status = ""): void {
+function showPublicLink(publicURL: string, status = "", submittedStoryState?: string): void {
   if (payload.canPublishImage) {
     payload.publicImageURL = publicURL;
     updateScreenshotURLAction();
@@ -576,14 +600,15 @@ function showPublicLink(publicURL: string, status = ""): void {
     if (action) action.textContent = status ? `${status} · Copy again` : screenshotURLActionLabel();
     return;
   }
-  payload.publicPDFURL = publicURL;
   savedPublicPDFURL = publicURL;
-  publishedPDFStoryState = currentStoryState();
+  publishedPDFStoryState = submittedStoryState ?? publishedPDFStoryState ?? currentStoryState();
+  payload.publicPDFURL = currentStoryState() === publishedPDFStoryState
+    ? publicURL : undefined;
   const row = mustFind<HTMLElement>("#publicLinkRow");
   const link = mustFind<HTMLElement>("#publicLink");
-  link.textContent = publicURL;
+  link.textContent = payload.publicPDFURL || "";
   mustFind<HTMLElement>("#publicLinkStatus").textContent = status;
-  row.hidden = false;
+  row.hidden = !payload.publicPDFURL;
   const action = document.querySelector<HTMLButtonElement>("#getLink");
   if (action) action.textContent = publicPDFActionLabel();
 }
@@ -606,7 +631,11 @@ function updatePublicPDFLink(): void {
 }
 
 function currentStoryState(): string {
-  return JSON.stringify(serializeStory());
+  return serializedPDFPublicationState(pdfPublicationState(serializeStory()));
+}
+
+function storyState(story: Story): string {
+  return serializedPDFPublicationState(pdfPublicationState(story));
 }
 
 function metric(label: string, value: string, detail: string): string {

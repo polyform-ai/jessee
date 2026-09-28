@@ -559,6 +559,11 @@ final class AppStore: ObservableObject {
   ) async -> String? {
     guard let sourceWorkspace = preferredWorkspace ?? workspace,
       let record = await sourceWorkspace.record(id: recordID),
+      let storyFilename = record.storyFilename,
+      let story = try? await sourceWorkspace.read(
+        StoryDocument.self, filename: storyFilename, for: record),
+      record.publicPDFPublicationState == nil
+        || record.publicPDFPublicationState == story.pdfPublicationState,
       let publicURL = record.publicPDFURL,
       isCurrentWorkspaceLocation(sourceWorkspace)
     else { return nil }
@@ -603,15 +608,19 @@ final class AppStore: ObservableObject {
       } else {
         existingStory = nil
       }
-      try await sourceWorkspace.write(story, filename: "story.json", for: record)
+      let publishedPDFState = currentRecord.publicPDFPublicationState
+        ?? existingStory?.pdfPublicationState
+      let shouldInvalidatePublicPDF = currentRecord.publicPDFURL != nil
+        && publishedPDFState != story.pdfPublicationState
       let rendered = try DocumentRenderer.render(
         story: story, in: sourceWorkspace.directoryURL(for: record))
+      try await sourceWorkspace.write(story, filename: "story.json", for: record)
       var updated = await sourceWorkspace.record(id: record.id) ?? currentRecord
       updated.title = story.title
       updated.storyFilename = "story.json"
       updated.htmlFilename = rendered.html
       updated.pdfFilename = rendered.pdf
-      if existingStory != nil, existingStory != story {
+      if shouldInvalidatePublicPDF {
         let cleanupIDs = ([updated.publicPDFUploadID].compactMap { $0 }
           + (updated.publicPDFCleanupUploadIDs ?? []))
           .reduce(into: [String]()) { result, id in
@@ -619,6 +628,7 @@ final class AppStore: ObservableObject {
           }
         updated.publicPDFUploadID = nil
         updated.publicPDFURL = nil
+        updated.publicPDFPublicationState = nil
         updated.publicPDFCleanupUploadIDs = cleanupIDs.isEmpty ? nil : cleanupIDs
       }
       try await sourceWorkspace.save(updated)
@@ -653,11 +663,15 @@ final class AppStore: ObservableObject {
   func publishPDF(
     recordID: String, in preferredWorkspace: CaptureWorkspace? = nil
   ) async -> String? {
-    guard let sourceWorkspace = preferredWorkspace ?? workspace,
-      let record = await sourceWorkspace.record(id: recordID)
-    else { return nil }
-    await beginPublication(for: record.id)
+    guard let sourceWorkspace = preferredWorkspace ?? workspace else { return nil }
+    await beginPublication(for: recordID)
     defer { finishPublication() }
+    guard
+      let record = await sourceWorkspace.record(id: recordID),
+      let storyFilename = record.storyFilename,
+      let story = try? await sourceWorkspace.read(
+        StoryDocument.self, filename: storyFilename, for: record)
+    else { return nil }
     do {
       guard let filename = record.pdfFilename else {
         throw JesSeeError.invalidResponse("Create the PDF before publishing it.")
@@ -679,6 +693,7 @@ final class AppStore: ObservableObject {
         }
       updated.publicPDFUploadID = upload.id
       updated.publicPDFURL = publicURL.absoluteString
+      updated.publicPDFPublicationState = story.pdfPublicationState
       updated.publicPDFCleanupUploadIDs = cleanupIDs.isEmpty ? nil : cleanupIDs
       do {
         try await sourceWorkspace.save(updated)

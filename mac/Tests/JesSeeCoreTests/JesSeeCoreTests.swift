@@ -194,6 +194,7 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(decoded.publicImageUploadID == nil)
   #expect(decoded.publicImageURL == nil)
   #expect(decoded.publicImagePublicationState == nil)
+  #expect(decoded.publicPDFPublicationState == nil)
 }
 
 @Test func publishedScreenshotStateTracksTheSelectedImageAndAnnotations() {
@@ -224,6 +225,29 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(
     textOnly.primaryImagePublicationState(fallbackFilename: "screenshot.png")
       == StoryImagePublicationState(filename: "screenshot.png", annotations: []))
+}
+
+@Test func publishedPDFStateTracksOnlyRenderedStoryContent() {
+  let original = StoryDocument(
+    title: "A guide", sourceURL: "https://example.com", summary: "Summary",
+    keyPoints: ["Remember this"],
+    steps: [
+      StoryStep(
+        id: "first-step", startSeconds: 1, endSeconds: 2, title: "Open settings",
+        narrative: "Choose Settings.", transcript: "um choose settings",
+        imageFilename: "settings.png")
+    ])
+  var regeneratedIdentity = original
+  regeneratedIdentity.keyPoints[0].id = "another-key"
+  regeneratedIdentity.steps[0].id = "another-step"
+  regeneratedIdentity.steps[0].startSeconds = 20
+  regeneratedIdentity.steps[0].endSeconds = 30
+  regeneratedIdentity.steps[0].transcript = "a corrected transcript"
+  var renderedEdit = original
+  renderedEdit.steps[0].narrative = "Choose the Settings menu."
+
+  #expect(original.pdfPublicationState == regeneratedIdentity.pdfPublicationState)
+  #expect(original.pdfPublicationState != renderedEdit.pdfPublicationState)
 }
 
 @Test func configurationOpensAtLoginByDefaultAndPreservesAnOptOut() throws {

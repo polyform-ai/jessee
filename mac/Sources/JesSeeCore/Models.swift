@@ -297,6 +297,25 @@ public struct StoryImagePublicationState: Codable, Sendable, Equatable {
   }
 }
 
+public struct StoryPDFPublicationState: Codable, Sendable, Equatable {
+  public struct Entry: Codable, Sendable, Equatable {
+    public var title: String
+    public var narrative: String
+    public var narrativeHTML: String?
+    public var imageFilename: String?
+    public var imageAnnotations: [StoryAnnotation]
+  }
+
+  public var title: String
+  public var sourceURL: String?
+  public var documentType: String?
+  public var entryLabel: String?
+  public var summary: String
+  public var summaryHTML: String?
+  public var keyPoints: [String]
+  public var entries: [Entry]
+}
+
 extension StoryDocument {
   public var resolvedEntryLabel: String { displayLabel(entryLabel, fallback: "Step") }
 
@@ -315,6 +334,25 @@ extension StoryDocument {
     }
     guard let fallbackFilename else { return nil }
     return StoryImagePublicationState(filename: fallbackFilename, annotations: [])
+  }
+
+  public var pdfPublicationState: StoryPDFPublicationState {
+    StoryPDFPublicationState(
+      title: title,
+      sourceURL: sourceURL,
+      documentType: documentType,
+      entryLabel: entryLabel,
+      summary: summary,
+      summaryHTML: summaryHTML,
+      keyPoints: keyPoints.map(\.text),
+      entries: steps.map {
+        StoryPDFPublicationState.Entry(
+          title: $0.title,
+          narrative: $0.narrative,
+          narrativeHTML: $0.narrativeHTML,
+          imageFilename: $0.imageFilename,
+          imageAnnotations: $0.imageAnnotations)
+      })
   }
 }
 
@@ -344,6 +382,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
   public var publicImageCleanupUploadIDs: [String]?
   public var publicPDFUploadID: String?
   public var publicPDFURL: String?
+  public var publicPDFPublicationState: StoryPDFPublicationState?
   public var publicPDFCleanupUploadIDs: [String]?
   public var imageFilenames: [String]
   public var imageTimes: [String: Double]?
@@ -375,6 +414,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     publicImageCleanupUploadIDs: [String]? = nil,
     publicPDFUploadID: String? = nil,
     publicPDFURL: String? = nil,
+    publicPDFPublicationState: StoryPDFPublicationState? = nil,
     publicPDFCleanupUploadIDs: [String]? = nil,
     imageFilenames: [String] = [],
     imageTimes: [String: Double]? = nil,
@@ -405,6 +445,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     self.publicImageCleanupUploadIDs = publicImageCleanupUploadIDs
     self.publicPDFUploadID = publicPDFUploadID
     self.publicPDFURL = publicPDFURL
+    self.publicPDFPublicationState = publicPDFPublicationState
     self.publicPDFCleanupUploadIDs = publicPDFCleanupUploadIDs
     self.imageFilenames = imageFilenames
     self.imageTimes = imageTimes

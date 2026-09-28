@@ -12,6 +12,10 @@ import {
   imagePublicationState,
   serializedImagePublicationState
 } from "../src/imagePublicationState.ts";
+import {
+  pdfPublicationState,
+  serializedPDFPublicationState
+} from "../src/pdfPublicationState.ts";
 import { normalizeSourceURL } from "../src/storyURL.ts";
 
 function installDOM(): void {
@@ -99,5 +103,48 @@ test("publication state changes only with the shared screenshot", () => {
       filename: "images/shot.png",
       annotations: [{ height: 0.4, width: 0.3, y: 0.2, x: 0.1, kind: "highlight", id: "mark" }]
     })
+  );
+});
+
+test("PDF publication state ignores generated identity and timing fields", () => {
+  const story = {
+    title: "A guide",
+    sourceURL: "https://example.com",
+    summary: "Summary",
+    keyPoints: [{ id: "first-key", text: "Remember this" }],
+    steps: [{
+      id: "first-step",
+      startSeconds: 1,
+      endSeconds: 2,
+      title: "Open settings",
+      narrative: "Choose Settings.",
+      transcript: "um choose settings",
+      imageFilename: "images/settings.png",
+      imageAnnotations: []
+    }]
+  };
+  const published = serializedPDFPublicationState(pdfPublicationState(story));
+  const regeneratedIdentity = {
+    ...story,
+    keyPoints: [{ id: "another-key", text: "Remember this" }],
+    steps: [{
+      ...story.steps[0],
+      id: "another-step",
+      startSeconds: 20,
+      endSeconds: 30,
+      transcript: "a corrected transcript"
+    }]
+  };
+
+  assert.equal(
+    serializedPDFPublicationState(pdfPublicationState(regeneratedIdentity)),
+    published
+  );
+  assert.notEqual(
+    serializedPDFPublicationState(pdfPublicationState({
+      ...story,
+      steps: [{ ...story.steps[0], narrative: "Choose the Settings menu." }]
+    })),
+    published
   );
 });
