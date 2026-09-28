@@ -602,14 +602,27 @@ final class AppStore: ObservableObject {
       let currentRecord = await sourceWorkspace.record(id: record.id) ?? record
       let shouldInvalidatePublicPDF = currentRecord.publicPDFURL != nil
         && !currentRecord.publicPDFIsCurrent(for: story)
-      let rendered = try DocumentRenderer.render(
-        story: story, in: sourceWorkspace.directoryURL(for: record))
-      try await sourceWorkspace.write(story, filename: "story.json", for: record)
-      var updated = await sourceWorkspace.record(id: record.id) ?? currentRecord
+      let artifactID = UUID().uuidString.lowercased()
+      let storyFilename = "story-\(artifactID).json"
+      let htmlFilename = "JesSee Story-\(artifactID).html"
+      let pdfFilename = "JesSee Story-\(artifactID).pdf"
+      let directory = sourceWorkspace.directoryURL(for: record)
+      let newArtifactURLs = [storyFilename, htmlFilename, pdfFilename].map {
+        directory.appendingPathComponent($0)
+      }
+      do {
+        try await sourceWorkspace.write(story, filename: storyFilename, for: record)
+        _ = try DocumentRenderer.render(
+          story: story, in: directory, htmlFilename: htmlFilename, pdfFilename: pdfFilename)
+      } catch {
+        for url in newArtifactURLs { try? FileManager.default.removeItem(at: url) }
+        throw error
+      }
+      var updated = currentRecord
       updated.title = story.title
-      updated.storyFilename = "story.json"
-      updated.htmlFilename = rendered.html
-      updated.pdfFilename = rendered.pdf
+      updated.storyFilename = storyFilename
+      updated.htmlFilename = htmlFilename
+      updated.pdfFilename = pdfFilename
       if shouldInvalidatePublicPDF {
         let cleanupIDs = ([updated.publicPDFUploadID].compactMap { $0 }
           + (updated.publicPDFCleanupUploadIDs ?? []))
@@ -621,7 +634,18 @@ final class AppStore: ObservableObject {
         updated.publicPDFPublicationState = nil
         updated.publicPDFCleanupUploadIDs = cleanupIDs.isEmpty ? nil : cleanupIDs
       }
-      try await sourceWorkspace.save(updated)
+      do {
+        try await sourceWorkspace.save(updated)
+      } catch {
+        for url in newArtifactURLs { try? FileManager.default.removeItem(at: url) }
+        throw error
+      }
+      let committedFilenames = Set([storyFilename, htmlFilename, pdfFilename])
+      for filename in [
+        currentRecord.storyFilename, currentRecord.htmlFilename, currentRecord.pdfFilename,
+      ].compactMap({ $0 }) where !committedFilenames.contains(filename) {
+        try? FileManager.default.removeItem(at: directory.appendingPathComponent(filename))
+      }
       replace(updated, from: sourceWorkspace)
       if isCurrentWorkspaceLocation(sourceWorkspace) {
         show(.success("Story and PDF updated."))

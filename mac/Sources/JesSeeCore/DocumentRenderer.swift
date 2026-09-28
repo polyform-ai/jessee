@@ -6,8 +6,14 @@ public enum DocumentRenderer {
   public static func render(story: StoryDocument, in directory: URL) throws -> (
     html: String, pdf: String
   ) {
-    let htmlFilename = "JesSee Story.html"
-    let pdfFilename = "JesSee Story.pdf"
+    try render(
+      story: story, in: directory, htmlFilename: "JesSee Story.html",
+      pdfFilename: "JesSee Story.pdf")
+  }
+
+  public static func render(
+    story: StoryDocument, in directory: URL, htmlFilename: String, pdfFilename: String
+  ) throws -> (html: String, pdf: String) {
     try html(story).write(
       to: directory.appendingPathComponent(htmlFilename),
       atomically: true,

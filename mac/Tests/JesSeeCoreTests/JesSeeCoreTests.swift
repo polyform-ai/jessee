@@ -1262,7 +1262,11 @@ private struct WorkflowTestValue: Decodable, Equatable {
         narrative: "Explain the desired outcome directly.", transcript: "")
     ]
   )
-  let output = try DocumentRenderer.render(story: story, in: temporary)
+  let output = try DocumentRenderer.render(
+    story: story, in: temporary, htmlFilename: "versioned-story.html",
+    pdfFilename: "versioned-story.pdf")
+  #expect(output.html == "versioned-story.html")
+  #expect(output.pdf == "versioned-story.pdf")
   let document = PDFDocument(url: temporary.appendingPathComponent(output.pdf))
   #expect(document?.pageCount == 1)
   #expect(
