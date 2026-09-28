@@ -1,6 +1,6 @@
 # Polyform setup for JesSee
 
-JesSee uses one Polyform workflow-auth group for email-approved access to transcription, story creation, and optional public PDF or screenshot uploads. The Mac app uses PKCE, stores the returned bearer session in Keychain, and rotates the session through the workflow-auth refresh endpoint.
+JesSee uses one Polyform workflow-auth group for email-approved access to transcription, story creation, and optional public PDF or screenshot uploads. The Mac app uses PKCE and stores the returned access and refresh credentials in Keychain. The access bearer lasts two days; JesSee rotates both credentials after 12 hours while it is running and on the next launch after inactivity. Each successful refresh renews the refresh token's 30-day inactivity window, so email approval is required again only after 30 days without a successful refresh or when access is revoked.
 
 > Release status: Polyform Covered is enabled in signed releases. The release workflow injects the transcription and story workflow URLs, while Polyform email authentication also supports opt-in public PDF and screenshot links. Bring Your Own Key remains available as a separate mode.
 

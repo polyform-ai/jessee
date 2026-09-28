@@ -305,6 +305,41 @@ private struct WorkflowTestValue: Decodable, Equatable {
 }
 
 @Suite(.serialized) struct PolyformClientTests {
+@Test func workflowRefreshUsesRefreshTokenAndReturnsRollingSession() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [StubURLProtocol.self]
+  let client = PolyformClient(
+    configuration: PolyformServiceConfiguration(
+      apiBase: URL(string: "https://example.test")!, appKey: "app-key"),
+    session: URLSession(configuration: configuration))
+  StubURLProtocol.prepare([
+    .init(
+      status: 200,
+      data: Data(
+        #"{"access_token":"access-2","refresh_token":"refresh-2","expires_in":172800,"refresh_expires_in":2592000,"refresh_after_in":43200,"email":"person@example.com","grant_id":"grant-1"}"#.utf8))
+  ])
+  let beforeRefresh = Date()
+  let refreshed = try await client.refresh(
+    WorkflowAuthSession(
+      accessToken: "expired-access", refreshToken: "refresh-1",
+      email: "person@example.com", grantID: "grant-1",
+      expiresAt: Date().addingTimeInterval(-60),
+      refreshExpiresAt: Date().addingTimeInterval(86_400),
+      refreshAvailableAt: Date().addingTimeInterval(-60)))
+
+  #expect(refreshed.accessToken == "access-2")
+  #expect(refreshed.refreshToken == "refresh-2")
+  #expect(refreshed.canRenew())
+  #expect(refreshed.expiresAt >= beforeRefresh.addingTimeInterval(172_799))
+  #expect(refreshed.refreshExpiresAt! >= beforeRefresh.addingTimeInterval(2_591_999))
+  #expect(refreshed.refreshAvailableAt! >= beforeRefresh.addingTimeInterval(43_199))
+  let request = try #require(StubURLProtocol.requests().first)
+  #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+  let body = try #require(StubURLProtocol.bodies().first ?? nil)
+  let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: String])
+  #expect(json == ["refresh_token": "refresh-1"])
+}
+
 @Test func polyformClientUsesDocumentedSnakeCaseContracts() async throws {
   let configuration = URLSessionConfiguration.ephemeral
   configuration.protocolClasses = [StubURLProtocol.self]
@@ -780,18 +815,37 @@ private struct WorkflowTestValue: Decodable, Equatable {
 @Test func workflowSessionRoundTripPersistsAcrossCalls() throws {
   let service = "ai.polyform.jessee.workflow-tests.\(UUID().uuidString)"
   let session = WorkflowAuthSession(
-    accessToken: "token", email: "person@example.com", grantID: "grant",
-    expiresAt: Date().addingTimeInterval(3_600))
+    accessToken: "token", refreshToken: "refresh", email: "person@example.com",
+    grantID: "grant", expiresAt: Date().addingTimeInterval(3_600),
+    refreshExpiresAt: Date().addingTimeInterval(30 * 24 * 60 * 60),
+    refreshAvailableAt: Date().addingTimeInterval(12 * 60 * 60))
   defer { try? JesSeeKeychain.removeWorkflowSession(service: service) }
 
   try JesSeeKeychain.saveWorkflowSession(session, service: service)
   let reloaded = try #require(try JesSeeKeychain.loadWorkflowSession(service: service))
   #expect(reloaded.accessToken == session.accessToken)
+  #expect(reloaded.refreshToken == session.refreshToken)
   #expect(reloaded.email == session.email)
   #expect(reloaded.grantID == session.grantID)
   #expect(abs(reloaded.expiresAt.timeIntervalSince(session.expiresAt)) < 1)
+  #expect(
+    abs(try #require(reloaded.refreshExpiresAt).timeIntervalSince(
+      try #require(session.refreshExpiresAt))) < 1)
+  #expect(
+    abs(try #require(reloaded.refreshAvailableAt).timeIntervalSince(
+      try #require(session.refreshAvailableAt))) < 1)
   try JesSeeKeychain.removeWorkflowSession(service: service)
   #expect(try JesSeeKeychain.loadWorkflowSession(service: service) == nil)
+}
+
+@Test func legacyWorkflowSessionCanUpgradeDuringThirtyDayWindow() {
+  let now = Date()
+  let session = WorkflowAuthSession(
+    accessToken: "legacy-token", email: "person@example.com", grantID: "grant",
+    expiresAt: now.addingTimeInterval(-10 * 24 * 60 * 60))
+
+  #expect(session.canUpgradeLegacySession(at: now))
+  #expect(!session.canUpgradeLegacySession(at: now.addingTimeInterval(19 * 24 * 60 * 60)))
 }
 
 @Test func captureDimensionsPreserveAspectRatioWithinEncoderBounds() {

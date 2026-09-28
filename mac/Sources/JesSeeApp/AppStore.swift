@@ -67,6 +67,7 @@ final class AppStore: ObservableObject {
   private var processingTasks: [ProcessingTaskKey: Task<Void, Never>] = [:]
   private var processingNotificationTasks: [ProcessingTaskKey: Task<Void, Never>] = [:]
   private var refreshTask: Task<WorkflowAuthSession, Error>?
+  private var refreshScheduleTask: Task<Void, Never>?
   private var signInTask: Task<Void, Never>?
   private var workflowSession: WorkflowAuthSession?
   private var appHotKeys: GlobalHotKeyController?
@@ -81,7 +82,9 @@ final class AppStore: ObservableObject {
     polyformManagedAIAvailable = configuredService?.supportsManagedAI == true
     workflowSession = try? JesSeeKeychain.loadWorkflowSession()
     hasAPIKey = (try? JesSeeKeychain.loadAPIKey()) != nil
-    if let session = workflowSession, session.expiresAt > Date() {
+    if let session = workflowSession,
+      session.expiresAt > Date() || session.canRenew() || session.canUpgradeLegacySession()
+    {
       authenticationState = .signedIn(session.email)
       configuration.email = session.email
     } else {
@@ -147,6 +150,7 @@ final class AppStore: ObservableObject {
         }
       }
     }
+    scheduleSessionRefresh()
     Task {
       if configuration.setupCompleted { applyOpenAtLoginPreference(announce: false) }
       if configuration.aiProviderMode == .polyformCovered { _ = try? await accessToken() }
@@ -252,6 +256,7 @@ final class AppStore: ObservableObject {
             try JesSeeKeychain.saveWorkflowSession(session)
             workflowSession = session
             authenticationState = .signedIn(session.email)
+            scheduleSessionRefresh()
             configuration.email = session.email
             restoreCompletedSetupIfPossible(for: .polyformCovered)
             persistConfiguration()
@@ -1154,11 +1159,20 @@ final class AppStore: ObservableObject {
   private func accessToken() async throws -> String {
     guard let polyformClient else { throw JesSeeError.serviceNotConfigured }
     guard var session = workflowSession else { throw JesSeeError.signInRequired }
-    if session.expiresAt <= Date() {
+    let now = Date()
+    let hasRefreshToken = session.canRenew(at: now)
+    let canUpgradeLegacySession = session.canUpgradeLegacySession(at: now)
+    if session.expiresAt <= now, !hasRefreshToken, !canUpgradeLegacySession {
       signOutAfterAuthenticationFailure()
       throw JesSeeError.signInRequired
     }
-    if session.expiresAt.timeIntervalSinceNow <= 12 * 60 * 60 {
+    let refreshDue: Bool
+    if hasRefreshToken {
+      refreshDue = session.expiresAt <= now || (session.refreshAvailableAt ?? now) <= now
+    } else {
+      refreshDue = session.expiresAt.timeIntervalSince(now) <= 12 * 60 * 60
+    }
+    if refreshDue {
       do {
         let task: Task<WorkflowAuthSession, Error>
         if let refreshTask {
@@ -1176,8 +1190,12 @@ final class AppStore: ObservableObject {
         workflowSession = refreshed
         authenticationState = .signedIn(refreshed.email)
         session = refreshed
+        scheduleSessionRefresh()
       } catch PolyformClientError.refreshTooEarly {
         // The local clock can enter the refresh window slightly before the server.
+        scheduleSessionRefresh(at: Date().addingTimeInterval(5 * 60))
+        guard session.expiresAt > Date() else { throw PolyformClientError.refreshTooEarly }
+        return session.accessToken
       } catch PolyformClientError.authenticationRequired {
         if let current = workflowSession,
           current.grantID != session.grantID,
@@ -1193,11 +1211,31 @@ final class AppStore: ObservableObject {
         }
         return current.accessToken
       } catch {
+        if session.canRenew() || session.canUpgradeLegacySession() {
+          scheduleSessionRefresh(at: Date().addingTimeInterval(15 * 60))
+        }
         guard session.expiresAt > Date() else { throw error }
         return session.accessToken
       }
     }
+    scheduleSessionRefresh()
     return session.accessToken
+  }
+
+  private func scheduleSessionRefresh(at retryDate: Date? = nil) {
+    refreshScheduleTask?.cancel()
+    refreshScheduleTask = nil
+    guard let session = workflowSession else { return }
+    let targetDate =
+      retryDate ?? session.refreshAvailableAt
+      ?? session.expiresAt.addingTimeInterval(-12 * 60 * 60)
+    let delay = max(0, targetDate.timeIntervalSinceNow)
+    refreshScheduleTask = Task { [weak self] in
+      do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+      guard !Task.isCancelled, let self else { return }
+      refreshScheduleTask = nil
+      _ = try? await accessToken()
+    }
   }
 
   private func processingService(for provider: AIProviderMode?) async throws
@@ -1296,6 +1334,8 @@ final class AppStore: ObservableObject {
   private func clearWorkflowSession() {
     refreshTask?.cancel()
     refreshTask = nil
+    refreshScheduleTask?.cancel()
+    refreshScheduleTask = nil
     try? JesSeeKeychain.removeWorkflowSession()
     workflowSession = nil
     authenticationState = .signedOut

@@ -138,8 +138,14 @@ public struct PolyformClient: Sendable {
   }
 
   public func refresh(_ current: WorkflowAuthSession) async throws -> WorkflowAuthSession {
-    let request = try authorizedRequest(
-      url: configuration.authURL("refresh"), accessToken: current.accessToken, method: "POST")
+    var request = URLRequest(url: configuration.authURL("refresh"))
+    request.httpMethod = "POST"
+    if let refreshToken = current.refreshToken, !refreshToken.isEmpty {
+      request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+      request.httpBody = try encoder.encode(AuthRefreshBody(refreshToken: refreshToken))
+    } else {
+      request.setValue("Bearer \(current.accessToken)", forHTTPHeaderField: "Authorization")
+    }
     let response: AuthTokenResponse = try await data(for: request, refreshStatus: 409)
     return response.session
   }
@@ -504,23 +510,36 @@ private struct AuthExchangeBody: Encodable {
   }
 }
 
+private struct AuthRefreshBody: Encodable {
+  var refreshToken: String
+}
+
 private struct AuthTokenResponse: Decodable {
   var accessToken: String
+  var refreshToken: String?
   var expiresIn: TimeInterval
+  var refreshExpiresIn: TimeInterval?
+  var refreshAfterIn: TimeInterval?
   var email: String
   var grantID: String
 
   private enum CodingKeys: String, CodingKey {
     case accessToken
+    case refreshToken
     case expiresIn
+    case refreshExpiresIn
+    case refreshAfterIn
     case email
     case grantID = "grantId"
   }
 
   var session: WorkflowAuthSession {
-    WorkflowAuthSession(
-      accessToken: accessToken, email: email, grantID: grantID,
-      expiresAt: Date().addingTimeInterval(expiresIn))
+    let issuedAt = Date()
+    return WorkflowAuthSession(
+      accessToken: accessToken, refreshToken: refreshToken, email: email, grantID: grantID,
+      expiresAt: issuedAt.addingTimeInterval(expiresIn),
+      refreshExpiresAt: refreshExpiresIn.map { issuedAt.addingTimeInterval($0) },
+      refreshAvailableAt: refreshAfterIn.map { issuedAt.addingTimeInterval($0) })
   }
 }
 
