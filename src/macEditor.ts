@@ -72,6 +72,7 @@ interface EditorPayload {
   canPublishImage: boolean;
   canCopyImage: boolean;
   canCopyPDF: boolean;
+  totalEstimatedCostSaved: number;
   efficiency?: {
     videoMinutes: number;
     documentTokens: number;
@@ -106,6 +107,7 @@ declare global {
       publicPDFPublicationState?: PDFPublicationState;
       publicPDFNeedsCleanup?: boolean;
     }) => void;
+    jesseeDidUpdateEstimatedSavings?: (total: number) => void;
     webkit?: {
       messageHandlers?: {
         storyEditor?: { postMessage: (message: BridgeMessage) => void };
@@ -185,6 +187,7 @@ let pendingSaveRevision: number | undefined;
 let pendingImageState: string | undefined;
 let pendingStoryState: string | undefined;
 let pendingAction: BridgeMessage["type"] | undefined;
+let autosaveTimer: number | undefined;
 let markupResizeObserver: ResizeObserver | undefined;
 let savedPublicPDFURL = payload.publicPDFURL;
 let publishedPDFStoryState = payload.publicPDFPublicationState
@@ -304,6 +307,7 @@ window.jesseeDidSave = (success, message, publicURL) => {
     !success
   );
   if (success && !hasNewerEdits) document.body.classList.remove("is-dirty");
+  if (success && hasNewerEdits) scheduleAutosave(300);
   if (success && publicURL) showPublicLink(publicURL, "Copied", savedStoryState);
   updateScreenshotURLAction();
 };
@@ -333,23 +337,21 @@ window.jesseeDidUpdatePublicationState = (update) => {
   updatePublicPDFLink();
 };
 
+window.jesseeDidUpdateEstimatedSavings = (total) => {
+  payload.totalEstimatedCostSaved = total;
+  const value = document.querySelector<HTMLElement>("#totalEstimatedSavings");
+  if (value) value.textContent = formatCurrency(total);
+};
+
 function renderShell(): void {
-  const copyActions = [
-    payload.canCopyImage
-      ? `<button class="header-icon" id="copyImage" data-tooltip="Save and copy annotated image" title="Save and copy annotated image" aria-label="Save and copy annotated image">▣</button>`
-      : "",
-    payload.canCopyPDF
-      ? `<button class="header-icon pdf-icon" id="copyPDF" data-tooltip="Save and copy PDF" title="Save and copy PDF" aria-label="Save and copy PDF">PDF</button>`
-      : ""
-  ].join("");
-  const standardActions = payload.canPublishImage ? "" : `<button class="button primary" id="openPDF">Save & open PDF</button><button class="button secondary" id="getLink" data-tooltip="${publicPDFActionHelp()}" title="${publicPDFActionHelp()}">${publicPDFActionLabel()}</button>`;
+  const standardActions = payload.canPublishImage ? "" : `<button class="button primary" id="openPDF">Open PDF</button><button class="button secondary" id="getLink" data-tooltip="${publicPDFActionHelp()}" title="${publicPDFActionHelp()}">Get Link</button>`;
   const efficiency = payload.efficiency ? `
       <section class="efficiency-banner" aria-label="Estimated context savings">
-        ${metric("Video", formatMinutes(payload.efficiency.videoMinutes), "Recorded duration")}
-        ${metric("PDF context", formatCompact(payload.efficiency.documentTokens), "Estimated at one token per four text characters plus 1,100 tokens per selected image")}
-        ${metric("Raw video", formatCompact(payload.efficiency.videoTokens), "Estimated at 300 visual tokens per second")}
-        ${metric("Saved", `${payload.efficiency.percentSaved}%`, `${formatCompact(payload.efficiency.tokensSaved)} fewer estimated input tokens`)}
-        ${metric("Cost saved", formatCurrency(payload.efficiency.estimatedCostSaved), "Estimated at $2 per million input tokens")}
+        ${metric("Video", formatMinutes(payload.efficiency.videoMinutes), "The duration of the original screen recording.")}
+        ${metric("PDF context", formatCompact(payload.efficiency.documentTokens), "Estimated as one token per four text characters plus 2,450 tokens for each selected high-resolution image.")}
+        ${metric("Screen context", formatCompact(payload.efficiency.videoTokens), "GPT-6 Sol estimate: one 1920×1080 high-detail frame every five seconds, rounded to 500 visual tokens per second. Sol receives extracted images, not raw video.")}
+        ${metric("Saved", `${payload.efficiency.percentSaved}%`, `${formatCompact(payload.efficiency.tokensSaved)} fewer estimated input tokens than the screen-context estimate.`)}
+        ${metric("Cost saved", formatCurrency(payload.efficiency.estimatedCostSaved), "Estimated GPT-6 Sol input-cost difference: $2 per million tokens through 272K tokens, then $4 per million. Output, reasoning, and cache costs are excluded.")}
       </section>` : "";
   const screenshotOptions = payload.canPublishImage ? `
       <section class="share-options" aria-labelledby="shareOptionsTitle">
@@ -372,7 +374,8 @@ function renderShell(): void {
       <header class="editor-header">
         <div><p class="kicker">Visual story editor</p><h1>Shape the story before you share it</h1><p>Edit like a document, then choose and mark up the strongest screenshot for each ${escapeHTML(sectionLabelLower)}.</p></div>
         <div class="header-sharing">
-          <div class="header-actions"><span id="saveStatus">Saved</span>${payload.canPublishImage ? "" : copyActions}<button class="button secondary" id="saveStory">Save</button>${standardActions}</div>
+          <div class="total-savings"><span>Total saved ${infoButton("Total estimated GPT-6 Sol input cost saved across every completed recording in this Library, using the same assumptions shown below.", "total savings")}</span><strong id="totalEstimatedSavings">${formatCurrency(payload.totalEstimatedCostSaved)}</strong></div>
+          <div class="header-actions"><span id="saveStatus">Saved</span>${standardActions}</div>
           <div class="public-link-row" id="publicLinkRow" hidden><span class="public-link-value" id="publicLink"></span><span id="publicLinkStatus"></span></div>
         </div>
       </header>
@@ -393,7 +396,6 @@ function bindShellEvents(): void {
     button.addEventListener("pointerdown", (event) => event.preventDefault());
     button.addEventListener("click", () => runAction(button.dataset.action || ""));
   });
-  mustFind<HTMLButtonElement>("#saveStory").addEventListener("click", () => send("save"));
   mustFind<HTMLButtonElement>("#openPDF").addEventListener("click", () => send("saveAndOpenPDF"));
   document.querySelector<HTMLButtonElement>("#getLink")
     ?.addEventListener("click", () =>
@@ -462,23 +464,41 @@ function updateToolbar(): void {
 function markDirty(): void {
   editRevision += 1;
   document.body.classList.add("is-dirty");
-  setStatus("Unsaved changes");
+  setStatus("Saving soon…");
   if (!payload.canPublishImage && publishedPDFStoryState) {
     payload.publicPDFURL = currentStoryState() === publishedPDFStoryState
       ? savedPublicPDFURL : undefined;
     updatePublicPDFLink();
   }
   updateScreenshotURLAction();
+  scheduleAutosave();
+}
+
+function scheduleAutosave(delay = 1200): void {
+  if (autosaveTimer !== undefined) window.clearTimeout(autosaveTimer);
+  autosaveTimer = window.setTimeout(() => {
+    autosaveTimer = undefined;
+    if (!document.body.classList.contains("is-dirty")) return;
+    if (pendingAction) {
+      scheduleAutosave(400);
+      return;
+    }
+    send("save");
+  }, delay);
 }
 
 function send(type: BridgeMessage["type"]): void {
   if (pendingAction) return;
+  if (autosaveTimer !== undefined) {
+    window.clearTimeout(autosaveTimer);
+    autosaveTimer = undefined;
+  }
   const sourceInput = mustFind<HTMLInputElement>("#sourceURL");
   const sourceValue = sourceInput.value.trim();
   const sourceURL = normalizeSourceURL(sourceValue);
   if (sourceValue && !sourceURL) {
     sourceInput.setCustomValidity("Enter a valid HTTP or HTTPS web address.");
-    sourceInput.reportValidity();
+    if (type !== "save") sourceInput.reportValidity();
     setStatus("Check the source URL", true);
     return;
   }
@@ -522,7 +542,7 @@ function setStatus(message: string, error = false): void {
 }
 
 function setActionPending(action?: BridgeMessage["type"]): void {
-  for (const id of ["saveStory", "openPDF", "getLink", "copyImage", "copyPDF", "screenshotURLAction"]) {
+  for (const id of ["openPDF", "getLink", "copyImage", "copyPDF", "screenshotURLAction"]) {
     document.querySelector<HTMLButtonElement>(`#${id}`)
       ?.toggleAttribute("disabled", action !== undefined);
   }
@@ -584,7 +604,7 @@ function isPublishAction(action?: BridgeMessage["type"]): boolean {
 }
 
 function publicPDFActionLabel(): string {
-  return payload.publicPDFURL && !payload.publicPDFNeedsCleanup ? "Copy Link" : "Get Link";
+  return "Get Link";
 }
 
 function publicPDFActionHelp(): string {
@@ -639,7 +659,12 @@ function storyState(story: Story): string {
 }
 
 function metric(label: string, value: string, detail: string): string {
-  return `<div class="efficiency-metric" title="${escapeAttribute(detail)}"><span>${escapeHTML(label)}</span><strong>${escapeHTML(value)}</strong><small>${escapeHTML(detail)}</small></div>`;
+  return `<div class="efficiency-metric"><span class="efficiency-label">${escapeHTML(label)} ${infoButton(detail, label)}</span><strong>${escapeHTML(value)}</strong></div>`;
+}
+
+function infoButton(detail: string, label: string): string {
+  const escapedDetail = escapeAttribute(detail);
+  return `<button type="button" class="metric-info" data-tooltip="${escapedDetail}" title="${escapedDetail}" aria-label="How ${escapeAttribute(label)} is calculated">i</button>`;
 }
 
 function formatMinutes(value: number): string {

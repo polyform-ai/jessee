@@ -16,6 +16,9 @@ button { font: inherit; }
 .editor-header p:last-child { margin: 7px 0 0; color: #686774; font-size: 13px; }
 .header-sharing { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; }
 .header-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 9px; }
+.total-savings { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
+.total-savings > span { color: #686774; font-size: 11px; font-weight: 700; }
+.total-savings > strong { color: #2e286e; font-size: 21px; letter-spacing: -.03em; }
 #saveStatus { color: #777582; font-size: 12px; margin-right: 3px; }
 #saveStatus.error { color: #bf2d36; }
 body.is-dirty #saveStatus { color: #9a6100; }
@@ -26,9 +29,10 @@ body.is-dirty #saveStatus { color: #9a6100; }
 .efficiency-banner { max-width: 920px; margin: 0 auto 18px; display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); overflow: hidden; border: 1px solid #dcd9ea; border-radius: 16px; background: linear-gradient(135deg,#2e286e 0%,#5a52ff 58%,#7770ee 100%); box-shadow: 0 12px 32px rgba(42,34,91,.18); }
 .efficiency-metric { min-width: 0; padding: 16px 17px; color: #fff; border-right: 1px solid rgba(255,255,255,.18); }
 .efficiency-metric:last-child { border-right: 0; }
-.efficiency-metric span { display: block; color: rgba(255,255,255,.72); font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.efficiency-metric .efficiency-label { display: flex; align-items: center; gap: 5px; color: rgba(255,255,255,.72); font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
 .efficiency-metric strong { display: block; margin-top: 5px; font-size: 23px; line-height: 1; letter-spacing: -.035em; }
-.efficiency-metric small { display: block; overflow: hidden; margin-top: 7px; color: rgba(255,255,255,.7); font-size: 9px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.metric-info { display: inline-grid; place-items: center; width: 16px; height: 16px; padding: 0; color: currentColor; border: 1px solid currentColor; border-radius: 50%; background: transparent; font-size: 10px; font-weight: 800; line-height: 1; text-transform: none; cursor: help; }
+.total-savings .metric-info { width: 15px; height: 15px; margin-left: 3px; color: #6e67e9; vertical-align: -2px; }
 .share-options { max-width: 920px; margin: 0 auto 18px; padding: 18px; border: 1px solid #dcd9ea; border-radius: 16px; background: linear-gradient(145deg,#fff 0%,#f7f5ff 100%); box-shadow: 0 12px 35px rgba(42,34,91,.08); }
 .share-options-heading { margin-bottom: 13px; }
 .share-options-heading h2 { margin: 0; font-size: 20px; letter-spacing: -.02em; }
@@ -55,7 +59,7 @@ body.is-dirty #saveStatus { color: #9a6100; }
   left: 50%;
   top: calc(100% + 7px);
   width: max-content;
-  max-width: 190px;
+  max-width: 290px;
   padding: 5px 7px;
   color: #fff;
   background: rgba(25,23,32,.94);
@@ -145,6 +149,7 @@ button:disabled { opacity: .38; cursor: default; }
   .editor-app { padding: 18px 14px 35px; }
   .editor-header { align-items: flex-start; flex-direction: column; }
   .header-sharing, .header-actions { width: 100%; align-items: flex-start; justify-content: flex-start; }
+  .total-savings { justify-content: flex-start; }
   .public-link-row { max-width: 100%; justify-content: flex-start; }
   .share-option-grid { grid-template-columns: 1fr; }
   .efficiency-banner { grid-template-columns: repeat(2,minmax(0,1fr)); }

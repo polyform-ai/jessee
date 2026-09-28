@@ -96,14 +96,16 @@ public enum MediaTools {
     let generator = AVAssetImageGenerator(asset: asset)
     generator.appliesPreferredTrackTransform = true
     generator.maximumSize = CGSize(width: maximumWidth, height: maximumWidth)
-    generator.requestedTimeToleranceBefore = CMTime(seconds: 0.35, preferredTimescale: 600)
-    generator.requestedTimeToleranceAfter = CMTime(seconds: 0.35, preferredTimescale: 600)
+    generator.requestedTimeToleranceBefore = .zero
+    generator.requestedTimeToleranceAfter = .zero
 
     var frames: [CapturedFrame] = []
     for (index, seconds) in times.enumerated() {
-      let image = try await generator.image(at: CMTime(seconds: seconds, preferredTimescale: 600))
-        .image
-      let markedImage = applyMarkups(recordingMarkups, at: seconds, to: image)
+      let requestedTime = CMTime(seconds: seconds, preferredTimescale: 600)
+      let result = try await generator.image(at: requestedTime)
+      let extractedSeconds = result.actualTime.seconds
+      let actualSeconds = extractedSeconds.isFinite ? max(0, extractedSeconds) : seconds
+      let markedImage = applyMarkups(recordingMarkups, at: actualSeconds, to: result.image)
       let bitmap = NSBitmapImageRep(cgImage: markedImage)
       guard let data = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.88])
       else {
@@ -113,10 +115,10 @@ public enum MediaTools {
       try data.write(to: directoryURL.appendingPathComponent(filename), options: .atomic)
       frames.append(
         CapturedFrame(
-          seconds: seconds,
+          seconds: actualSeconds,
           filename: "screenshots/\(filename)",
           hasVisibleMarkup: recordingMarkups.contains {
-            $0.isVisible(at: seconds) && $0.points.count > 1
+            $0.isVisible(at: actualSeconds) && $0.points.count > 1
           }))
     }
     return frames

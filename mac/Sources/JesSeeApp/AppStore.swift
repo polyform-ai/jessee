@@ -601,9 +601,24 @@ final class AppStore: ObservableObject {
     return try? await workspace.read(StoryDocument.self, filename: filename, for: record)
   }
 
+  func totalEstimatedCostSaved(in preferredWorkspace: CaptureWorkspace? = nil) async -> Double {
+    guard let sourceWorkspace = preferredWorkspace ?? workspace else { return 0 }
+    var total = 0.0
+    for record in await sourceWorkspace.allRecords() where record.source != .screenshot {
+      guard let filename = record.storyFilename,
+        let story = try? await sourceWorkspace.read(
+          StoryDocument.self, filename: filename, for: record)
+      else { continue }
+      total += StoryEfficiencyMetrics.estimate(
+        story: story, duration: record.duration
+      ).estimatedCostSaved
+    }
+    return total
+  }
+
   func saveStory(
     _ story: StoryDocument, for record: CaptureRecord,
-    in sourceWorkspace: CaptureWorkspace
+    in sourceWorkspace: CaptureWorkspace, isAutosave: Bool = false
   ) async -> Bool {
     guard publishingCaptureID != record.id else {
       show(.error("Wait for the public-link update to finish before saving more edits."))
@@ -658,10 +673,10 @@ final class AppStore: ObservableObject {
         try? FileManager.default.removeItem(at: directory.appendingPathComponent(filename))
       }
       replace(updated, from: sourceWorkspace)
-      if isCurrentWorkspaceLocation(sourceWorkspace) {
+      if isCurrentWorkspaceLocation(sourceWorkspace), !isAutosave {
         show(.success("Story and PDF updated."))
       }
-      recordUsage(.storyEdited, feature: "story_editor")
+      if !isAutosave { recordUsage(.storyEdited, feature: "story_editor") }
       return true
     } catch {
       if isCurrentWorkspaceLocation(sourceWorkspace) {

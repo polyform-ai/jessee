@@ -30,6 +30,7 @@ struct StoryWebEditor: NSViewRepresentable {
     var canCopyImage: Bool
     var canCopyPDF: Bool
     var efficiency: StoryEfficiencyMetrics?
+    var totalEstimatedCostSaved: Double
   }
 
   struct BridgeMessage: Decodable {
@@ -40,6 +41,7 @@ struct StoryWebEditor: NSViewRepresentable {
   let story: StoryDocument
   let record: CaptureRecord
   let directoryURL: URL
+  let totalEstimatedCostSaved: Double
   let onAction: (StoryDocument, String, @escaping (Bool, String, String?) -> Void) -> Void
 
   private var publicationSnapshot: PublicationSnapshot {
@@ -68,6 +70,7 @@ struct StoryWebEditor: NSViewRepresentable {
     context.coordinator.webView = webView
     webView.navigationDelegate = context.coordinator
     context.coordinator.publicationSnapshot = publicationSnapshot
+    context.coordinator.totalEstimatedCostSaved = totalEstimatedCostSaved
     load(in: webView)
     return webView
   }
@@ -75,9 +78,14 @@ struct StoryWebEditor: NSViewRepresentable {
   func updateNSView(_ webView: WKWebView, context: Context) {
     context.coordinator.onAction = onAction
     let nextSnapshot = publicationSnapshot
-    guard context.coordinator.publicationSnapshot != nextSnapshot else { return }
-    context.coordinator.publicationSnapshot = nextSnapshot
-    context.coordinator.sendPublicationSnapshot()
+    if context.coordinator.publicationSnapshot != nextSnapshot {
+      context.coordinator.publicationSnapshot = nextSnapshot
+      context.coordinator.sendPublicationSnapshot()
+    }
+    if context.coordinator.totalEstimatedCostSaved != totalEstimatedCostSaved {
+      context.coordinator.totalEstimatedCostSaved = totalEstimatedCostSaved
+      context.coordinator.sendEstimatedSavings()
+    }
   }
 
   static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
@@ -121,7 +129,8 @@ struct StoryWebEditor: NSViewRepresentable {
       canCopyPDF: record.pdfFilename != nil,
       efficiency: record.source != .screenshot
         ? StoryEfficiencyMetrics.estimate(story: story, duration: record.duration)
-        : nil)
+        : nil,
+      totalEstimatedCostSaved: totalEstimatedCostSaved)
     guard let data = try? JesSeeJSON.encoder().encode(payload),
       let json = String(data: data, encoding: .utf8)
     else { return }
@@ -156,6 +165,7 @@ struct StoryWebEditor: NSViewRepresentable {
     weak var webView: WKWebView?
     var onAction: (StoryDocument, String, @escaping (Bool, String, String?) -> Void) -> Void
     fileprivate var publicationSnapshot: PublicationSnapshot?
+    fileprivate var totalEstimatedCostSaved = 0.0
 
     init(
       onAction: @escaping (StoryDocument, String, @escaping (Bool, String, String?) -> Void) -> Void
@@ -192,6 +202,7 @@ struct StoryWebEditor: NSViewRepresentable {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
       sendPublicationSnapshot()
+      sendEstimatedSavings()
     }
 
     fileprivate func sendPublicationSnapshot() {
@@ -201,6 +212,12 @@ struct StoryWebEditor: NSViewRepresentable {
       else { return }
       json = json.replacingOccurrences(of: "<", with: "\\u003c")
       webView.evaluateJavaScript("window.jesseeDidUpdatePublicationState?.(\(json))")
+    }
+
+    fileprivate func sendEstimatedSavings() {
+      guard totalEstimatedCostSaved.isFinite else { return }
+      webView?.evaluateJavaScript(
+        "window.jesseeDidUpdateEstimatedSavings?.(\(totalEstimatedCostSaved))")
     }
   }
 }

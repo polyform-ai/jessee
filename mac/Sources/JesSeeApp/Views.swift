@@ -857,6 +857,7 @@ private struct CaptureDetailView: View {
   let record: CaptureRecord
   @Environment(\.openSettings) private var openSettings
   @State private var loadedStory: LoadedStory?
+  @State private var totalEstimatedCostSaved = 0.0
 
   var body: some View {
     VStack(spacing: 0) {
@@ -882,7 +883,10 @@ private struct CaptureDetailView: View {
       if let loadedStory, loadedStory.recordID == record.id,
         let directory = store.captureDirectory(for: record)
       {
-        StoryWebEditor(story: loadedStory.document, record: record, directoryURL: directory) {
+        StoryWebEditor(
+          story: loadedStory.document, record: record, directoryURL: directory,
+          totalEstimatedCostSaved: totalEstimatedCostSaved
+        ) {
           updatedStory, action, completion in
           guard let actionWorkspace = store.workspaceForEditorAction(recordID: record.id) else {
             completion(false, "JesSee could not find this story's Library.", nil)
@@ -890,9 +894,11 @@ private struct CaptureDetailView: View {
           }
           Task {
             let saved = await store.saveStory(
-              updatedStory, for: record, in: actionWorkspace)
+              updatedStory, for: record, in: actionWorkspace, isAutosave: action == "save")
             if saved {
               self.loadedStory = LoadedStory(recordID: record.id, document: updatedStory)
+              self.totalEstimatedCostSaved = await store.totalEstimatedCostSaved(
+                in: actionWorkspace)
               if action == "saveAndOpenPDF" {
                 store.openPDF(recordID: record.id)
                 completion(true, "PDF updated and opened", nil)
@@ -958,11 +964,15 @@ private struct CaptureDetailView: View {
             "JesSee retries temporary failures automatically. Check the message above for anything that needs your attention."))
       }
     }
-    .task(id: "\(record.id):\(record.storyFilename ?? "")") {
+    .task(id: "\(record.id):\(record.stage)") {
       loadedStory = nil
-      let document = await store.loadStory(for: record)
-      guard !Task.isCancelled, let document else { return }
-      loadedStory = LoadedStory(recordID: record.id, document: document)
+      totalEstimatedCostSaved = 0
+      async let document = store.loadStory(for: record)
+      async let estimatedSavings = store.totalEstimatedCostSaved()
+      let (loadedDocument, totalSavings) = await (document, estimatedSavings)
+      guard !Task.isCancelled, let loadedDocument else { return }
+      totalEstimatedCostSaved = totalSavings
+      loadedStory = LoadedStory(recordID: record.id, document: loadedDocument)
     }
   }
 
