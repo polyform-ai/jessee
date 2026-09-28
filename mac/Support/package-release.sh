@@ -93,6 +93,8 @@ else
 
 This release is signed by Polyform, notarized by Apple, and can update itself from inside JesSee.
 
+- Stay signed in to Polyform across app launches with background workflow-auth refresh and durable refresh-token recovery.
+- Share public PDFs more reliably with stable saved links, safer retries and cleanup, protection against stale edits, and clearer progress and completion feedback.
 - Let JesSee infer the structure that fits each recording—tutorial steps, issues, findings, decisions, examples, or another useful document shape—without dropping distinct items.
 - Record with a visible timer and live microphone level.
 - Draw, highlight, undo, clear, redo, or stop directly from the floating controls.
