@@ -832,6 +832,7 @@ struct LibraryView: View {
       }
     }
     .frame(minWidth: 900, minHeight: 620)
+    .overlay(alignment: .top) { NoticeView(notice: store.notice).padding(.top, 16) }
     .onAppear(perform: selectDefaultCapture)
     .onChange(of: store.captures.map(\.id)) { _, _ in selectDefaultCapture() }
   }
@@ -909,6 +910,14 @@ private struct CaptureDetailView: View {
                   completion(true, "Copied", publicURL)
                 } else {
                   completion(false, "JesSee could not find the screenshot URL.", nil)
+                }
+              } else if action == "saveAndCopyPublicPDFURL" {
+                if let publicURL = await store.copyPublicPDFURL(
+                  recordID: record.id, in: actionWorkspace)
+                {
+                  completion(true, "Copied", publicURL)
+                } else {
+                  completion(false, "JesSee could not find the public PDF link.", nil)
                 }
               } else if action == "saveAndPublishImage" || action == "saveAndPublishPDF" {
                 guard store.isPublicLinkPublishingAvailable else {

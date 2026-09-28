@@ -565,6 +565,23 @@ final class AppStore: ObservableObject {
     return publicURL
   }
 
+  func copyPublicPDFURL(
+    recordID: String, in preferredWorkspace: CaptureWorkspace? = nil
+  ) async -> String? {
+    guard let sourceWorkspace = preferredWorkspace ?? workspace,
+      let record = await sourceWorkspace.record(id: recordID),
+      let storyFilename = record.storyFilename,
+      let story = try? await sourceWorkspace.read(
+        StoryDocument.self, filename: storyFilename, for: record),
+      record.publicPDFIsCurrent(for: story),
+      let publicURL = record.publicPDFURL,
+      isCurrentWorkspaceLocation(sourceWorkspace)
+    else { return nil }
+    copyToPasteboard(publicURL)
+    show(.success("Public PDF link copied to clipboard."))
+    return publicURL
+  }
+
   func copyPDF(recordID: String) -> Bool {
     guard let workspace, let record = captures.first(where: { $0.id == recordID }),
       let filename = record.pdfFilename
@@ -593,15 +610,53 @@ final class AppStore: ObservableObject {
       return false
     }
     do {
-      try await sourceWorkspace.write(story, filename: "story.json", for: record)
-      let rendered = try DocumentRenderer.render(
-        story: story, in: sourceWorkspace.directoryURL(for: record))
-      var updated = await sourceWorkspace.record(id: record.id) ?? record
+      let currentRecord = await sourceWorkspace.record(id: record.id) ?? record
+      let shouldInvalidatePublicPDF = currentRecord.publicPDFURL != nil
+        && !currentRecord.publicPDFIsCurrent(for: story)
+      let artifactID = UUID().uuidString.lowercased()
+      let storyFilename = "story-\(artifactID).json"
+      let htmlFilename = "JesSee Story-\(artifactID).html"
+      let pdfFilename = "JesSee Story-\(artifactID).pdf"
+      let directory = sourceWorkspace.directoryURL(for: record)
+      let newArtifactURLs = [storyFilename, htmlFilename, pdfFilename].map {
+        directory.appendingPathComponent($0)
+      }
+      do {
+        try await sourceWorkspace.write(story, filename: storyFilename, for: record)
+        _ = try DocumentRenderer.render(
+          story: story, in: directory, htmlFilename: htmlFilename, pdfFilename: pdfFilename)
+      } catch {
+        for url in newArtifactURLs { try? FileManager.default.removeItem(at: url) }
+        throw error
+      }
+      var updated = currentRecord
       updated.title = story.title
-      updated.storyFilename = "story.json"
-      updated.htmlFilename = rendered.html
-      updated.pdfFilename = rendered.pdf
-      try await sourceWorkspace.save(updated)
+      updated.storyFilename = storyFilename
+      updated.htmlFilename = htmlFilename
+      updated.pdfFilename = pdfFilename
+      if shouldInvalidatePublicPDF {
+        let cleanupIDs = ([updated.publicPDFUploadID].compactMap { $0 }
+          + (updated.publicPDFCleanupUploadIDs ?? []))
+          .reduce(into: [String]()) { result, id in
+            if !result.contains(id) { result.append(id) }
+          }
+        updated.publicPDFUploadID = nil
+        updated.publicPDFURL = nil
+        updated.publicPDFPublicationState = nil
+        updated.publicPDFCleanupUploadIDs = cleanupIDs.isEmpty ? nil : cleanupIDs
+      }
+      do {
+        try await sourceWorkspace.save(updated)
+      } catch {
+        for url in newArtifactURLs { try? FileManager.default.removeItem(at: url) }
+        throw error
+      }
+      let committedFilenames = Set([storyFilename, htmlFilename, pdfFilename])
+      for filename in [
+        currentRecord.storyFilename, currentRecord.htmlFilename, currentRecord.pdfFilename,
+      ].compactMap({ $0 }) where !committedFilenames.contains(filename) {
+        try? FileManager.default.removeItem(at: directory.appendingPathComponent(filename))
+      }
       replace(updated, from: sourceWorkspace)
       if isCurrentWorkspaceLocation(sourceWorkspace) {
         show(.success("Story and PDF updated."))
@@ -633,11 +688,15 @@ final class AppStore: ObservableObject {
   func publishPDF(
     recordID: String, in preferredWorkspace: CaptureWorkspace? = nil
   ) async -> String? {
-    guard let sourceWorkspace = preferredWorkspace ?? workspace,
-      let record = await sourceWorkspace.record(id: recordID)
-    else { return nil }
-    await beginPublication(for: record.id)
+    guard let sourceWorkspace = preferredWorkspace ?? workspace else { return nil }
+    await beginPublication(for: recordID)
     defer { finishPublication() }
+    guard
+      let record = await sourceWorkspace.record(id: recordID),
+      let storyFilename = record.storyFilename,
+      let story = try? await sourceWorkspace.read(
+        StoryDocument.self, filename: storyFilename, for: record)
+    else { return nil }
     do {
       guard let filename = record.pdfFilename else {
         throw JesSeeError.invalidResponse("Create the PDF before publishing it.")
@@ -659,6 +718,7 @@ final class AppStore: ObservableObject {
         }
       updated.publicPDFUploadID = upload.id
       updated.publicPDFURL = publicURL.absoluteString
+      updated.publicPDFPublicationState = story.pdfPublicationState
       updated.publicPDFCleanupUploadIDs = cleanupIDs.isEmpty ? nil : cleanupIDs
       do {
         try await sourceWorkspace.save(updated)
@@ -1035,6 +1095,9 @@ final class AppStore: ObservableObject {
     let content = UNMutableNotificationContent()
     content.title = "Your JesSee story is ready"
     let completedRecord = await processingWorkspace.record(id: id)
+    if isCurrentWorkspace(processingWorkspace) {
+      show(.success("Story ready: \(completedRecord?.title ?? "Open it in your Library")"))
+    }
     content.body = completedRecord?.title ?? "Open the library to review it."
     content.sound = .default
     content.interruptionLevel = .active

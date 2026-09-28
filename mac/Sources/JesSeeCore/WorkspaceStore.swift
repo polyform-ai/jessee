@@ -120,17 +120,32 @@ public actor CaptureWorkspace {
   public func save(_ record: CaptureRecord) throws {
     var updated = record
     updated.updatedAt = Date()
-    if let index = records.firstIndex(where: { $0.id == updated.id }) {
-      records[index] = updated
+    var nextRecords = records
+    if let index = nextRecords.firstIndex(where: { $0.id == updated.id }) {
+      nextRecords[index] = updated
     } else {
-      records.append(updated)
+      nextRecords.append(updated)
     }
-    records.sort { $0.createdAt > $1.createdAt }
-    let data = try JesSeeJSON.encoder().encode(records)
-    try data.write(to: rootURL.appendingPathComponent("library.json"), options: .atomic)
+    nextRecords.sort { $0.createdAt > $1.createdAt }
     let recordData = try JesSeeJSON.encoder().encode(updated)
-    try recordData.write(
-      to: directoryURL(for: updated).appendingPathComponent("capture.json"), options: .atomic)
+    let data = try JesSeeJSON.encoder().encode(nextRecords)
+    let captureURL = directoryURL(for: updated).appendingPathComponent("capture.json")
+    let backupURL = captureURL.deletingLastPathComponent().appendingPathComponent(
+      ".capture-\(UUID().uuidString.lowercased()).backup")
+    let hadCaptureMetadata = FileManager.default.fileExists(atPath: captureURL.path)
+    if hadCaptureMetadata {
+      try FileManager.default.moveItem(at: captureURL, to: backupURL)
+    }
+    do {
+      try recordData.write(to: captureURL, options: .atomic)
+      try data.write(to: rootURL.appendingPathComponent("library.json"), options: .atomic)
+      records = nextRecords
+      if hadCaptureMetadata { try? FileManager.default.removeItem(at: backupURL) }
+    } catch {
+      try? FileManager.default.removeItem(at: captureURL)
+      if hadCaptureMetadata { try? FileManager.default.moveItem(at: backupURL, to: captureURL) }
+      throw error
+    }
   }
 
   public func record(id: String) -> CaptureRecord? {

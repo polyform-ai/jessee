@@ -194,6 +194,7 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(decoded.publicImageUploadID == nil)
   #expect(decoded.publicImageURL == nil)
   #expect(decoded.publicImagePublicationState == nil)
+  #expect(decoded.publicPDFPublicationState == nil)
 }
 
 @Test func publishedScreenshotStateTracksTheSelectedImageAndAnnotations() {
@@ -224,6 +225,36 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(
     textOnly.primaryImagePublicationState(fallbackFilename: "screenshot.png")
       == StoryImagePublicationState(filename: "screenshot.png", annotations: []))
+}
+
+@Test func publishedPDFStateTracksOnlyRenderedStoryContent() {
+  let original = StoryDocument(
+    title: "A guide", sourceURL: "https://example.com", summary: "Summary",
+    keyPoints: ["Remember this"],
+    steps: [
+      StoryStep(
+        id: "first-step", startSeconds: 1, endSeconds: 2, title: "Open settings",
+        narrative: "Choose Settings.", transcript: "um choose settings",
+        imageFilename: "settings.png")
+    ])
+  var regeneratedIdentity = original
+  regeneratedIdentity.keyPoints[0].id = "another-key"
+  regeneratedIdentity.steps[0].id = "another-step"
+  regeneratedIdentity.steps[0].startSeconds = 20
+  regeneratedIdentity.steps[0].endSeconds = 30
+  regeneratedIdentity.steps[0].transcript = "a corrected transcript"
+  var renderedEdit = original
+  renderedEdit.steps[0].narrative = "Choose the Settings menu."
+  var legacyRecord = CaptureRecord(
+    title: original.title, source: .recording, mediaFilename: "recording.mp4",
+    publicPDFURL: "https://example.com/public/story.pdf")
+
+  #expect(original.pdfPublicationState == regeneratedIdentity.pdfPublicationState)
+  #expect(original.pdfPublicationState != renderedEdit.pdfPublicationState)
+  #expect(!legacyRecord.publicPDFIsCurrent(for: original))
+  legacyRecord.publicPDFPublicationState = original.pdfPublicationState
+  #expect(legacyRecord.publicPDFIsCurrent(for: original))
+  #expect(!legacyRecord.publicPDFIsCurrent(for: renderedEdit))
 }
 
 @Test func configurationOpensAtLoginByDefaultAndPreservesAnOptOut() throws {
@@ -1212,6 +1243,68 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(history.first?.sourceURL == "https://example.com/source")
 }
 
+@Test func workspaceSaveFailureDoesNotCommitRecordMetadata() async throws {
+  let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+    UUID().uuidString, isDirectory: true)
+  try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: temporary) }
+  let source = temporary.appendingPathComponent("walkthrough.mp4")
+  try Data("video".utf8).write(to: source)
+
+  let workspace = CaptureWorkspace(rootURL: temporary)
+  _ = try await workspace.load()
+  let original = try await workspace.importMedia(from: source, source: .importedVideo)
+  try FileManager.default.removeItem(at: workspace.directoryURL(for: original))
+
+  var updated = original
+  updated.publicPDFUploadID = "new-upload"
+  updated.publicPDFURL = "https://example.com/public/new-upload.pdf"
+
+  await #expect(throws: (any Error).self) {
+    try await workspace.save(updated)
+  }
+  #expect(await workspace.record(id: original.id)?.publicPDFURL == nil)
+
+  let reloaded = try await CaptureWorkspace(rootURL: temporary).load()
+  #expect(reloaded.first?.publicPDFURL == nil)
+}
+
+@Test func workspaceIndexFailureRestoresCaptureMetadata() async throws {
+  let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+    UUID().uuidString, isDirectory: true)
+  try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: temporary) }
+  let source = temporary.appendingPathComponent("walkthrough.mp4")
+  try Data("video".utf8).write(to: source)
+
+  let workspace = CaptureWorkspace(rootURL: temporary)
+  _ = try await workspace.load()
+  let original = try await workspace.importMedia(from: source, source: .importedVideo)
+  let indexURL = workspace.rootURL.appendingPathComponent("library.json")
+  let originalIndex = try Data(contentsOf: indexURL)
+  try FileManager.default.removeItem(at: indexURL)
+  try FileManager.default.createDirectory(at: indexURL, withIntermediateDirectories: false)
+
+  var updated = original
+  updated.publicPDFUploadID = "new-upload"
+  updated.publicPDFURL = "https://example.com/public/new-upload.pdf"
+  await #expect(throws: (any Error).self) {
+    try await workspace.save(updated)
+  }
+  #expect(await workspace.record(id: original.id)?.publicPDFURL == nil)
+  let captureData = try Data(
+    contentsOf: workspace.directoryURL(for: original).appendingPathComponent("capture.json"))
+  #expect(try JesSeeJSON.decoder().decode(CaptureRecord.self, from: captureData).publicPDFURL == nil)
+  let captureFiles = try FileManager.default.contentsOfDirectory(
+    atPath: workspace.directoryURL(for: original).path)
+  #expect(!captureFiles.contains(where: { $0.hasSuffix(".backup") }))
+
+  try FileManager.default.removeItem(at: indexURL)
+  try originalIndex.write(to: indexURL, options: .atomic)
+  let reloaded = try await CaptureWorkspace(rootURL: temporary).load()
+  #expect(reloaded.first?.publicPDFURL == nil)
+}
+
 @Test func workspaceCreatesEditableScreenshotStory() async throws {
   let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
     UUID().uuidString, isDirectory: true)
@@ -1259,7 +1352,11 @@ private struct WorkflowTestValue: Decodable, Equatable {
         narrative: "Explain the desired outcome directly.", transcript: "")
     ]
   )
-  let output = try DocumentRenderer.render(story: story, in: temporary)
+  let output = try DocumentRenderer.render(
+    story: story, in: temporary, htmlFilename: "versioned-story.html",
+    pdfFilename: "versioned-story.pdf")
+  #expect(output.html == "versioned-story.html")
+  #expect(output.pdf == "versioned-story.pdf")
   let document = PDFDocument(url: temporary.appendingPathComponent(output.pdf))
   #expect(document?.pageCount == 1)
   #expect(
@@ -1272,6 +1369,36 @@ private struct WorkflowTestValue: Decodable, Equatable {
     contentsOf: temporary.appendingPathComponent(output.html), encoding: .utf8)
   #expect(html.contains("JESSEE PRODUCT CRITIQUE"))
   #expect(html.contains("FINDING 1"))
+}
+
+@Test func storyEfficiencyEstimatesVideoDocumentAndCostSavings() {
+  let story = StoryDocument(
+    title: "A shorter visual brief",
+    summary: "The document keeps the useful context.",
+    keyPoints: ["One clear outcome"],
+    steps: [
+      StoryStep(
+        startSeconds: 0, endSeconds: 30, title: "First finding",
+        narrative: "Explain the evidence.", transcript: "",
+        imageFilename: "screenshots/evidence.png"),
+      StoryStep(
+        startSeconds: 30, endSeconds: 60, title: "Second finding",
+        narrative: "Reuse the same evidence.", transcript: "",
+        imageFilename: "screenshots/evidence.png"),
+    ])
+
+  let metrics = StoryEfficiencyMetrics.estimate(story: story, duration: 600)
+
+  #expect(metrics.videoMinutes == 10)
+  #expect(metrics.videoTokens == 180_000)
+  #expect(metrics.documentTokens > StoryEfficiencyMetrics.imageTokens)
+  #expect(metrics.documentTokens < 2 * StoryEfficiencyMetrics.imageTokens)
+  #expect(metrics.tokensSaved == metrics.videoTokens - metrics.documentTokens)
+  #expect(metrics.percentSaved == 99)
+  #expect(
+    abs(
+      metrics.estimatedCostSaved
+        - (Double(metrics.tokensSaved) / 1_000_000 * 2.0)) < 0.000_001)
 }
 
 @Test func mediaToolsReadVideoExtractAudioAndCreateFrames() async throws {

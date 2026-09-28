@@ -7,6 +7,8 @@ struct StoryWebEditor: NSViewRepresentable {
     var publicImageURL: String?
     var publicImagePublicationState: StoryImagePublicationState?
     var publicPDFURL: String?
+    var publicPDFPublicationState: StoryPDFPublicationState?
+    var publicPDFNeedsCleanup: Bool
   }
 
   struct Frame: Encodable {
@@ -22,9 +24,12 @@ struct StoryWebEditor: NSViewRepresentable {
     var publicImagePublicationState: StoryImagePublicationState?
     var publicImageIsCurrent: Bool
     var publicPDFURL: String?
+    var publicPDFPublicationState: StoryPDFPublicationState?
+    var publicPDFNeedsCleanup: Bool
     var canPublishImage: Bool
     var canCopyImage: Bool
     var canCopyPDF: Bool
+    var efficiency: StoryEfficiencyMetrics?
   }
 
   struct BridgeMessage: Decodable {
@@ -41,7 +46,13 @@ struct StoryWebEditor: NSViewRepresentable {
     PublicationSnapshot(
       publicImageURL: record.publicImageURL,
       publicImagePublicationState: record.publicImagePublicationState,
-      publicPDFURL: record.publicPDFURL)
+      publicPDFURL: publicPDFIsCurrent ? record.publicPDFURL : nil,
+      publicPDFPublicationState: record.publicPDFPublicationState,
+      publicPDFNeedsCleanup: !(record.publicPDFCleanupUploadIDs ?? []).isEmpty)
+  }
+
+  private var publicPDFIsCurrent: Bool {
+    record.publicPDFIsCurrent(for: story)
   }
 
   func makeCoordinator() -> Coordinator { Coordinator(onAction: onAction) }
@@ -102,10 +113,15 @@ struct StoryWebEditor: NSViewRepresentable {
         && record.publicImagePublicationState
           == story.primaryImagePublicationState(
             fallbackFilename: record.imageFilenames.first ?? record.mediaFilename),
-      publicPDFURL: record.publicPDFURL,
+      publicPDFURL: publicPDFIsCurrent ? record.publicPDFURL : nil,
+      publicPDFPublicationState: record.publicPDFPublicationState,
+      publicPDFNeedsCleanup: !(record.publicPDFCleanupUploadIDs ?? []).isEmpty,
       canPublishImage: record.source == .screenshot,
       canCopyImage: record.source == .screenshot,
-      canCopyPDF: record.pdfFilename != nil)
+      canCopyPDF: record.pdfFilename != nil,
+      efficiency: record.source != .screenshot
+        ? StoryEfficiencyMetrics.estimate(story: story, duration: record.duration)
+        : nil)
     guard let data = try? JesSeeJSON.encoder().encode(payload),
       let json = String(data: data, encoding: .utf8)
     else { return }
