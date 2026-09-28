@@ -245,38 +245,16 @@ private struct WorkflowTestValue: Decodable, Equatable {
   regeneratedIdentity.steps[0].transcript = "a corrected transcript"
   var renderedEdit = original
   renderedEdit.steps[0].narrative = "Choose the Settings menu."
+  var legacyRecord = CaptureRecord(
+    title: original.title, source: .recording, mediaFilename: "recording.mp4",
+    publicPDFURL: "https://example.com/public/story.pdf")
 
   #expect(original.pdfPublicationState == regeneratedIdentity.pdfPublicationState)
   #expect(original.pdfPublicationState != renderedEdit.pdfPublicationState)
-}
-
-@Test func workspacePersistsLegacyPDFBaselineBeforeStoryChanges() async throws {
-  let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
-    UUID().uuidString, isDirectory: true)
-  try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
-  defer { try? FileManager.default.removeItem(at: temporary) }
-  let source = temporary.appendingPathComponent("capture.png")
-  try Data("png".utf8).write(to: source)
-
-  let workspace = CaptureWorkspace(rootURL: temporary)
-  _ = try await workspace.load()
-  var record = try await workspace.importScreenshot(from: source)
-  let storyFilename = try #require(record.storyFilename)
-  let publishedStory = try await workspace.read(
-    StoryDocument.self, filename: storyFilename, for: record)
-  record.publicPDFUploadID = "upload-1"
-  record.publicPDFURL = "https://example.com/public/story.pdf"
-  try await workspace.save(record)
-
-  let migrated = try await workspace.migrateLegacyPDFPublicationState(for: record)
-  var editedStory = publishedStory
-  editedStory.summary = "Changed after publication"
-  try await workspace.write(editedStory, filename: storyFilename, for: migrated)
-
-  let reloadedWorkspace = CaptureWorkspace(rootURL: temporary)
-  let reloadedRecord = try #require(try await reloadedWorkspace.load().first)
-  #expect(reloadedRecord.publicPDFPublicationState == publishedStory.pdfPublicationState)
-  #expect(reloadedRecord.publicPDFPublicationState != editedStory.pdfPublicationState)
+  #expect(!legacyRecord.publicPDFIsCurrent(for: original))
+  legacyRecord.publicPDFPublicationState = original.pdfPublicationState
+  #expect(legacyRecord.publicPDFIsCurrent(for: original))
+  #expect(!legacyRecord.publicPDFIsCurrent(for: renderedEdit))
 }
 
 @Test func configurationOpensAtLoginByDefaultAndPreservesAnOptOut() throws {

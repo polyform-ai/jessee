@@ -562,8 +562,7 @@ final class AppStore: ObservableObject {
       let storyFilename = record.storyFilename,
       let story = try? await sourceWorkspace.read(
         StoryDocument.self, filename: storyFilename, for: record),
-      record.publicPDFPublicationState == nil
-        || record.publicPDFPublicationState == story.pdfPublicationState,
+      record.publicPDFIsCurrent(for: story),
       let publicURL = record.publicPDFURL,
       isCurrentWorkspaceLocation(sourceWorkspace)
     else { return nil }
@@ -600,17 +599,9 @@ final class AppStore: ObservableObject {
       return false
     }
     do {
-      var currentRecord = await sourceWorkspace.record(id: record.id) ?? record
-      let legacyPDFStateWasMissing = currentRecord.publicPDFURL != nil
-        && currentRecord.publicPDFPublicationState == nil
-      currentRecord = try await sourceWorkspace.migrateLegacyPDFPublicationState(
-        for: currentRecord)
-      if legacyPDFStateWasMissing {
-        replacePublication(currentRecord, from: sourceWorkspace)
-      }
-      let publishedPDFState = currentRecord.publicPDFPublicationState
+      let currentRecord = await sourceWorkspace.record(id: record.id) ?? record
       let shouldInvalidatePublicPDF = currentRecord.publicPDFURL != nil
-        && publishedPDFState != story.pdfPublicationState
+        && !currentRecord.publicPDFIsCurrent(for: story)
       let rendered = try DocumentRenderer.render(
         story: story, in: sourceWorkspace.directoryURL(for: record))
       try await sourceWorkspace.write(story, filename: "story.json", for: record)

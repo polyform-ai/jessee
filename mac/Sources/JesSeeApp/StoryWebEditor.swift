@@ -52,9 +52,7 @@ struct StoryWebEditor: NSViewRepresentable {
   }
 
   private var publicPDFIsCurrent: Bool {
-    record.publicPDFURL != nil
-      && (record.publicPDFPublicationState == nil
-        || record.publicPDFPublicationState == story.pdfPublicationState)
+    record.publicPDFIsCurrent(for: story)
   }
 
   func makeCoordinator() -> Coordinator { Coordinator(onAction: onAction) }

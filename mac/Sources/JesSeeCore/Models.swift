@@ -459,6 +459,12 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
   }
 }
 
+extension CaptureRecord {
+  public func publicPDFIsCurrent(for story: StoryDocument) -> Bool {
+    publicPDFURL != nil && publicPDFPublicationState == story.pdfPublicationState
+  }
+}
+
 public enum CaptureProcessingRetryPolicy {
   public static let currentVersion = 2
   public static let maximumAttempts = 6

@@ -137,23 +137,6 @@ public actor CaptureWorkspace {
     records.first { $0.id == id }
   }
 
-  public func migrateLegacyPDFPublicationState(
-    for record: CaptureRecord
-  ) throws -> CaptureRecord {
-    guard record.publicPDFURL != nil, record.publicPDFPublicationState == nil else {
-      return record
-    }
-    guard let storyFilename = record.storyFilename else {
-      throw JesSeeError.invalidResponse(
-        "The saved public PDF link is missing its source story.")
-    }
-    let story = try read(StoryDocument.self, filename: storyFilename, for: record)
-    var migrated = record
-    migrated.publicPDFPublicationState = story.pdfPublicationState
-    try save(migrated)
-    return records.first(where: { $0.id == migrated.id }) ?? migrated
-  }
-
   public nonisolated func directoryURL(for record: CaptureRecord) -> URL {
     let date = Self.folderDate(from: record.createdAt)
     return rootURL.appendingPathComponent("\(date)-\(record.id.prefix(8))", isDirectory: true)
