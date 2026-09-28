@@ -622,15 +622,39 @@ public struct JesSeeConfiguration: Codable, Sendable, Equatable {
 
 public struct WorkflowAuthSession: Codable, Sendable, Equatable {
   public var accessToken: String
+  public var refreshToken: String?
   public var email: String
   public var grantID: String
   public var expiresAt: Date
+  public var refreshExpiresAt: Date?
+  public var refreshAvailableAt: Date?
 
-  public init(accessToken: String, email: String, grantID: String, expiresAt: Date) {
+  public init(
+    accessToken: String,
+    refreshToken: String? = nil,
+    email: String,
+    grantID: String,
+    expiresAt: Date,
+    refreshExpiresAt: Date? = nil,
+    refreshAvailableAt: Date? = nil
+  ) {
     self.accessToken = accessToken
+    self.refreshToken = refreshToken
     self.email = email
     self.grantID = grantID
     self.expiresAt = expiresAt
+    self.refreshExpiresAt = refreshExpiresAt
+    self.refreshAvailableAt = refreshAvailableAt
+  }
+
+  public func canRenew(at date: Date = Date()) -> Bool {
+    guard let refreshToken, !refreshToken.isEmpty, let refreshExpiresAt else { return false }
+    return refreshExpiresAt > date
+  }
+
+  public func canUpgradeLegacySession(at date: Date = Date()) -> Bool {
+    guard refreshToken == nil else { return false }
+    return expiresAt.addingTimeInterval(28 * 24 * 60 * 60) > date
   }
 }
 
