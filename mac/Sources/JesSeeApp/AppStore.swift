@@ -30,6 +30,11 @@ final class AppStore: ObservableObject {
     var continuation: CheckedContinuation<Void, Never>
   }
 
+  private struct SessionRefreshOperation {
+    var id: UUID
+    var task: Task<WorkflowAuthSession, Error>
+  }
+
   enum Notice: Equatable {
     case success(String)
     case error(String)
@@ -66,7 +71,7 @@ final class AppStore: ObservableObject {
   private var workspacesByRootURL: [URL: CaptureWorkspace] = [:]
   private var processingTasks: [ProcessingTaskKey: Task<Void, Never>] = [:]
   private var processingNotificationTasks: [ProcessingTaskKey: Task<Void, Never>] = [:]
-  private var refreshTask: Task<WorkflowAuthSession, Error>?
+  private var sessionRefreshOperation: SessionRefreshOperation?
   private var refreshScheduleTask: Task<Void, Never>?
   private var sessionPersistenceTask: Task<Void, Never>?
   private var signInTask: Task<Void, Never>?
@@ -1175,15 +1180,20 @@ final class AppStore: ObservableObject {
     }
     if refreshDue {
       do {
-        let task: Task<WorkflowAuthSession, Error>
-        if let refreshTask {
-          task = refreshTask
+        let operation: SessionRefreshOperation
+        if let sessionRefreshOperation {
+          operation = sessionRefreshOperation
         } else {
-          task = Task { try await polyformClient.refresh(session) }
-          refreshTask = task
+          operation = SessionRefreshOperation(
+            id: UUID(), task: Task { try await polyformClient.refresh(session) })
+          sessionRefreshOperation = operation
         }
-        defer { refreshTask = nil }
-        let refreshed = try await task.value
+        defer {
+          if sessionRefreshOperation?.id == operation.id {
+            sessionRefreshOperation = nil
+          }
+        }
+        let refreshed = try await operation.task.value
         guard workflowSession?.grantID == session.grantID else {
           throw CancellationError()
         }
@@ -1356,8 +1366,8 @@ final class AppStore: ObservableObject {
   }
 
   private func clearWorkflowSession() {
-    refreshTask?.cancel()
-    refreshTask = nil
+    sessionRefreshOperation?.task.cancel()
+    sessionRefreshOperation = nil
     refreshScheduleTask?.cancel()
     refreshScheduleTask = nil
     sessionPersistenceTask?.cancel()
