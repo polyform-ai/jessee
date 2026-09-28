@@ -1189,6 +1189,32 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(history.first?.sourceURL == "https://example.com/source")
 }
 
+@Test func workspaceSaveFailureDoesNotCommitRecordMetadata() async throws {
+  let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+    UUID().uuidString, isDirectory: true)
+  try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: temporary) }
+  let source = temporary.appendingPathComponent("walkthrough.mp4")
+  try Data("video".utf8).write(to: source)
+
+  let workspace = CaptureWorkspace(rootURL: temporary)
+  _ = try await workspace.load()
+  let original = try await workspace.importMedia(from: source, source: .importedVideo)
+  try FileManager.default.removeItem(at: workspace.directoryURL(for: original))
+
+  var updated = original
+  updated.publicPDFUploadID = "new-upload"
+  updated.publicPDFURL = "https://example.com/public/new-upload.pdf"
+
+  await #expect(throws: (any Error).self) {
+    try await workspace.save(updated)
+  }
+  #expect(await workspace.record(id: original.id)?.publicPDFURL == nil)
+
+  let reloaded = try await CaptureWorkspace(rootURL: temporary).load()
+  #expect(reloaded.first?.publicPDFURL == nil)
+}
+
 @Test func workspaceCreatesEditableScreenshotStory() async throws {
   let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
     UUID().uuidString, isDirectory: true)
