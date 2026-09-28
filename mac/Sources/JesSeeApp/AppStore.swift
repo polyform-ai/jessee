@@ -68,6 +68,7 @@ final class AppStore: ObservableObject {
   private var processingNotificationTasks: [ProcessingTaskKey: Task<Void, Never>] = [:]
   private var refreshTask: Task<WorkflowAuthSession, Error>?
   private var refreshScheduleTask: Task<Void, Never>?
+  private var sessionPersistenceTask: Task<Void, Never>?
   private var signInTask: Task<Void, Never>?
   private var workflowSession: WorkflowAuthSession?
   private var appHotKeys: GlobalHotKeyController?
@@ -1186,10 +1187,16 @@ final class AppStore: ObservableObject {
         guard workflowSession?.grantID == session.grantID else {
           throw CancellationError()
         }
-        try JesSeeKeychain.saveWorkflowSession(refreshed)
         workflowSession = refreshed
         authenticationState = .signedIn(refreshed.email)
         session = refreshed
+        do {
+          try JesSeeKeychain.saveWorkflowSession(refreshed)
+          sessionPersistenceTask?.cancel()
+          sessionPersistenceTask = nil
+        } catch {
+          scheduleSessionPersistenceRetry(refreshed)
+        }
         scheduleSessionRefresh()
       } catch PolyformClientError.refreshTooEarly {
         // The local clock can enter the refresh window slightly before the server.
@@ -1235,6 +1242,23 @@ final class AppStore: ObservableObject {
       guard !Task.isCancelled, let self else { return }
       refreshScheduleTask = nil
       _ = try? await accessToken()
+    }
+  }
+
+  private func scheduleSessionPersistenceRetry(_ session: WorkflowAuthSession) {
+    sessionPersistenceTask?.cancel()
+    sessionPersistenceTask = Task { [weak self] in
+      while !Task.isCancelled {
+        do { try await Task.sleep(for: .seconds(5 * 60)) } catch { return }
+        guard !Task.isCancelled, let self, workflowSession == session else { return }
+        do {
+          try JesSeeKeychain.saveWorkflowSession(session)
+          sessionPersistenceTask = nil
+          return
+        } catch {
+          continue
+        }
+      }
     }
   }
 
@@ -1336,6 +1360,8 @@ final class AppStore: ObservableObject {
     refreshTask = nil
     refreshScheduleTask?.cancel()
     refreshScheduleTask = nil
+    sessionPersistenceTask?.cancel()
+    sessionPersistenceTask = nil
     try? JesSeeKeychain.removeWorkflowSession()
     workflowSession = nil
     authenticationState = .signedOut
