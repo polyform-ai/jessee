@@ -25,6 +25,7 @@ struct StoryWebEditor: NSViewRepresentable {
     var canPublishImage: Bool
     var canCopyImage: Bool
     var canCopyPDF: Bool
+    var efficiency: StoryEfficiencyMetrics?
   }
 
   struct BridgeMessage: Decodable {
@@ -105,7 +106,10 @@ struct StoryWebEditor: NSViewRepresentable {
       publicPDFURL: record.publicPDFURL,
       canPublishImage: record.source == .screenshot,
       canCopyImage: record.source == .screenshot,
-      canCopyPDF: record.pdfFilename != nil)
+      canCopyPDF: record.pdfFilename != nil,
+      efficiency: record.source != .screenshot
+        ? StoryEfficiencyMetrics.estimate(story: story, duration: record.duration)
+        : nil)
     guard let data = try? JesSeeJSON.encoder().encode(payload),
       let json = String(data: data, encoding: .utf8)
     else { return }

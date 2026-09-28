@@ -554,6 +554,19 @@ final class AppStore: ObservableObject {
     return publicURL
   }
 
+  func copyPublicPDFURL(
+    recordID: String, in preferredWorkspace: CaptureWorkspace? = nil
+  ) async -> String? {
+    guard let sourceWorkspace = preferredWorkspace ?? workspace,
+      let record = await sourceWorkspace.record(id: recordID),
+      let publicURL = record.publicPDFURL,
+      isCurrentWorkspaceLocation(sourceWorkspace)
+    else { return nil }
+    copyToPasteboard(publicURL)
+    show(.success("Public PDF link copied to clipboard."))
+    return publicURL
+  }
+
   func copyPDF(recordID: String) -> Bool {
     guard let workspace, let record = captures.first(where: { $0.id == recordID }),
       let filename = record.pdfFilename
@@ -582,14 +595,32 @@ final class AppStore: ObservableObject {
       return false
     }
     do {
+      let currentRecord = await sourceWorkspace.record(id: record.id) ?? record
+      let existingStory: StoryDocument?
+      if let filename = currentRecord.storyFilename {
+        existingStory = try? await sourceWorkspace.read(
+          StoryDocument.self, filename: filename, for: currentRecord)
+      } else {
+        existingStory = nil
+      }
       try await sourceWorkspace.write(story, filename: "story.json", for: record)
       let rendered = try DocumentRenderer.render(
         story: story, in: sourceWorkspace.directoryURL(for: record))
-      var updated = await sourceWorkspace.record(id: record.id) ?? record
+      var updated = await sourceWorkspace.record(id: record.id) ?? currentRecord
       updated.title = story.title
       updated.storyFilename = "story.json"
       updated.htmlFilename = rendered.html
       updated.pdfFilename = rendered.pdf
+      if existingStory != nil, existingStory != story {
+        let cleanupIDs = ([updated.publicPDFUploadID].compactMap { $0 }
+          + (updated.publicPDFCleanupUploadIDs ?? []))
+          .reduce(into: [String]()) { result, id in
+            if !result.contains(id) { result.append(id) }
+          }
+        updated.publicPDFUploadID = nil
+        updated.publicPDFURL = nil
+        updated.publicPDFCleanupUploadIDs = cleanupIDs.isEmpty ? nil : cleanupIDs
+      }
       try await sourceWorkspace.save(updated)
       replace(updated, from: sourceWorkspace)
       if isCurrentWorkspaceLocation(sourceWorkspace) {
@@ -1024,6 +1055,9 @@ final class AppStore: ObservableObject {
     let content = UNMutableNotificationContent()
     content.title = "Your JesSee story is ready"
     let completedRecord = await processingWorkspace.record(id: id)
+    if isCurrentWorkspace(processingWorkspace) {
+      show(.success("Story ready: \(completedRecord?.title ?? "Open it in your Library")"))
+    }
     content.body = completedRecord?.title ?? "Open the library to review it."
     content.sound = .default
     content.interruptionLevel = .active

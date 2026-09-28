@@ -1220,6 +1220,36 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(html.contains("FINDING 1"))
 }
 
+@Test func storyEfficiencyEstimatesVideoDocumentAndCostSavings() {
+  let story = StoryDocument(
+    title: "A shorter visual brief",
+    summary: "The document keeps the useful context.",
+    keyPoints: ["One clear outcome"],
+    steps: [
+      StoryStep(
+        startSeconds: 0, endSeconds: 30, title: "First finding",
+        narrative: "Explain the evidence.", transcript: "",
+        imageFilename: "screenshots/evidence.png"),
+      StoryStep(
+        startSeconds: 30, endSeconds: 60, title: "Second finding",
+        narrative: "Reuse the same evidence.", transcript: "",
+        imageFilename: "screenshots/evidence.png"),
+    ])
+
+  let metrics = StoryEfficiencyMetrics.estimate(story: story, duration: 600)
+
+  #expect(metrics.videoMinutes == 10)
+  #expect(metrics.videoTokens == 180_000)
+  #expect(metrics.documentTokens > StoryEfficiencyMetrics.imageTokens)
+  #expect(metrics.documentTokens < 2 * StoryEfficiencyMetrics.imageTokens)
+  #expect(metrics.tokensSaved == metrics.videoTokens - metrics.documentTokens)
+  #expect(metrics.percentSaved == 99)
+  #expect(
+    abs(
+      metrics.estimatedCostSaved
+        - (Double(metrics.tokensSaved) / 1_000_000 * 2.0)) < 0.000_001)
+}
+
 @Test func mediaToolsReadVideoExtractAudioAndCreateFrames() async throws {
   let ffmpeg = URL(fileURLWithPath: "/opt/homebrew/bin/ffmpeg")
   guard FileManager.default.isExecutableFile(atPath: ffmpeg.path) else { return }

@@ -23,6 +23,12 @@ body.is-dirty #saveStatus { color: #9a6100; }
 .public-link-row[hidden] { display: none; }
 .public-link-value { min-width: 0; overflow: hidden; color: #5148ef; text-overflow: ellipsis; white-space: nowrap; user-select: text; }
 .public-link-row span { flex: 0 0 auto; color: #178447; font-weight: 700; }
+.efficiency-banner { max-width: 920px; margin: 0 auto 18px; display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); overflow: hidden; border: 1px solid #dcd9ea; border-radius: 16px; background: linear-gradient(135deg,#2e286e 0%,#5a52ff 58%,#7770ee 100%); box-shadow: 0 12px 32px rgba(42,34,91,.18); }
+.efficiency-metric { min-width: 0; padding: 16px 17px; color: #fff; border-right: 1px solid rgba(255,255,255,.18); }
+.efficiency-metric:last-child { border-right: 0; }
+.efficiency-metric span { display: block; color: rgba(255,255,255,.72); font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.efficiency-metric strong { display: block; margin-top: 5px; font-size: 23px; line-height: 1; letter-spacing: -.035em; }
+.efficiency-metric small { display: block; overflow: hidden; margin-top: 7px; color: rgba(255,255,255,.7); font-size: 9px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
 .share-options { max-width: 920px; margin: 0 auto 18px; padding: 18px; border: 1px solid #dcd9ea; border-radius: 16px; background: linear-gradient(145deg,#fff 0%,#f7f5ff 100%); box-shadow: 0 12px 35px rgba(42,34,91,.08); }
 .share-options-heading { margin-bottom: 13px; }
 .share-options-heading h2 { margin: 0; font-size: 20px; letter-spacing: -.02em; }
@@ -141,6 +147,8 @@ button:disabled { opacity: .38; cursor: default; }
   .header-sharing, .header-actions { width: 100%; align-items: flex-start; justify-content: flex-start; }
   .public-link-row { max-width: 100%; justify-content: flex-start; }
   .share-option-grid { grid-template-columns: 1fr; }
+  .efficiency-banner { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .efficiency-metric { border-bottom: 1px solid rgba(255,255,255,.18); }
   [data-story-overview], [data-story-step] { padding-left: 28px; padding-right: 28px; }
   .toolbar-tip { display: none; }
 }
