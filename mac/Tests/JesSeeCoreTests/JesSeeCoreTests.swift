@@ -1215,6 +1215,42 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(reloaded.first?.publicPDFURL == nil)
 }
 
+@Test func workspaceIndexFailureRestoresCaptureMetadata() async throws {
+  let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+    UUID().uuidString, isDirectory: true)
+  try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: temporary) }
+  let source = temporary.appendingPathComponent("walkthrough.mp4")
+  try Data("video".utf8).write(to: source)
+
+  let workspace = CaptureWorkspace(rootURL: temporary)
+  _ = try await workspace.load()
+  let original = try await workspace.importMedia(from: source, source: .importedVideo)
+  let indexURL = workspace.rootURL.appendingPathComponent("library.json")
+  let originalIndex = try Data(contentsOf: indexURL)
+  try FileManager.default.removeItem(at: indexURL)
+  try FileManager.default.createDirectory(at: indexURL, withIntermediateDirectories: false)
+
+  var updated = original
+  updated.publicPDFUploadID = "new-upload"
+  updated.publicPDFURL = "https://example.com/public/new-upload.pdf"
+  await #expect(throws: (any Error).self) {
+    try await workspace.save(updated)
+  }
+  #expect(await workspace.record(id: original.id)?.publicPDFURL == nil)
+  let captureData = try Data(
+    contentsOf: workspace.directoryURL(for: original).appendingPathComponent("capture.json"))
+  #expect(try JesSeeJSON.decoder().decode(CaptureRecord.self, from: captureData).publicPDFURL == nil)
+  let captureFiles = try FileManager.default.contentsOfDirectory(
+    atPath: workspace.directoryURL(for: original).path)
+  #expect(!captureFiles.contains(where: { $0.hasSuffix(".backup") }))
+
+  try FileManager.default.removeItem(at: indexURL)
+  try originalIndex.write(to: indexURL, options: .atomic)
+  let reloaded = try await CaptureWorkspace(rootURL: temporary).load()
+  #expect(reloaded.first?.publicPDFURL == nil)
+}
+
 @Test func workspaceCreatesEditableScreenshotStory() async throws {
   let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
     UUID().uuidString, isDirectory: true)
