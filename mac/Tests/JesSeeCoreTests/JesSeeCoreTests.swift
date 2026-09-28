@@ -250,6 +250,35 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(original.pdfPublicationState != renderedEdit.pdfPublicationState)
 }
 
+@Test func workspacePersistsLegacyPDFBaselineBeforeStoryChanges() async throws {
+  let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+    UUID().uuidString, isDirectory: true)
+  try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: temporary) }
+  let source = temporary.appendingPathComponent("capture.png")
+  try Data("png".utf8).write(to: source)
+
+  let workspace = CaptureWorkspace(rootURL: temporary)
+  _ = try await workspace.load()
+  var record = try await workspace.importScreenshot(from: source)
+  let storyFilename = try #require(record.storyFilename)
+  let publishedStory = try await workspace.read(
+    StoryDocument.self, filename: storyFilename, for: record)
+  record.publicPDFUploadID = "upload-1"
+  record.publicPDFURL = "https://example.com/public/story.pdf"
+  try await workspace.save(record)
+
+  let migrated = try await workspace.migrateLegacyPDFPublicationState(for: record)
+  var editedStory = publishedStory
+  editedStory.summary = "Changed after publication"
+  try await workspace.write(editedStory, filename: storyFilename, for: migrated)
+
+  let reloadedWorkspace = CaptureWorkspace(rootURL: temporary)
+  let reloadedRecord = try #require(try await reloadedWorkspace.load().first)
+  #expect(reloadedRecord.publicPDFPublicationState == publishedStory.pdfPublicationState)
+  #expect(reloadedRecord.publicPDFPublicationState != editedStory.pdfPublicationState)
+}
+
 @Test func configurationOpensAtLoginByDefaultAndPreservesAnOptOut() throws {
   let legacy = Data(#"{"email":"","outputFolderPath":"","setupCompleted":false,"shareScreenshotsForStory":true,"shareAnonymousFeatureUsage":true}"#.utf8)
   let decodedLegacy = try JesSeeJSON.decoder().decode(JesSeeConfiguration.self, from: legacy)

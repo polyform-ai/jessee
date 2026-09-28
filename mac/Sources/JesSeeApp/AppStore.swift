@@ -600,16 +600,15 @@ final class AppStore: ObservableObject {
       return false
     }
     do {
-      let currentRecord = await sourceWorkspace.record(id: record.id) ?? record
-      let existingStory: StoryDocument?
-      if let filename = currentRecord.storyFilename {
-        existingStory = try? await sourceWorkspace.read(
-          StoryDocument.self, filename: filename, for: currentRecord)
-      } else {
-        existingStory = nil
+      var currentRecord = await sourceWorkspace.record(id: record.id) ?? record
+      let legacyPDFStateWasMissing = currentRecord.publicPDFURL != nil
+        && currentRecord.publicPDFPublicationState == nil
+      currentRecord = try await sourceWorkspace.migrateLegacyPDFPublicationState(
+        for: currentRecord)
+      if legacyPDFStateWasMissing {
+        replacePublication(currentRecord, from: sourceWorkspace)
       }
       let publishedPDFState = currentRecord.publicPDFPublicationState
-        ?? existingStory?.pdfPublicationState
       let shouldInvalidatePublicPDF = currentRecord.publicPDFURL != nil
         && publishedPDFState != story.pdfPublicationState
       let rendered = try DocumentRenderer.render(
