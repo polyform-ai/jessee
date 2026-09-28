@@ -62,6 +62,7 @@ interface EditorPayload {
   publicImagePublicationState?: PublishedImageState;
   publicImageIsCurrent: boolean;
   publicPDFURL?: string;
+  publicPDFNeedsCleanup: boolean;
   canPublishImage: boolean;
   canCopyImage: boolean;
   canCopyPDF: boolean;
@@ -96,6 +97,7 @@ declare global {
       publicImageURL?: string;
       publicImagePublicationState?: PublishedImageState;
       publicPDFURL?: string;
+      publicPDFNeedsCleanup?: boolean;
     }) => void;
     webkit?: {
       messageHandlers?: {
@@ -176,6 +178,8 @@ let pendingSaveRevision: number | undefined;
 let pendingImageState: string | undefined;
 let pendingAction: BridgeMessage["type"] | undefined;
 let markupResizeObserver: ResizeObserver | undefined;
+let savedPublicPDFURL = payload.publicPDFURL;
+let publishedPDFStoryState: string | undefined;
 
 const StoryImage = TiptapNode.create({
   name: "storyImage",
@@ -261,6 +265,7 @@ editor = new Editor({
   onSelectionUpdate: updateToolbar,
   onTransaction: updateToolbar
 });
+publishedPDFStoryState = payload.publicPDFURL ? currentStoryState() : undefined;
 bindShellEvents();
 updateToolbar();
 if (payload.publicPDFURL) showPublicLink(payload.publicPDFURL);
@@ -295,6 +300,11 @@ window.jesseeDidUpdatePublicationState = (update) => {
   payload.publicImageURL = update.publicImageURL;
   payload.publicImagePublicationState = update.publicImagePublicationState;
   payload.publicPDFURL = update.publicPDFURL;
+  payload.publicPDFNeedsCleanup = update.publicPDFNeedsCleanup ?? false;
+  if (!payload.canPublishImage) {
+    savedPublicPDFURL = update.publicPDFURL;
+    publishedPDFStoryState = update.publicPDFURL ? currentStoryState() : undefined;
+  }
   publishedImageState = serializedImagePublicationState(update.publicImagePublicationState);
   updateScreenshotURLAction();
   updatePublicPDFLink();
@@ -309,7 +319,7 @@ function renderShell(): void {
       ? `<button class="header-icon pdf-icon" id="copyPDF" data-tooltip="Save and copy PDF" title="Save and copy PDF" aria-label="Save and copy PDF">PDF</button>`
       : ""
   ].join("");
-  const standardActions = payload.canPublishImage ? "" : `<button class="button primary" id="openPDF">Save & open PDF</button><button class="button secondary" id="getLink" data-tooltip="${payload.publicPDFURL ? "Copy saved public link" : "Generate public link"}" title="${payload.publicPDFURL ? "Copy saved public link" : "Generate public link"}">${publicPDFActionLabel()}</button>`;
+  const standardActions = payload.canPublishImage ? "" : `<button class="button primary" id="openPDF">Save & open PDF</button><button class="button secondary" id="getLink" data-tooltip="${publicPDFActionHelp()}" title="${publicPDFActionHelp()}">${publicPDFActionLabel()}</button>`;
   const efficiency = payload.efficiency ? `
       <section class="efficiency-banner" aria-label="Estimated context savings">
         ${metric("Video", formatMinutes(payload.efficiency.videoMinutes), "Recorded duration")}
@@ -364,7 +374,8 @@ function bindShellEvents(): void {
   mustFind<HTMLButtonElement>("#openPDF").addEventListener("click", () => send("saveAndOpenPDF"));
   document.querySelector<HTMLButtonElement>("#getLink")
     ?.addEventListener("click", () =>
-      send(payload.publicPDFURL ? "saveAndCopyPublicPDFURL" : "saveAndPublishPDF"));
+      send(payload.publicPDFURL && !payload.publicPDFNeedsCleanup
+        ? "saveAndCopyPublicPDFURL" : "saveAndPublishPDF"));
   document.querySelector<HTMLButtonElement>("#screenshotURLAction")
     ?.addEventListener("click", () =>
       send(payload.publicImageURL && screenshotImageIsPublished()
@@ -429,8 +440,9 @@ function markDirty(): void {
   editRevision += 1;
   document.body.classList.add("is-dirty");
   setStatus("Unsaved changes");
-  if (!payload.canPublishImage && payload.publicPDFURL) {
-    payload.publicPDFURL = undefined;
+  if (!payload.canPublishImage && publishedPDFStoryState) {
+    payload.publicPDFURL = currentStoryState() === publishedPDFStoryState
+      ? savedPublicPDFURL : undefined;
     updatePublicPDFLink();
   }
   updateScreenshotURLAction();
@@ -548,7 +560,12 @@ function isPublishAction(action?: BridgeMessage["type"]): boolean {
 }
 
 function publicPDFActionLabel(): string {
-  return payload.publicPDFURL ? "Copy Link" : "Get Link";
+  return payload.publicPDFURL && !payload.publicPDFNeedsCleanup ? "Copy Link" : "Get Link";
+}
+
+function publicPDFActionHelp(): string {
+  if (payload.publicPDFNeedsCleanup) return "Retry public link cleanup";
+  return payload.publicPDFURL ? "Copy saved public link" : "Generate public link";
 }
 
 function showPublicLink(publicURL: string, status = ""): void {
@@ -560,6 +577,8 @@ function showPublicLink(publicURL: string, status = ""): void {
     return;
   }
   payload.publicPDFURL = publicURL;
+  savedPublicPDFURL = publicURL;
+  publishedPDFStoryState = currentStoryState();
   const row = mustFind<HTMLElement>("#publicLinkRow");
   const link = mustFind<HTMLElement>("#publicLink");
   link.textContent = publicURL;
@@ -580,10 +599,14 @@ function updatePublicPDFLink(): void {
   const action = document.querySelector<HTMLButtonElement>("#getLink");
   if (action) {
     action.textContent = publicPDFActionLabel();
-    const help = payload.publicPDFURL ? "Copy saved public link" : "Generate public link";
+    const help = publicPDFActionHelp();
     action.title = help;
     action.dataset.tooltip = help;
   }
+}
+
+function currentStoryState(): string {
+  return JSON.stringify(serializeStory());
 }
 
 function metric(label: string, value: string, detail: string): string {

@@ -7,6 +7,7 @@ struct StoryWebEditor: NSViewRepresentable {
     var publicImageURL: String?
     var publicImagePublicationState: StoryImagePublicationState?
     var publicPDFURL: String?
+    var publicPDFNeedsCleanup: Bool
   }
 
   struct Frame: Encodable {
@@ -22,6 +23,7 @@ struct StoryWebEditor: NSViewRepresentable {
     var publicImagePublicationState: StoryImagePublicationState?
     var publicImageIsCurrent: Bool
     var publicPDFURL: String?
+    var publicPDFNeedsCleanup: Bool
     var canPublishImage: Bool
     var canCopyImage: Bool
     var canCopyPDF: Bool
@@ -42,7 +44,8 @@ struct StoryWebEditor: NSViewRepresentable {
     PublicationSnapshot(
       publicImageURL: record.publicImageURL,
       publicImagePublicationState: record.publicImagePublicationState,
-      publicPDFURL: record.publicPDFURL)
+      publicPDFURL: record.publicPDFURL,
+      publicPDFNeedsCleanup: !(record.publicPDFCleanupUploadIDs ?? []).isEmpty)
   }
 
   func makeCoordinator() -> Coordinator { Coordinator(onAction: onAction) }
@@ -104,6 +107,7 @@ struct StoryWebEditor: NSViewRepresentable {
           == story.primaryImagePublicationState(
             fallbackFilename: record.imageFilenames.first ?? record.mediaFilename),
       publicPDFURL: record.publicPDFURL,
+      publicPDFNeedsCleanup: !(record.publicPDFCleanupUploadIDs ?? []).isEmpty,
       canPublishImage: record.source == .screenshot,
       canCopyImage: record.source == .screenshot,
       canCopyPDF: record.pdfFilename != nil,
