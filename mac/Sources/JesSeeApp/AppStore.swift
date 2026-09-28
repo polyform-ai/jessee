@@ -679,7 +679,7 @@ final class AppStore: ObservableObject {
       if !isAutosave { recordUsage(.storyEdited, feature: "story_editor") }
       return true
     } catch {
-      if isCurrentWorkspaceLocation(sourceWorkspace) {
+      if isCurrentWorkspaceLocation(sourceWorkspace), !isAutosave {
         show(.error("JesSee could not save this story: \(error.localizedDescription)"))
       }
       return false

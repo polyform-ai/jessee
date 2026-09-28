@@ -17,6 +17,7 @@ import {
   serializedPDFPublicationState
 } from "../src/pdfPublicationState.ts";
 import { normalizeSourceURL } from "../src/storyURL.ts";
+import { autosaveRetryDelay, shouldFlushPendingAutosave } from "../src/autosave.ts";
 
 function installDOM(): void {
   const window = parseHTML("<html><body></body></html").window;
@@ -57,6 +58,16 @@ test("source URLs are normalized before the editor saves them", () => {
   assert.equal(normalizeSourceURL("https://jira/browse/ABC"), "https://jira/browse/ABC");
   assert.equal(normalizeSourceURL("file:///tmp/private"), undefined);
   assert.equal(normalizeSourceURL("not a URL"), undefined);
+});
+
+test("autosave retries back off and pending edits flush before teardown", () => {
+  assert.deepEqual(
+    [0, 1, 2, 3, 10].map(autosaveRetryDelay),
+    [1_500, 3_000, 6_000, 12_000, 30_000]
+  );
+  assert.equal(shouldFlushPendingAutosave(true, false), true);
+  assert.equal(shouldFlushPendingAutosave(false, false), false);
+  assert.equal(shouldFlushPendingAutosave(true, true), false);
 });
 
 test("markup coordinates are normalized to the displayed image bounds", () => {

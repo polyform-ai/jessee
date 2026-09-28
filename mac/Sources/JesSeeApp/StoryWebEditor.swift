@@ -89,7 +89,10 @@ struct StoryWebEditor: NSViewRepresentable {
   }
 
   static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
-    webView.configuration.userContentController.removeScriptMessageHandler(forName: "storyEditor")
+    webView.evaluateJavaScript("window.jesseeFlushPendingSave?.()") { _, _ in
+      webView.configuration.userContentController.removeScriptMessageHandler(
+        forName: "storyEditor")
+    }
   }
 
   private func load(in webView: WKWebView) {

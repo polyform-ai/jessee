@@ -19,6 +19,7 @@ import {
   type PDFPublicationState
 } from "./pdfPublicationState";
 import { normalizeSourceURL } from "./storyURL";
+import { autosaveRetryDelay, shouldFlushPendingAutosave } from "./autosave";
 
 type AnnotationKind = "highlight" | "redaction";
 
@@ -108,6 +109,7 @@ declare global {
       publicPDFNeedsCleanup?: boolean;
     }) => void;
     jesseeDidUpdateEstimatedSavings?: (total: number) => void;
+    jesseeFlushPendingSave?: () => void;
     webkit?: {
       messageHandlers?: {
         storyEditor?: { postMessage: (message: BridgeMessage) => void };
@@ -188,6 +190,7 @@ let pendingImageState: string | undefined;
 let pendingStoryState: string | undefined;
 let pendingAction: BridgeMessage["type"] | undefined;
 let autosaveTimer: number | undefined;
+let autosaveRetryCount = 0;
 let markupResizeObserver: ResizeObserver | undefined;
 let savedPublicPDFURL = payload.publicPDFURL;
 let publishedPDFStoryState = payload.publicPDFPublicationState
@@ -298,16 +301,24 @@ window.jesseeDidSave = (success, message, publicURL) => {
   if (success && completedAction === "saveAndPublishImage") {
     publishedImageState = savedImageState;
   }
-  setStatus(
-    success && hasNewerEdits
+  if (success) autosaveRetryCount = 0;
+  const shouldRetryAutosave = !success && completedAction === "save"
+    && document.body.classList.contains("is-dirty");
+  setStatus(shouldRetryAutosave
+    ? "Autosave failed · Retrying…"
+    : success && hasNewerEdits
       ? isPublishAction(completedAction)
         ? "Link copied · New edits not saved"
         : "Earlier version saved · New edits not saved"
       : message,
-    !success
-  );
+  !success);
   if (success && !hasNewerEdits) document.body.classList.remove("is-dirty");
   if (success && hasNewerEdits) scheduleAutosave(300);
+  if (shouldRetryAutosave) {
+    const retryDelay = autosaveRetryDelay(autosaveRetryCount);
+    autosaveRetryCount += 1;
+    scheduleAutosave(retryDelay);
+  }
   if (success && publicURL) showPublicLink(publicURL, "Copied", savedStoryState);
   updateScreenshotURLAction();
 };
@@ -342,6 +353,14 @@ window.jesseeDidUpdateEstimatedSavings = (total) => {
   const value = document.querySelector<HTMLElement>("#totalEstimatedSavings");
   if (value) value.textContent = formatCurrency(total);
 };
+
+window.jesseeFlushPendingSave = () => {
+  if (!shouldFlushPendingAutosave(
+    document.body.classList.contains("is-dirty"), pendingAction !== undefined
+  )) return;
+  send("save");
+};
+window.addEventListener("pagehide", () => window.jesseeFlushPendingSave?.());
 
 function renderShell(): void {
   const standardActions = payload.canPublishImage ? "" : `<button class="button primary" id="openPDF">Open PDF</button><button class="button secondary" id="getLink" data-tooltip="${publicPDFActionHelp()}" title="${publicPDFActionHelp()}">Get Link</button>`;
@@ -463,6 +482,7 @@ function updateToolbar(): void {
 
 function markDirty(): void {
   editRevision += 1;
+  autosaveRetryCount = 0;
   document.body.classList.add("is-dirty");
   setStatus("Saving soon…");
   if (!payload.canPublishImage && publishedPDFStoryState) {
