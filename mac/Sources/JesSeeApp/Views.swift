@@ -893,10 +893,14 @@ private struct CaptureDetailView: View {
             let saved = await store.saveStory(
               updatedStory, for: record, in: actionWorkspace, isAutosave: action == "save")
             if saved {
-              self.loadedStory = LoadedStory(
-                recordID: record.id, document: updatedStory, workspace: actionWorkspace)
-              self.totalEstimatedCostSaved = await store.totalEstimatedCostSaved(
-                in: actionWorkspace)
+              let updatedTotal = await store.totalEstimatedCostSaved(in: actionWorkspace)
+              if self.loadedStory?.recordID == record.id,
+                self.loadedStory?.workspace === actionWorkspace
+              {
+                self.loadedStory = LoadedStory(
+                  recordID: record.id, document: updatedStory, workspace: actionWorkspace)
+                self.totalEstimatedCostSaved = updatedTotal
+              }
               if action == "saveAndOpenPDF" {
                 store.openPDF(recordID: record.id)
                 completion(true, "PDF updated and opened", nil)
