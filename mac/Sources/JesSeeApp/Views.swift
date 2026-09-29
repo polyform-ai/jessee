@@ -850,6 +850,7 @@ struct LibraryView: View {
 private struct CaptureDetailView: View {
   private struct LoadedStory {
     let recordID: String
+    let editorID: UUID
     var document: StoryDocument
     let workspace: CaptureWorkspace
   }
@@ -895,10 +896,12 @@ private struct CaptureDetailView: View {
             if saved {
               let updatedTotal = await store.totalEstimatedCostSaved(in: actionWorkspace)
               if self.loadedStory?.recordID == record.id,
+                self.loadedStory?.editorID == loadedStory.editorID,
                 self.loadedStory?.workspace === actionWorkspace
               {
                 self.loadedStory = LoadedStory(
-                  recordID: record.id, document: updatedStory, workspace: actionWorkspace)
+                  recordID: record.id, editorID: loadedStory.editorID,
+                  document: updatedStory, workspace: actionWorkspace)
                 self.totalEstimatedCostSaved = updatedTotal
               }
               if action == "saveAndOpenPDF" {
@@ -976,7 +979,8 @@ private struct CaptureDetailView: View {
       guard !Task.isCancelled, let loadedDocument else { return }
       totalEstimatedCostSaved = totalSavings
       loadedStory = LoadedStory(
-        recordID: record.id, document: loadedDocument, workspace: sourceWorkspace)
+        recordID: record.id, editorID: UUID(), document: loadedDocument,
+        workspace: sourceWorkspace)
     }
   }
 
