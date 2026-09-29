@@ -25,6 +25,16 @@ final class AppStore: ObservableObject {
     }
   }
 
+  private struct StoryOperationKey: Hashable {
+    var workspaceID: ObjectIdentifier
+    var recordID: String
+
+    init(workspace: CaptureWorkspace, recordID: String) {
+      workspaceID = ObjectIdentifier(workspace)
+      self.recordID = recordID
+    }
+  }
+
   private struct PublicationWaiter {
     var captureID: String
     var continuation: CheckedContinuation<Void, Never>
@@ -78,6 +88,8 @@ final class AppStore: ObservableObject {
   private var workflowSession: WorkflowAuthSession?
   private var appHotKeys: GlobalHotKeyController?
   private var publicationWaiters: [PublicationWaiter] = []
+  private var activeStoryOperations: Set<StoryOperationKey> = []
+  private var storyOperationWaiters: [StoryOperationKey: [CheckedContinuation<Void, Never>]] = [:]
 
   init() {
     let notificationCenter = UNUserNotificationCenter.current()
@@ -324,6 +336,8 @@ final class AppStore: ObservableObject {
     cancelProcessingForWorkspaceChange()
     configuration.outputFolderPath = url.path
     workspace = selectedWorkspace
+    captures = []
+    selectedCaptureID = nil
     persistConfiguration()
     Task { await loadLibrary() }
     show(.success("Your JesSee Library will be saved here."))
@@ -596,19 +610,62 @@ final class AppStore: ObservableObject {
     return true
   }
 
-  func loadStory(for record: CaptureRecord) async -> StoryDocument? {
-    guard let workspace, let filename = record.storyFilename else { return nil }
-    return try? await workspace.read(StoryDocument.self, filename: filename, for: record)
+  func loadStory(
+    for record: CaptureRecord, in preferredWorkspace: CaptureWorkspace? = nil
+  ) async -> StoryDocument? {
+    guard let sourceWorkspace = preferredWorkspace ?? workspace else { return nil }
+    let operationKey = await beginStoryOperation(
+      workspace: sourceWorkspace, recordID: record.id)
+    defer { finishStoryOperation(operationKey) }
+    guard let currentRecord = await sourceWorkspace.record(id: record.id),
+      let filename = currentRecord.storyFilename
+    else { return nil }
+    return try? await sourceWorkspace.read(
+      StoryDocument.self, filename: filename, for: currentRecord)
+  }
+
+  func totalEstimatedCostSaved(
+    excludingRecordID: String? = nil,
+    in preferredWorkspace: CaptureWorkspace? = nil
+  ) async -> Double {
+    guard let sourceWorkspace = preferredWorkspace ?? workspace else { return 0 }
+    var total = 0.0
+    let recordIDs = await sourceWorkspace.allRecords()
+      .filter { $0.source != .screenshot && $0.id != excludingRecordID }
+      .map(\.id)
+    for recordID in recordIDs {
+      total += await estimatedCostSaved(recordID: recordID, in: sourceWorkspace)
+    }
+    return total
+  }
+
+  private func estimatedCostSaved(
+    recordID: String, in sourceWorkspace: CaptureWorkspace
+  ) async -> Double {
+    let operationKey = await beginStoryOperation(
+      workspace: sourceWorkspace, recordID: recordID)
+    defer { finishStoryOperation(operationKey) }
+    guard let record = await sourceWorkspace.record(id: recordID),
+      let filename = record.storyFilename,
+      let story = try? await sourceWorkspace.read(
+        StoryDocument.self, filename: filename, for: record)
+    else { return 0 }
+    return StoryEfficiencyMetrics.estimate(
+      story: story, duration: record.duration
+    ).estimatedCostSaved
   }
 
   func saveStory(
     _ story: StoryDocument, for record: CaptureRecord,
-    in sourceWorkspace: CaptureWorkspace
+    in sourceWorkspace: CaptureWorkspace, isAutosave: Bool = false
   ) async -> Bool {
     guard publishingCaptureID != record.id else {
       show(.error("Wait for the public-link update to finish before saving more edits."))
       return false
     }
+    let operationKey = await beginStoryOperation(
+      workspace: sourceWorkspace, recordID: record.id)
+    defer { finishStoryOperation(operationKey) }
     do {
       let currentRecord = await sourceWorkspace.record(id: record.id) ?? record
       let shouldInvalidatePublicPDF = currentRecord.publicPDFURL != nil
@@ -618,13 +675,18 @@ final class AppStore: ObservableObject {
       let htmlFilename = "JesSee Story-\(artifactID).html"
       let pdfFilename = "JesSee Story-\(artifactID).pdf"
       let directory = sourceWorkspace.directoryURL(for: record)
-      let newArtifactURLs = [storyFilename, htmlFilename, pdfFilename].map {
+      let newArtifactFilenames = isAutosave
+        ? [storyFilename]
+        : [storyFilename, htmlFilename, pdfFilename]
+      let newArtifactURLs = newArtifactFilenames.map {
         directory.appendingPathComponent($0)
       }
       do {
         try await sourceWorkspace.write(story, filename: storyFilename, for: record)
-        _ = try DocumentRenderer.render(
-          story: story, in: directory, htmlFilename: htmlFilename, pdfFilename: pdfFilename)
+        if !isAutosave {
+          _ = try DocumentRenderer.render(
+            story: story, in: directory, htmlFilename: htmlFilename, pdfFilename: pdfFilename)
+        }
       } catch {
         for url in newArtifactURLs { try? FileManager.default.removeItem(at: url) }
         throw error
@@ -632,8 +694,13 @@ final class AppStore: ObservableObject {
       var updated = currentRecord
       updated.title = story.title
       updated.storyFilename = storyFilename
-      updated.htmlFilename = htmlFilename
-      updated.pdfFilename = pdfFilename
+      if !isAutosave {
+        updated.htmlFilename = htmlFilename
+        updated.pdfFilename = pdfFilename
+      } else {
+        updated.htmlFilename = nil
+        updated.pdfFilename = nil
+      }
       if shouldInvalidatePublicPDF {
         let cleanupIDs = ([updated.publicPDFUploadID].compactMap { $0 }
           + (updated.publicPDFCleanupUploadIDs ?? []))
@@ -651,20 +718,21 @@ final class AppStore: ObservableObject {
         for url in newArtifactURLs { try? FileManager.default.removeItem(at: url) }
         throw error
       }
-      let committedFilenames = Set([storyFilename, htmlFilename, pdfFilename])
+      let committedFilenames = Set(
+        [updated.storyFilename, updated.htmlFilename, updated.pdfFilename].compactMap { $0 })
       for filename in [
         currentRecord.storyFilename, currentRecord.htmlFilename, currentRecord.pdfFilename,
       ].compactMap({ $0 }) where !committedFilenames.contains(filename) {
         try? FileManager.default.removeItem(at: directory.appendingPathComponent(filename))
       }
       replace(updated, from: sourceWorkspace)
-      if isCurrentWorkspaceLocation(sourceWorkspace) {
+      if isCurrentWorkspaceLocation(sourceWorkspace), !isAutosave {
         show(.success("Story and PDF updated."))
       }
-      recordUsage(.storyEdited, feature: "story_editor")
+      if !isAutosave { recordUsage(.storyEdited, feature: "story_editor") }
       return true
     } catch {
-      if isCurrentWorkspaceLocation(sourceWorkspace) {
+      if isCurrentWorkspaceLocation(sourceWorkspace), !isAutosave {
         show(.error("JesSee could not save this story: \(error.localizedDescription)"))
       }
       return false
@@ -1167,6 +1235,31 @@ final class AppStore: ObservableObject {
     if let existing = workspacesByRootURL[key] { return existing }
     workspacesByRootURL[key] = candidate
     return candidate
+  }
+
+  private func beginStoryOperation(
+    workspace: CaptureWorkspace, recordID: String
+  ) async -> StoryOperationKey {
+    let key = StoryOperationKey(workspace: workspace, recordID: recordID)
+    if activeStoryOperations.contains(key) {
+      await withCheckedContinuation { continuation in
+        storyOperationWaiters[key, default: []].append(continuation)
+      }
+    } else {
+      activeStoryOperations.insert(key)
+    }
+    return key
+  }
+
+  private func finishStoryOperation(_ key: StoryOperationKey) {
+    guard var waiters = storyOperationWaiters[key], !waiters.isEmpty else {
+      storyOperationWaiters[key] = nil
+      activeStoryOperations.remove(key)
+      return
+    }
+    let next = waiters.removeFirst()
+    storyOperationWaiters[key] = waiters.isEmpty ? nil : waiters
+    next.resume()
   }
 
   private func beginPublication(for captureID: String) async {

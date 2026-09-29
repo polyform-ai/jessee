@@ -848,15 +848,36 @@ struct LibraryView: View {
 }
 
 private struct CaptureDetailView: View {
+  private struct EditorTaskID: Hashable {
+    let workspaceID: ObjectIdentifier?
+    let recordID: String
+    let stage: String
+  }
+
+  private struct StorySavingsVersion: Hashable {
+    let recordID: String
+    let storyFilename: String?
+    let duration: Double?
+  }
+
+  private struct SavingsTaskID: Hashable {
+    let editorTaskID: EditorTaskID
+    let editorID: UUID?
+    let otherStoryVersions: [StorySavingsVersion]
+  }
+
   private struct LoadedStory {
     let recordID: String
+    let editorID: UUID
     var document: StoryDocument
+    let workspace: CaptureWorkspace
   }
 
   @ObservedObject var store: AppStore
   let record: CaptureRecord
   @Environment(\.openSettings) private var openSettings
   @State private var loadedStory: LoadedStory?
+  @State private var totalEstimatedCostSaved = 0.0
 
   var body: some View {
     VStack(spacing: 0) {
@@ -879,20 +900,35 @@ private struct CaptureDetailView: View {
         .background(.red.opacity(0.08))
       }
 
-      if let loadedStory, loadedStory.recordID == record.id,
-        let directory = store.captureDirectory(for: record)
-      {
-        StoryWebEditor(story: loadedStory.document, record: record, directoryURL: directory) {
+      if let loadedStory, loadedStory.recordID == record.id {
+        let directory = loadedStory.workspace.directoryURL(for: record)
+        StoryWebEditor(
+          story: loadedStory.document, record: record, directoryURL: directory,
+          totalEstimatedCostSaved: totalEstimatedCostSaved
+        ) {
           updatedStory, action, completion in
-          guard let actionWorkspace = store.workspaceForEditorAction(recordID: record.id) else {
-            completion(false, "JesSee could not find this story's Library.", nil)
-            return
-          }
+          let actionWorkspace = loadedStory.workspace
           Task {
             let saved = await store.saveStory(
-              updatedStory, for: record, in: actionWorkspace)
+              updatedStory, for: record, in: actionWorkspace, isAutosave: action == "save")
             if saved {
-              self.loadedStory = LoadedStory(recordID: record.id, document: updatedStory)
+              if self.loadedStory?.recordID == record.id,
+                self.loadedStory?.editorID == loadedStory.editorID,
+                self.loadedStory?.workspace === actionWorkspace
+              {
+                if record.source != .screenshot, let currentStory = self.loadedStory?.document {
+                  let previousSavings = StoryEfficiencyMetrics.estimate(
+                    story: currentStory, duration: record.duration
+                  ).estimatedCostSaved
+                  let updatedSavings = StoryEfficiencyMetrics.estimate(
+                    story: updatedStory, duration: record.duration
+                  ).estimatedCostSaved
+                  self.totalEstimatedCostSaved += updatedSavings - previousSavings
+                }
+                self.loadedStory = LoadedStory(
+                  recordID: record.id, editorID: loadedStory.editorID,
+                  document: updatedStory, workspace: actionWorkspace)
+              }
               if action == "saveAndOpenPDF" {
                 store.openPDF(recordID: record.id)
                 completion(true, "PDF updated and opened", nil)
@@ -945,7 +981,7 @@ private struct CaptureDetailView: View {
             }
           }
         }
-        .id(record.id)
+        .id(loadedStory.editorID)
       } else if record.stage.isProcessing {
         VStack(spacing: 14) {
           ProgressView().controlSize(.large)
@@ -958,12 +994,61 @@ private struct CaptureDetailView: View {
             "JesSee retries temporary failures automatically. Check the message above for anything that needs your attention."))
       }
     }
-    .task(id: "\(record.id):\(record.storyFilename ?? "")") {
+    .task(id: editorTaskID) {
       loadedStory = nil
-      let document = await store.loadStory(for: record)
-      guard !Task.isCancelled, let document else { return }
-      loadedStory = LoadedStory(recordID: record.id, document: document)
+      totalEstimatedCostSaved = 0
+      guard let sourceWorkspace = store.workspaceForEditorAction(recordID: record.id) else { return }
+      guard let loadedDocument = await store.loadStory(for: record, in: sourceWorkspace) else {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      let editorID = UUID()
+      loadedStory = LoadedStory(
+        recordID: record.id, editorID: editorID, document: loadedDocument,
+        workspace: sourceWorkspace)
+      if record.source != .screenshot {
+        totalEstimatedCostSaved = StoryEfficiencyMetrics.estimate(
+          story: loadedDocument, duration: record.duration
+        ).estimatedCostSaved
+      }
     }
+    .task(id: savingsTaskID) {
+      guard let sourceWorkspace = store.workspaceForEditorAction(recordID: record.id) else { return }
+      let editorID = loadedStory?.editorID
+      let otherSavings = await store.totalEstimatedCostSaved(
+        excludingRecordID: record.id, in: sourceWorkspace)
+      guard !Task.isCancelled, self.loadedStory?.recordID == record.id,
+        self.loadedStory?.editorID == editorID,
+        self.loadedStory?.workspace === sourceWorkspace,
+        let currentStory = self.loadedStory?.document
+      else { return }
+      let currentSavings = record.source == .screenshot
+        ? 0
+        : StoryEfficiencyMetrics.estimate(
+          story: currentStory, duration: record.duration
+        ).estimatedCostSaved
+      totalEstimatedCostSaved = otherSavings + currentSavings
+    }
+  }
+
+  private var editorTaskID: EditorTaskID {
+    EditorTaskID(
+      workspaceID: store.workspaceForEditorAction(recordID: record.id).map(ObjectIdentifier.init),
+      recordID: record.id,
+      stage: record.stage.rawValue)
+  }
+
+  private var savingsTaskID: SavingsTaskID {
+    SavingsTaskID(
+      editorTaskID: editorTaskID,
+      editorID: loadedStory?.editorID,
+      otherStoryVersions: store.captures
+        .filter { $0.id != record.id && $0.source != .screenshot }
+        .map {
+          StorySavingsVersion(
+            recordID: $0.id, storyFilename: $0.storyFilename, duration: $0.duration)
+        }
+        .sorted { $0.recordID < $1.recordID })
   }
 
   private var stageIcon: String {

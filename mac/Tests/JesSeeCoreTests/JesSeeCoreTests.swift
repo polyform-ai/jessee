@@ -1388,9 +1388,11 @@ private struct WorkflowTestValue: Decodable, Equatable {
     ])
 
   let metrics = StoryEfficiencyMetrics.estimate(story: story, duration: 600)
+  let fiveMinuteMetrics = StoryEfficiencyMetrics.estimate(story: story, duration: 300)
 
   #expect(metrics.videoMinutes == 10)
-  #expect(metrics.videoTokens == 180_000)
+  #expect(metrics.videoTokens == 300_000)
+  #expect(fiveMinuteMetrics.videoTokens == 150_000)
   #expect(metrics.documentTokens > StoryEfficiencyMetrics.imageTokens)
   #expect(metrics.documentTokens < 2 * StoryEfficiencyMetrics.imageTokens)
   #expect(metrics.tokensSaved == metrics.videoTokens - metrics.documentTokens)
@@ -1398,7 +1400,11 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(
     abs(
       metrics.estimatedCostSaved
-        - (Double(metrics.tokensSaved) / 1_000_000 * 2.0)) < 0.000_001)
+        - (StoryEfficiencyMetrics.estimatedInputCost(tokens: metrics.videoTokens)
+          - StoryEfficiencyMetrics.estimatedInputCost(tokens: metrics.documentTokens)))
+      < 0.000_001)
+  #expect(StoryEfficiencyMetrics.estimatedInputCost(tokens: 272_000) == 0.544)
+  #expect(StoryEfficiencyMetrics.estimatedInputCost(tokens: 272_001) > 1.08)
 }
 
 @Test func mediaToolsReadVideoExtractAudioAndCreateFrames() async throws {
@@ -1430,4 +1436,6 @@ private struct WorkflowTestValue: Decodable, Equatable {
   let frames = try await MediaTools.extractFrames(
     from: video, times: [0.5, 1.5], to: temporary.appendingPathComponent("frames"))
   #expect(frames.count == 2)
+  #expect(abs(frames[0].seconds - 0.5) < 0.1)
+  #expect(abs(frames[1].seconds - 1.5) < 0.1)
 }
