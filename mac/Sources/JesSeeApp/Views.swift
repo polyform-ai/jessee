@@ -848,6 +848,24 @@ struct LibraryView: View {
 }
 
 private struct CaptureDetailView: View {
+  private struct EditorTaskID: Hashable {
+    let workspaceID: ObjectIdentifier?
+    let recordID: String
+    let stage: String
+  }
+
+  private struct StorySavingsVersion: Hashable {
+    let recordID: String
+    let storyFilename: String?
+    let duration: Double?
+  }
+
+  private struct SavingsTaskID: Hashable {
+    let editorTaskID: EditorTaskID
+    let editorID: UUID?
+    let otherStoryVersions: [StorySavingsVersion]
+  }
+
   private struct LoadedStory {
     let recordID: String
     let editorID: UUID
@@ -963,7 +981,7 @@ private struct CaptureDetailView: View {
             }
           }
         }
-        .id(record.id)
+        .id(loadedStory.editorID)
       } else if record.stage.isProcessing {
         VStack(spacing: 14) {
           ProgressView().controlSize(.large)
@@ -976,7 +994,7 @@ private struct CaptureDetailView: View {
             "JesSee retries temporary failures automatically. Check the message above for anything that needs your attention."))
       }
     }
-    .task(id: "\(record.id):\(record.stage)") {
+    .task(id: editorTaskID) {
       loadedStory = nil
       totalEstimatedCostSaved = 0
       guard let sourceWorkspace = store.workspaceForEditorAction(recordID: record.id) else { return }
@@ -993,6 +1011,10 @@ private struct CaptureDetailView: View {
           story: loadedDocument, duration: record.duration
         ).estimatedCostSaved
       }
+    }
+    .task(id: savingsTaskID) {
+      guard let sourceWorkspace = store.workspaceForEditorAction(recordID: record.id) else { return }
+      let editorID = loadedStory?.editorID
       let otherSavings = await store.totalEstimatedCostSaved(
         excludingRecordID: record.id, in: sourceWorkspace)
       guard !Task.isCancelled, self.loadedStory?.recordID == record.id,
@@ -1007,6 +1029,26 @@ private struct CaptureDetailView: View {
         ).estimatedCostSaved
       totalEstimatedCostSaved = otherSavings + currentSavings
     }
+  }
+
+  private var editorTaskID: EditorTaskID {
+    EditorTaskID(
+      workspaceID: store.workspaceForEditorAction(recordID: record.id).map(ObjectIdentifier.init),
+      recordID: record.id,
+      stage: record.stage.rawValue)
+  }
+
+  private var savingsTaskID: SavingsTaskID {
+    SavingsTaskID(
+      editorTaskID: editorTaskID,
+      editorID: loadedStory?.editorID,
+      otherStoryVersions: store.captures
+        .filter { $0.id != record.id && $0.source != .screenshot }
+        .map {
+          StorySavingsVersion(
+            recordID: $0.id, storyFilename: $0.storyFilename, duration: $0.duration)
+        }
+        .sorted { $0.recordID < $1.recordID })
   }
 
   private var stageIcon: String {
