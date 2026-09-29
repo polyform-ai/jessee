@@ -25,6 +25,16 @@ final class AppStore: ObservableObject {
     }
   }
 
+  private struct StoryOperationKey: Hashable {
+    var workspaceID: ObjectIdentifier
+    var recordID: String
+
+    init(workspace: CaptureWorkspace, recordID: String) {
+      workspaceID = ObjectIdentifier(workspace)
+      self.recordID = recordID
+    }
+  }
+
   private struct PublicationWaiter {
     var captureID: String
     var continuation: CheckedContinuation<Void, Never>
@@ -78,6 +88,8 @@ final class AppStore: ObservableObject {
   private var workflowSession: WorkflowAuthSession?
   private var appHotKeys: GlobalHotKeyController?
   private var publicationWaiters: [PublicationWaiter] = []
+  private var activeStoryOperations: Set<StoryOperationKey> = []
+  private var storyOperationWaiters: [StoryOperationKey: [CheckedContinuation<Void, Never>]] = [:]
 
   init() {
     let notificationCenter = UNUserNotificationCenter.current()
@@ -599,10 +611,15 @@ final class AppStore: ObservableObject {
   func loadStory(
     for record: CaptureRecord, in preferredWorkspace: CaptureWorkspace? = nil
   ) async -> StoryDocument? {
-    guard let sourceWorkspace = preferredWorkspace ?? workspace,
-      let filename = record.storyFilename
+    guard let sourceWorkspace = preferredWorkspace ?? workspace else { return nil }
+    let operationKey = await beginStoryOperation(
+      workspace: sourceWorkspace, recordID: record.id)
+    defer { finishStoryOperation(operationKey) }
+    guard let currentRecord = await sourceWorkspace.record(id: record.id),
+      let filename = currentRecord.storyFilename
     else { return nil }
-    return try? await sourceWorkspace.read(StoryDocument.self, filename: filename, for: record)
+    return try? await sourceWorkspace.read(
+      StoryDocument.self, filename: filename, for: currentRecord)
   }
 
   func totalEstimatedCostSaved(in preferredWorkspace: CaptureWorkspace? = nil) async -> Double {
@@ -628,6 +645,9 @@ final class AppStore: ObservableObject {
       show(.error("Wait for the public-link update to finish before saving more edits."))
       return false
     }
+    let operationKey = await beginStoryOperation(
+      workspace: sourceWorkspace, recordID: record.id)
+    defer { finishStoryOperation(operationKey) }
     do {
       let currentRecord = await sourceWorkspace.record(id: record.id) ?? record
       let shouldInvalidatePublicPDF = currentRecord.publicPDFURL != nil
@@ -1186,6 +1206,31 @@ final class AppStore: ObservableObject {
     if let existing = workspacesByRootURL[key] { return existing }
     workspacesByRootURL[key] = candidate
     return candidate
+  }
+
+  private func beginStoryOperation(
+    workspace: CaptureWorkspace, recordID: String
+  ) async -> StoryOperationKey {
+    let key = StoryOperationKey(workspace: workspace, recordID: recordID)
+    if activeStoryOperations.contains(key) {
+      await withCheckedContinuation { continuation in
+        storyOperationWaiters[key, default: []].append(continuation)
+      }
+    } else {
+      activeStoryOperations.insert(key)
+    }
+    return key
+  }
+
+  private func finishStoryOperation(_ key: StoryOperationKey) {
+    guard var waiters = storyOperationWaiters[key], !waiters.isEmpty else {
+      storyOperationWaiters[key] = nil
+      activeStoryOperations.remove(key)
+      return
+    }
+    let next = waiters.removeFirst()
+    storyOperationWaiters[key] = waiters.isEmpty ? nil : waiters
+    next.resume()
   }
 
   private func beginPublication(for captureID: String) async {
