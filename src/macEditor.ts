@@ -18,7 +18,7 @@ import {
   serializedPDFPublicationState,
   type PDFPublicationState
 } from "./pdfPublicationState";
-import { normalizeSourceURL } from "./storyURL";
+import { normalizeSourceURL, sourceURLForAutosave } from "./storyURL";
 import { autosaveRetryDelay, shouldFlushPendingAutosave } from "./autosave";
 
 type AnnotationKind = "highlight" | "redaction";
@@ -189,11 +189,13 @@ let publishedImageState = serializedImagePublicationState(payload.publicImagePub
 let pendingSaveRevision: number | undefined;
 let pendingImageState: string | undefined;
 let pendingStoryState: string | undefined;
+let pendingSourceURL: string | undefined;
 let pendingAction: BridgeMessage["type"] | undefined;
 let autosaveTimer: number | undefined;
 let autosaveRetryCount = 0;
 let teardownRequested = false;
 let teardownCompleteSent = false;
+let lastSavedSourceURL = normalizeSourceURL(payload.story.sourceURL || "");
 let markupResizeObserver: ResizeObserver | undefined;
 let savedPublicPDFURL = payload.publicPDFURL;
 let publishedPDFStoryState = payload.publicPDFPublicationState
@@ -294,17 +296,22 @@ window.jesseeDidSave = (success, message, publicURL) => {
   const savedRevision = pendingSaveRevision;
   const savedImageState = pendingImageState;
   const savedStoryState = pendingStoryState;
+  const savedSourceURL = pendingSourceURL;
   const completedAction = pendingAction;
   pendingSaveRevision = undefined;
   pendingImageState = undefined;
   pendingStoryState = undefined;
+  pendingSourceURL = undefined;
   pendingAction = undefined;
   setActionPending();
   const hasNewerEdits = savedRevision !== undefined && savedRevision !== editRevision;
   if (success && completedAction === "saveAndPublishImage") {
     publishedImageState = savedImageState;
   }
-  if (success) autosaveRetryCount = 0;
+  if (success) {
+    autosaveRetryCount = 0;
+    lastSavedSourceURL = savedSourceURL;
+  }
   const shouldRetryAutosave = !success && completedAction !== undefined
     && document.body.classList.contains("is-dirty");
   setStatus(shouldRetryAutosave
@@ -532,12 +539,16 @@ function send(type: BridgeMessage["type"]): void {
   const sourceURL = normalizeSourceURL(sourceValue);
   if (sourceValue && !sourceURL) {
     sourceInput.setCustomValidity("Enter a valid HTTP or HTTPS web address.");
-    if (type !== "save") sourceInput.reportValidity();
-    setStatus("Check the source URL", true);
-    return;
+    if (type !== "save") {
+      sourceInput.reportValidity();
+      setStatus("Check the source URL", true);
+      scheduleAutosave();
+      return;
+    }
+  } else {
+    sourceInput.setCustomValidity("");
+    if (sourceURL) sourceInput.value = sourceURL;
   }
-  sourceInput.setCustomValidity("");
-  if (sourceURL) sourceInput.value = sourceURL;
   setStatus(
     type === "save"
       ? "Saving…"
@@ -557,6 +568,8 @@ function send(type: BridgeMessage["type"]): void {
   pendingAction = type;
   setActionPending(type);
   const story = serializeStory();
+  story.sourceURL = sourceURLForAutosave(sourceValue, lastSavedSourceURL);
+  pendingSourceURL = story.sourceURL;
   pendingStoryState = storyState(story);
   pendingImageState = imagePublicationState(story, payload.fallbackImageFilename);
   const message: BridgeMessage = { type, story };

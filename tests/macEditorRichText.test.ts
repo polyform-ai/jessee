@@ -16,7 +16,7 @@ import {
   pdfPublicationState,
   serializedPDFPublicationState
 } from "../src/pdfPublicationState.ts";
-import { normalizeSourceURL } from "../src/storyURL.ts";
+import { normalizeSourceURL, sourceURLForAutosave } from "../src/storyURL.ts";
 import { autosaveRetryDelay, shouldFlushPendingAutosave } from "../src/autosave.ts";
 
 function installDOM(): void {
@@ -58,6 +58,12 @@ test("source URLs are normalized before the editor saves them", () => {
   assert.equal(normalizeSourceURL("https://jira/browse/ABC"), "https://jira/browse/ABC");
   assert.equal(normalizeSourceURL("file:///tmp/private"), undefined);
   assert.equal(normalizeSourceURL("not a URL"), undefined);
+  assert.equal(
+    sourceURLForAutosave("not a URL", "https://example.com/original"),
+    "https://example.com/original"
+  );
+  assert.equal(sourceURLForAutosave("", "https://example.com/original"), undefined);
+  assert.equal(sourceURLForAutosave("example.com/new", undefined), "https://example.com/new");
 });
 
 test("autosave retries back off and teardown flushes only when no save is running", () => {

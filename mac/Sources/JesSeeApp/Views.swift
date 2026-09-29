@@ -851,6 +851,7 @@ private struct CaptureDetailView: View {
   private struct LoadedStory {
     let recordID: String
     var document: StoryDocument
+    let workspace: CaptureWorkspace
   }
 
   @ObservedObject var store: AppStore
@@ -880,23 +881,20 @@ private struct CaptureDetailView: View {
         .background(.red.opacity(0.08))
       }
 
-      if let loadedStory, loadedStory.recordID == record.id,
-        let directory = store.captureDirectory(for: record)
-      {
+      if let loadedStory, loadedStory.recordID == record.id {
+        let directory = loadedStory.workspace.directoryURL(for: record)
         StoryWebEditor(
           story: loadedStory.document, record: record, directoryURL: directory,
           totalEstimatedCostSaved: totalEstimatedCostSaved
         ) {
           updatedStory, action, completion in
-          guard let actionWorkspace = store.workspaceForEditorAction(recordID: record.id) else {
-            completion(false, "JesSee could not find this story's Library.", nil)
-            return
-          }
+          let actionWorkspace = loadedStory.workspace
           Task {
             let saved = await store.saveStory(
               updatedStory, for: record, in: actionWorkspace, isAutosave: action == "save")
             if saved {
-              self.loadedStory = LoadedStory(recordID: record.id, document: updatedStory)
+              self.loadedStory = LoadedStory(
+                recordID: record.id, document: updatedStory, workspace: actionWorkspace)
               self.totalEstimatedCostSaved = await store.totalEstimatedCostSaved(
                 in: actionWorkspace)
               if action == "saveAndOpenPDF" {
@@ -967,12 +965,14 @@ private struct CaptureDetailView: View {
     .task(id: "\(record.id):\(record.stage)") {
       loadedStory = nil
       totalEstimatedCostSaved = 0
-      async let document = store.loadStory(for: record)
-      async let estimatedSavings = store.totalEstimatedCostSaved()
+      guard let sourceWorkspace = store.workspaceForEditorAction(recordID: record.id) else { return }
+      async let document = store.loadStory(for: record, in: sourceWorkspace)
+      async let estimatedSavings = store.totalEstimatedCostSaved(in: sourceWorkspace)
       let (loadedDocument, totalSavings) = await (document, estimatedSavings)
       guard !Task.isCancelled, let loadedDocument else { return }
       totalEstimatedCostSaved = totalSavings
-      loadedStory = LoadedStory(recordID: record.id, document: loadedDocument)
+      loadedStory = LoadedStory(
+        recordID: record.id, document: loadedDocument, workspace: sourceWorkspace)
     }
   }
 

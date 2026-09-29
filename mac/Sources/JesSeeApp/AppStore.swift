@@ -596,9 +596,13 @@ final class AppStore: ObservableObject {
     return true
   }
 
-  func loadStory(for record: CaptureRecord) async -> StoryDocument? {
-    guard let workspace, let filename = record.storyFilename else { return nil }
-    return try? await workspace.read(StoryDocument.self, filename: filename, for: record)
+  func loadStory(
+    for record: CaptureRecord, in preferredWorkspace: CaptureWorkspace? = nil
+  ) async -> StoryDocument? {
+    guard let sourceWorkspace = preferredWorkspace ?? workspace,
+      let filename = record.storyFilename
+    else { return nil }
+    return try? await sourceWorkspace.read(StoryDocument.self, filename: filename, for: record)
   }
 
   func totalEstimatedCostSaved(in preferredWorkspace: CaptureWorkspace? = nil) async -> Double {

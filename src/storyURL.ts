@@ -12,3 +12,10 @@ export function normalizeSourceURL(candidate: string): string | undefined {
     return undefined;
   }
 }
+
+export function sourceURLForAutosave(
+  candidate: string, lastSavedSourceURL: string | undefined
+): string | undefined {
+  const normalized = normalizeSourceURL(candidate);
+  return candidate.trim() && !normalized ? lastSavedSourceURL : normalized;
+}
