@@ -894,15 +894,22 @@ private struct CaptureDetailView: View {
             let saved = await store.saveStory(
               updatedStory, for: record, in: actionWorkspace, isAutosave: action == "save")
             if saved {
-              let updatedTotal = await store.totalEstimatedCostSaved(in: actionWorkspace)
               if self.loadedStory?.recordID == record.id,
                 self.loadedStory?.editorID == loadedStory.editorID,
                 self.loadedStory?.workspace === actionWorkspace
               {
+                if record.source != .screenshot, let currentStory = self.loadedStory?.document {
+                  let previousSavings = StoryEfficiencyMetrics.estimate(
+                    story: currentStory, duration: record.duration
+                  ).estimatedCostSaved
+                  let updatedSavings = StoryEfficiencyMetrics.estimate(
+                    story: updatedStory, duration: record.duration
+                  ).estimatedCostSaved
+                  self.totalEstimatedCostSaved += updatedSavings - previousSavings
+                }
                 self.loadedStory = LoadedStory(
                   recordID: record.id, editorID: loadedStory.editorID,
                   document: updatedStory, workspace: actionWorkspace)
-                self.totalEstimatedCostSaved = updatedTotal
               }
               if action == "saveAndOpenPDF" {
                 store.openPDF(recordID: record.id)
