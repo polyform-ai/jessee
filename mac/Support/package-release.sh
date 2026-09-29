@@ -93,6 +93,9 @@ else
 
 This release is signed by Polyform, notarized by Apple, and can update itself from inside JesSee.
 
+- See a higher, high-resolution screen-recording savings estimate based on GPT-6 Sol, plus the total estimated money saved across the entire Library with concise inline explanations.
+- Keep editing without a Save button: changes autosave reliably while Open PDF and Get Link render the latest story on demand.
+- Keep recording markups aligned with the exact extracted frame, including captures near the start or end of a recording.
 - Stay signed in to Polyform across app launches with background workflow-auth refresh and durable refresh-token recovery.
 - Share public PDFs more reliably with stable saved links, safer retries and cleanup, protection against stale edits, and clearer progress and completion feedback.
 - Let JesSee infer the structure that fits each recording—tutorial steps, issues, findings, decisions, examples, or another useful document shape—without dropping distinct items.
