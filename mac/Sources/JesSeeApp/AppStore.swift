@@ -625,16 +625,29 @@ final class AppStore: ObservableObject {
   func totalEstimatedCostSaved(in preferredWorkspace: CaptureWorkspace? = nil) async -> Double {
     guard let sourceWorkspace = preferredWorkspace ?? workspace else { return 0 }
     var total = 0.0
-    for record in await sourceWorkspace.allRecords() where record.source != .screenshot {
-      guard let filename = record.storyFilename,
-        let story = try? await sourceWorkspace.read(
-          StoryDocument.self, filename: filename, for: record)
-      else { continue }
-      total += StoryEfficiencyMetrics.estimate(
-        story: story, duration: record.duration
-      ).estimatedCostSaved
+    let recordIDs = await sourceWorkspace.allRecords()
+      .filter { $0.source != .screenshot }
+      .map(\.id)
+    for recordID in recordIDs {
+      total += await estimatedCostSaved(recordID: recordID, in: sourceWorkspace)
     }
     return total
+  }
+
+  private func estimatedCostSaved(
+    recordID: String, in sourceWorkspace: CaptureWorkspace
+  ) async -> Double {
+    let operationKey = await beginStoryOperation(
+      workspace: sourceWorkspace, recordID: recordID)
+    defer { finishStoryOperation(operationKey) }
+    guard let record = await sourceWorkspace.record(id: recordID),
+      let filename = record.storyFilename,
+      let story = try? await sourceWorkspace.read(
+        StoryDocument.self, filename: filename, for: record)
+    else { return 0 }
+    return StoryEfficiencyMetrics.estimate(
+      story: story, duration: record.duration
+    ).estimatedCostSaved
   }
 
   func saveStory(
