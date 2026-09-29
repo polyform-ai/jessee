@@ -622,11 +622,14 @@ final class AppStore: ObservableObject {
       StoryDocument.self, filename: filename, for: currentRecord)
   }
 
-  func totalEstimatedCostSaved(in preferredWorkspace: CaptureWorkspace? = nil) async -> Double {
+  func totalEstimatedCostSaved(
+    excludingRecordID: String? = nil,
+    in preferredWorkspace: CaptureWorkspace? = nil
+  ) async -> Double {
     guard let sourceWorkspace = preferredWorkspace ?? workspace else { return 0 }
     var total = 0.0
     let recordIDs = await sourceWorkspace.allRecords()
-      .filter { $0.source != .screenshot }
+      .filter { $0.source != .screenshot && $0.id != excludingRecordID }
       .map(\.id)
     for recordID in recordIDs {
       total += await estimatedCostSaved(recordID: recordID, in: sourceWorkspace)
@@ -670,13 +673,18 @@ final class AppStore: ObservableObject {
       let htmlFilename = "JesSee Story-\(artifactID).html"
       let pdfFilename = "JesSee Story-\(artifactID).pdf"
       let directory = sourceWorkspace.directoryURL(for: record)
-      let newArtifactURLs = [storyFilename, htmlFilename, pdfFilename].map {
+      let newArtifactFilenames = isAutosave
+        ? [storyFilename]
+        : [storyFilename, htmlFilename, pdfFilename]
+      let newArtifactURLs = newArtifactFilenames.map {
         directory.appendingPathComponent($0)
       }
       do {
         try await sourceWorkspace.write(story, filename: storyFilename, for: record)
-        _ = try DocumentRenderer.render(
-          story: story, in: directory, htmlFilename: htmlFilename, pdfFilename: pdfFilename)
+        if !isAutosave {
+          _ = try DocumentRenderer.render(
+            story: story, in: directory, htmlFilename: htmlFilename, pdfFilename: pdfFilename)
+        }
       } catch {
         for url in newArtifactURLs { try? FileManager.default.removeItem(at: url) }
         throw error
@@ -684,8 +692,13 @@ final class AppStore: ObservableObject {
       var updated = currentRecord
       updated.title = story.title
       updated.storyFilename = storyFilename
-      updated.htmlFilename = htmlFilename
-      updated.pdfFilename = pdfFilename
+      if !isAutosave {
+        updated.htmlFilename = htmlFilename
+        updated.pdfFilename = pdfFilename
+      } else {
+        updated.htmlFilename = nil
+        updated.pdfFilename = nil
+      }
       if shouldInvalidatePublicPDF {
         let cleanupIDs = ([updated.publicPDFUploadID].compactMap { $0 }
           + (updated.publicPDFCleanupUploadIDs ?? []))
@@ -703,7 +716,8 @@ final class AppStore: ObservableObject {
         for url in newArtifactURLs { try? FileManager.default.removeItem(at: url) }
         throw error
       }
-      let committedFilenames = Set([storyFilename, htmlFilename, pdfFilename])
+      let committedFilenames = Set(
+        [updated.storyFilename, updated.htmlFilename, updated.pdfFilename].compactMap { $0 })
       for filename in [
         currentRecord.storyFilename, currentRecord.htmlFilename, currentRecord.pdfFilename,
       ].compactMap({ $0 }) where !committedFilenames.contains(filename) {

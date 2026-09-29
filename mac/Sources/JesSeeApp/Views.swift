@@ -980,14 +980,32 @@ private struct CaptureDetailView: View {
       loadedStory = nil
       totalEstimatedCostSaved = 0
       guard let sourceWorkspace = store.workspaceForEditorAction(recordID: record.id) else { return }
-      async let document = store.loadStory(for: record, in: sourceWorkspace)
-      async let estimatedSavings = store.totalEstimatedCostSaved(in: sourceWorkspace)
-      let (loadedDocument, totalSavings) = await (document, estimatedSavings)
-      guard !Task.isCancelled, let loadedDocument else { return }
-      totalEstimatedCostSaved = totalSavings
+      guard let loadedDocument = await store.loadStory(for: record, in: sourceWorkspace) else {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      let editorID = UUID()
       loadedStory = LoadedStory(
-        recordID: record.id, editorID: UUID(), document: loadedDocument,
+        recordID: record.id, editorID: editorID, document: loadedDocument,
         workspace: sourceWorkspace)
+      if record.source != .screenshot {
+        totalEstimatedCostSaved = StoryEfficiencyMetrics.estimate(
+          story: loadedDocument, duration: record.duration
+        ).estimatedCostSaved
+      }
+      let otherSavings = await store.totalEstimatedCostSaved(
+        excludingRecordID: record.id, in: sourceWorkspace)
+      guard !Task.isCancelled, self.loadedStory?.recordID == record.id,
+        self.loadedStory?.editorID == editorID,
+        self.loadedStory?.workspace === sourceWorkspace,
+        let currentStory = self.loadedStory?.document
+      else { return }
+      let currentSavings = record.source == .screenshot
+        ? 0
+        : StoryEfficiencyMetrics.estimate(
+          story: currentStory, duration: record.duration
+        ).estimatedCostSaved
+      totalEstimatedCostSaved = otherSavings + currentSavings
     }
   }
 
