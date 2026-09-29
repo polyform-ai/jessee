@@ -336,6 +336,8 @@ final class AppStore: ObservableObject {
     cancelProcessingForWorkspaceChange()
     configuration.outputFolderPath = url.path
     workspace = selectedWorkspace
+    captures = []
+    selectedCaptureID = nil
     persistConfiguration()
     Task { await loadLibrary() }
     show(.success("Your JesSee Library will be saved here."))
