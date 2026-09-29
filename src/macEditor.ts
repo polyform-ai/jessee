@@ -93,7 +93,8 @@ interface BridgeMessage {
     | "saveAndCopyImage"
     | "saveAndCopyPDF"
     | "saveAndCopyPublicPDFURL"
-    | "saveAndCopyPublicImageURL";
+    | "saveAndCopyPublicImageURL"
+    | "teardownComplete";
   story: Story;
 }
 
@@ -109,7 +110,7 @@ declare global {
       publicPDFNeedsCleanup?: boolean;
     }) => void;
     jesseeDidUpdateEstimatedSavings?: (total: number) => void;
-    jesseeFlushPendingSave?: () => void;
+    jesseeBeginTeardown?: () => boolean;
     webkit?: {
       messageHandlers?: {
         storyEditor?: { postMessage: (message: BridgeMessage) => void };
@@ -191,6 +192,8 @@ let pendingStoryState: string | undefined;
 let pendingAction: BridgeMessage["type"] | undefined;
 let autosaveTimer: number | undefined;
 let autosaveRetryCount = 0;
+let teardownRequested = false;
+let teardownCompleteSent = false;
 let markupResizeObserver: ResizeObserver | undefined;
 let savedPublicPDFURL = payload.publicPDFURL;
 let publishedPDFStoryState = payload.publicPDFPublicationState
@@ -302,7 +305,7 @@ window.jesseeDidSave = (success, message, publicURL) => {
     publishedImageState = savedImageState;
   }
   if (success) autosaveRetryCount = 0;
-  const shouldRetryAutosave = !success && completedAction === "save"
+  const shouldRetryAutosave = !success && completedAction !== undefined
     && document.body.classList.contains("is-dirty");
   setStatus(shouldRetryAutosave
     ? "Autosave failed · Retrying…"
@@ -311,9 +314,9 @@ window.jesseeDidSave = (success, message, publicURL) => {
         ? "Link copied · New edits not saved"
         : "Earlier version saved · New edits not saved"
       : message,
-  !success);
+    !success);
   if (success && !hasNewerEdits) document.body.classList.remove("is-dirty");
-  if (success && hasNewerEdits) scheduleAutosave(300);
+  if (success && hasNewerEdits) scheduleAutosave(teardownRequested ? 0 : 300);
   if (shouldRetryAutosave) {
     const retryDelay = autosaveRetryDelay(autosaveRetryCount);
     autosaveRetryCount += 1;
@@ -321,6 +324,7 @@ window.jesseeDidSave = (success, message, publicURL) => {
   }
   if (success && publicURL) showPublicLink(publicURL, "Copied", savedStoryState);
   updateScreenshotURLAction();
+  completeTeardownIfSaved();
 };
 
 window.jesseeDidUpdatePublicationState = (update) => {
@@ -354,13 +358,23 @@ window.jesseeDidUpdateEstimatedSavings = (total) => {
   if (value) value.textContent = formatCurrency(total);
 };
 
-window.jesseeFlushPendingSave = () => {
-  if (!shouldFlushPendingAutosave(
+window.jesseeBeginTeardown = () => {
+  teardownRequested = true;
+  if (shouldFlushPendingAutosave(
     document.body.classList.contains("is-dirty"), pendingAction !== undefined
-  )) return;
-  send("save");
+  )) send("save");
+  completeTeardownIfSaved();
+  return true;
 };
-window.addEventListener("pagehide", () => window.jesseeFlushPendingSave?.());
+window.addEventListener("pagehide", () => window.jesseeBeginTeardown?.());
+
+function completeTeardownIfSaved(): void {
+  if (!teardownRequested || teardownCompleteSent || pendingAction
+    || document.body.classList.contains("is-dirty")) return;
+  teardownCompleteSent = true;
+  const bridge = window.webkit?.messageHandlers?.storyEditor;
+  bridge?.postMessage({ type: "teardownComplete", story: serializeStory() });
+}
 
 function renderShell(): void {
   const standardActions = payload.canPublishImage ? "" : `<button class="button primary" id="openPDF">Open PDF</button><button class="button secondary" id="getLink" data-tooltip="${publicPDFActionHelp()}" title="${publicPDFActionHelp()}">Get Link</button>`;

@@ -60,7 +60,7 @@ test("source URLs are normalized before the editor saves them", () => {
   assert.equal(normalizeSourceURL("not a URL"), undefined);
 });
 
-test("autosave retries back off and pending edits flush before teardown", () => {
+test("autosave retries back off and teardown flushes only when no save is running", () => {
   assert.deepEqual(
     [0, 1, 2, 3, 10].map(autosaveRetryDelay),
     [1_500, 3_000, 6_000, 12_000, 30_000]

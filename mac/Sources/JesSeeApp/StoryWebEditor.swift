@@ -89,10 +89,7 @@ struct StoryWebEditor: NSViewRepresentable {
   }
 
   static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
-    webView.evaluateJavaScript("window.jesseeFlushPendingSave?.()") { _, _ in
-      webView.configuration.userContentController.removeScriptMessageHandler(
-        forName: "storyEditor")
-    }
+    coordinator.beginTeardown(of: webView)
   }
 
   private func load(in webView: WKWebView) {
@@ -166,6 +163,7 @@ struct StoryWebEditor: NSViewRepresentable {
   @MainActor
   final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     weak var webView: WKWebView?
+    private var teardownWebView: WKWebView?
     var onAction: (StoryDocument, String, @escaping (Bool, String, String?) -> Void) -> Void
     fileprivate var publicationSnapshot: PublicationSnapshot?
     fileprivate var totalEstimatedCostSaved = 0.0
@@ -186,6 +184,10 @@ struct StoryWebEditor: NSViewRepresentable {
       else {
         complete(
           success: false, message: "JesSee could not read the editor changes.", publicURL: nil)
+        return
+      }
+      if value.type == "teardownComplete" {
+        finishTeardown()
         return
       }
       onAction(value.story, value.type) { [weak self] success, status, publicURL in
@@ -221,6 +223,23 @@ struct StoryWebEditor: NSViewRepresentable {
       guard totalEstimatedCostSaved.isFinite else { return }
       webView?.evaluateJavaScript(
         "window.jesseeDidUpdateEstimatedSavings?.(\(totalEstimatedCostSaved))")
+    }
+
+    fileprivate func beginTeardown(of webView: WKWebView) {
+      teardownWebView = webView
+      webView.evaluateJavaScript("window.jesseeBeginTeardown?.()") { [weak self] result, error in
+        guard error == nil, result as? Bool == true else {
+          self?.finishTeardown()
+          return
+        }
+      }
+    }
+
+    private func finishTeardown() {
+      let webView = teardownWebView ?? webView
+      webView?.configuration.userContentController.removeScriptMessageHandler(
+        forName: "storyEditor")
+      teardownWebView = nil
     }
   }
 }
