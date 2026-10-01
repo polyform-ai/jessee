@@ -94,7 +94,7 @@ enum StoryRefinement {
   static func selectedFrames(for story: StoryDocument, in frames: [CapturedFrame])
     -> [CapturedFrame]
   {
-    let filenames = Set(story.steps.compactMap(\.imageFilename))
+    let filenames = Set(story.steps.flatMap(\.images).map(\.filename))
     return frames.filter { filenames.contains($0.filename) }
   }
 

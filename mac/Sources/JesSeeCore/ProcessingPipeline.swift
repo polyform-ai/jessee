@@ -147,6 +147,13 @@ public struct CaptureProcessor: Sendable {
       if let capturedSourceURL = PolyformClient.normalizedWebURL(record.sourceURL) {
         story.sourceURL = capturedSourceURL
       }
+      try await workspace.save(record)
+      // Keep exact frames just before/after both section boundaries for manual selection, even
+      // when screenshot pixels were not sent to AI. Optional extraction must not lose the story.
+      if let prepared = try? await workspace.prepareImageChoices(for: record.id, story: story) {
+        record = prepared
+      }
+      try Task.checkCancellation()
       try await workspace.write(story, filename: "story.json", for: record)
       let rendered = try await DocumentRenderer.render(story: story, in: directory)
       record.title = story.title.isEmpty ? record.title : story.title

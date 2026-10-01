@@ -10,6 +10,7 @@ export interface ImagePublicationAnnotation {
 export interface ImagePublicationStep {
   imageFilename?: string;
   imageAnnotations: readonly ImagePublicationAnnotation[];
+  additionalImages?: readonly PublishedImageState[];
 }
 
 export interface PublishedImageState {
@@ -20,10 +21,13 @@ export interface PublishedImageState {
 export function imagePublicationState<T extends {
   steps: readonly ImagePublicationStep[];
 }>(story: T, fallbackFilename?: string): string | undefined {
-  const step = story.steps.find((candidate) => candidate.imageFilename);
-  const filename = step?.imageFilename || fallbackFilename;
+  const image = story.steps.flatMap((step) => [
+    ...(step.imageFilename ? [{ filename: step.imageFilename, annotations: step.imageAnnotations }] : []),
+    ...(step.additionalImages || [])
+  ])[0];
+  const filename = image?.filename || fallbackFilename;
   if (!filename) return undefined;
-  return serializedImagePublicationState({ filename, annotations: step?.imageAnnotations || [] });
+  return serializedImagePublicationState({ filename, annotations: image?.annotations || [] });
 }
 
 export function serializedImagePublicationState(

@@ -194,6 +194,12 @@ final class RecordingCoordinator: NSObject, ObservableObject {
     recordingContentRect = filter.contentRect
     if #available(macOS 15.2, *) {
       recordingDisplayID = filter.includedDisplays.first?.displayID
+      // contentRect can be local to the capture. The overlay needs global screen coordinates.
+      if filter.style == .window, let window = filter.includedWindows.first {
+        recordingContentRect = window.frame
+      } else if filter.style == .display, let display = filter.includedDisplays.first {
+        recordingContentRect = display.frame
+      }
     } else {
       recordingDisplayID = nil
     }
@@ -212,6 +218,8 @@ final class RecordingCoordinator: NSObject, ObservableObject {
     streamConfiguration.showMouseClicks = true
     streamConfiguration.capturesAudio = false
     streamConfiguration.captureMicrophone = true
+    // Window shadows add pixels outside the bounds used by the drawing overlay.
+    streamConfiguration.ignoreShadowsSingleWindow = true
 
     let tempURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("JesSee-\(UUID().uuidString).mp4")

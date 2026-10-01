@@ -31,13 +31,13 @@ public enum DocumentRenderer {
     let keyPoints = story.keyPoints.map { "<li>\(escape($0.text))</li>" }.joined()
     let steps = story.steps.enumerated().map { index, step in
       let image =
-        step.imageFilename.map {
-          let annotations = step.imageAnnotations.map { annotation in
+        step.images.map { image in
+          let annotations = image.annotations.map { annotation in
             "<span class=\"annotation \(annotation.kind.rawValue)\" style=\"left:\(percent(annotation.x));top:\(percent(annotation.y));width:\(percent(annotation.width));height:\(percent(annotation.height))\"></span>"
           }.joined()
           return
-            "<figure class=\"step-image\"><div class=\"image-frame\"><img src=\"\(escapeAttribute($0))\" alt=\"Screenshot for \(escapeAttribute(step.title))\">\(annotations)</div></figure>"
-        } ?? ""
+            "<figure class=\"step-image\"><div class=\"image-frame\"><img src=\"\(escapeAttribute(image.filename))\" alt=\"Screenshot for \(escapeAttribute(step.title))\">\(annotations)</div></figure>"
+        }.joined()
       let narrative = step.narrativeHTML ?? "<p>\(escape(step.narrative))</p>"
       return """
         <section class="step">
@@ -78,6 +78,13 @@ public enum DocumentRenderer {
 
 @MainActor
 private final class StoryPDFView: NSView {
+  private struct ImageLayout {
+    var image: NSImage
+    var annotations: [StoryAnnotation]
+    var width: CGFloat
+    var height: CGFloat
+  }
+
   private struct StepLayout {
     var index: Int
     var step: StoryStep
@@ -85,9 +92,7 @@ private final class StoryPDFView: NSView {
     var titleHeight: CGFloat
     var narrative: NSAttributedString
     var narrativeHeight: CGFloat
-    var image: NSImage?
-    var imageWidth: CGFloat
-    var imageHeight: CGFloat
+    var images: [ImageLayout]
     var totalHeight: CGFloat
   }
 
@@ -137,26 +142,22 @@ private final class StoryPDFView: NSView {
         step.title, font: .systemFont(ofSize: 22, weight: .semibold), width: contentWidth)
       let narrative = richText(for: step)
       let narrativeHeight = attributedTextHeight(narrative, width: contentWidth)
-      let image = step.imageFilename.flatMap {
-        NSImage(contentsOf: directory.appendingPathComponent($0))
-      }
-      let imageWidth: CGFloat
-      let imageHeight: CGFloat
-      if let image, image.size.width > 0, image.size.height > 0 {
+      let images = step.images.compactMap { visual -> ImageLayout? in
+        guard let image = NSImage(contentsOf: directory.appendingPathComponent(visual.filename)),
+          image.size.width > 0, image.size.height > 0
+        else { return nil }
         let scale = min(contentWidth / image.size.width, 430 / image.size.height)
-        imageWidth = image.size.width * scale
-        imageHeight = image.size.height * scale
-      } else {
-        imageWidth = 0
-        imageHeight = 0
+        return ImageLayout(
+          image: image, annotations: visual.annotations, width: image.size.width * scale,
+          height: image.size.height * scale)
       }
       let total =
-        1 + 28 + titleHeight + 12 + narrativeHeight + (image == nil ? 0 : 22 + imageHeight) + 42
+        47 + titleHeight + 12 + narrativeHeight
+        + images.reduce(CGFloat(0)) { $0 + 22 + $1.height } + 42
       defer { y += total }
       return StepLayout(
         index: index, step: step, y: y, titleHeight: titleHeight, narrative: narrative,
-        narrativeHeight: narrativeHeight, image: image, imageWidth: imageWidth,
-        imageHeight: imageHeight, totalHeight: total)
+        narrativeHeight: narrativeHeight, images: images, totalHeight: total)
     }
     frame = NSRect(
       x: 0, y: 0, width: pageWidth,
@@ -221,18 +222,20 @@ private final class StoryPDFView: NSView {
       layout.narrative.draw(
         with: NSRect(x: x, y: narrativeY, width: contentWidth, height: layout.narrativeHeight),
         options: [.usesLineFragmentOrigin, .usesFontLeading])
-      if let image = layout.image {
+      var imageY = narrativeY + layout.narrativeHeight
+      for visual in layout.images {
+        imageY += 22
         let imageRect = NSRect(
-          x: x + (contentWidth - layout.imageWidth) / 2,
-          y: narrativeY + layout.narrativeHeight + 22, width: layout.imageWidth,
-          height: layout.imageHeight)
+          x: x + (contentWidth - visual.width) / 2,
+          y: imageY, width: visual.width, height: visual.height)
         NSGraphicsContext.current?.imageInterpolation = .high
-        image.draw(
+        visual.image.draw(
           in: imageRect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true,
           hints: nil)
-        drawAnnotations(layout.step.imageAnnotations, in: imageRect)
+        drawAnnotations(visual.annotations, in: imageRect)
         lineColor.setStroke()
         NSBezierPath(roundedRect: imageRect, xRadius: 8, yRadius: 8).stroke()
+        imageY += visual.height
       }
     }
   }

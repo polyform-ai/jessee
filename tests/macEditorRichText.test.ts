@@ -18,6 +18,8 @@ import {
 } from "../src/pdfPublicationState.ts";
 import { normalizeSourceURL, sourceURLForAutosave } from "../src/storyURL.ts";
 import { autosaveRetryDelay, shouldFlushPendingAutosave } from "../src/autosave.ts";
+import { framesAroundSection } from "../src/frameChoices.ts";
+import { imageFields, sectionImages } from "../src/storyImages.ts";
 
 function installDOM(): void {
   const window = parseHTML("<html><body></body></html").window;
@@ -164,4 +166,36 @@ test("PDF publication state ignores generated identity and timing fields", () =>
     })),
     published
   );
+});
+
+test("nearby choices are chronological and cover both boundaries and their neighbors", () => {
+  const frames = Array.from({ length: 21 }, (_, i) => ({ filename: `${i}.jpg`, seconds: i }));
+  assert.deepEqual(framesAroundSection([...frames].reverse(), 5, 10).map((frame) => frame.seconds),
+    [3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  assert.deepEqual(framesAroundSection(frames, 10, 5, ["20.jpg"]).map((frame) => frame.seconds),
+    [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 20]);
+  assert.deepEqual(framesAroundSection(frames, 0, 1).map((frame) => frame.seconds), [0, 1, 2, 3]);
+  assert.deepEqual(framesAroundSection([], 1, 3), []);
+});
+
+test("multiple section photos preserve order and separate annotations through serialization", () => {
+  const mark = { id: "redaction", kind: "redaction", x: 0.2, y: 0.7, width: 0.1, height: 0.1 };
+  const images = [{ filename: "first.jpg", annotations: [] }, { filename: "second.jpg", annotations: [mark] }];
+  assert.deepEqual(sectionImages(imageFields(images)), images);
+  assert.deepEqual(sectionImages(imageFields(images.slice(1))), [images[1]]);
+  assert.deepEqual(sectionImages(imageFields([])), []);
+  const story = { title: "Photos", summary: "Two", keyPoints: [], steps: [{
+    title: "Section", narrative: "Evidence", ...imageFields(images)
+  }] };
+  const before = serializedPDFPublicationState(pdfPublicationState(story));
+  const changed = { ...story, steps: [{ ...story.steps[0], ...imageFields([...images].reverse()) }] };
+  assert.notEqual(serializedPDFPublicationState(pdfPublicationState(changed)), before);
+  const marked = { ...story, steps: [{ ...story.steps[0], additionalImages: [{ filename: "second.jpg", annotations: [] }] }] };
+  assert.notEqual(serializedPDFPublicationState(pdfPublicationState(marked)), before);
+  assert.equal(imagePublicationState(marked), imagePublicationState(story));
+  const published = pdfPublicationState(story);
+  assert.equal(serializedPDFPublicationState({ ...published, entries: published.entries.map((entry) => ({
+    ...entry, additionalImages: entry.additionalImages?.map((image) => ({ filename: image.filename,
+      annotations: image.annotations.map((a) => ({ height: a.height, width: a.width, y: a.y, x: a.x, kind: a.kind, id: a.id })) }))
+  })) }), before);
 });

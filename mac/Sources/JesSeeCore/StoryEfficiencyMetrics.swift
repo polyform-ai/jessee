@@ -27,7 +27,7 @@ public struct StoryEfficiencyMetrics: Codable, Sendable, Equatable {
     ] + story.keyPoints.map(\.text) + story.steps.flatMap { [$0.title, $0.narrative] })
       .joined(separator: "\n")
     let textTokens = Int(ceil(Double(storyText.count) / 4.0))
-    let selectedImages = Set(story.steps.compactMap(\.imageFilename)).count
+    let selectedImages = Set(story.steps.flatMap(\.images).map(\.filename)).count
     let documentTokens = max(1, textTokens + (selectedImages * imageTokens))
     let videoTokens = max(1, Int(ceil(videoSeconds * visualVideoTokensPerSecond)))
     let tokensSaved = max(0, videoTokens - documentTokens)

@@ -112,6 +112,12 @@ public struct StoryStep: Codable, Sendable, Equatable, Identifiable {
   public var transcript: String
   public var imageFilename: String?
   public var imageAnnotations: [StoryAnnotation]
+  public var additionalImages: [StoryImage]
+
+  public var images: [StoryImage] {
+    (imageFilename.map { [StoryImage(filename: $0, annotations: imageAnnotations)] } ?? [])
+      + additionalImages
+  }
 
   public init(
     id: String = UUID().uuidString.lowercased(),
@@ -122,7 +128,8 @@ public struct StoryStep: Codable, Sendable, Equatable, Identifiable {
     narrativeHTML: String? = nil,
     transcript: String,
     imageFilename: String? = nil,
-    imageAnnotations: [StoryAnnotation] = []
+    imageAnnotations: [StoryAnnotation] = [],
+    additionalImages: [StoryImage] = []
   ) {
     self.id = id
     self.startSeconds = startSeconds
@@ -133,6 +140,7 @@ public struct StoryStep: Codable, Sendable, Equatable, Identifiable {
     self.transcript = transcript
     self.imageFilename = imageFilename
     self.imageAnnotations = imageAnnotations
+    self.additionalImages = additionalImages
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -145,6 +153,7 @@ public struct StoryStep: Codable, Sendable, Equatable, Identifiable {
     case transcript
     case imageFilename
     case imageAnnotations
+    case additionalImages
   }
 
   public init(from decoder: any Decoder) throws {
@@ -160,8 +169,20 @@ public struct StoryStep: Codable, Sendable, Equatable, Identifiable {
       transcript: try container.decode(String.self, forKey: .transcript),
       imageFilename: try container.decodeIfPresent(String.self, forKey: .imageFilename),
       imageAnnotations: try container.decodeIfPresent(
-        [StoryAnnotation].self, forKey: .imageAnnotations) ?? []
+        [StoryAnnotation].self, forKey: .imageAnnotations) ?? [],
+      additionalImages: try container.decodeIfPresent([StoryImage].self, forKey: .additionalImages)
+        ?? []
     )
+  }
+}
+
+public struct StoryImage: Codable, Sendable, Equatable {
+  public var filename: String
+  public var annotations: [StoryAnnotation]
+
+  public init(filename: String, annotations: [StoryAnnotation] = []) {
+    self.filename = filename
+    self.annotations = annotations
   }
 }
 
@@ -304,6 +325,7 @@ public struct StoryPDFPublicationState: Codable, Sendable, Equatable {
     public var narrativeHTML: String?
     public var imageFilename: String?
     public var imageAnnotations: [StoryAnnotation]
+    public var additionalImages: [StoryImage]?
   }
 
   public var title: String
@@ -327,10 +349,8 @@ extension StoryDocument {
   public func primaryImagePublicationState(
     fallbackFilename: String? = nil
   ) -> StoryImagePublicationState? {
-    if let step = steps.first(where: { $0.imageFilename != nil }),
-      let filename = step.imageFilename
-    {
-      return StoryImagePublicationState(filename: filename, annotations: step.imageAnnotations)
+    if let image = steps.lazy.flatMap(\.images).first {
+      return StoryImagePublicationState(filename: image.filename, annotations: image.annotations)
     }
     guard let fallbackFilename else { return nil }
     return StoryImagePublicationState(filename: fallbackFilename, annotations: [])
@@ -351,7 +371,8 @@ extension StoryDocument {
           narrative: $0.narrative,
           narrativeHTML: $0.narrativeHTML,
           imageFilename: $0.imageFilename,
-          imageAnnotations: $0.imageAnnotations)
+          imageAnnotations: $0.imageAnnotations,
+          additionalImages: $0.additionalImages.isEmpty ? nil : $0.additionalImages)
       })
   }
 }

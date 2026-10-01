@@ -110,7 +110,7 @@ final class RecordingOverlayController {
     model.reset(startedAt: startedAt)
 
     let recordingFrame = Self.appKitFrame(for: contentRect, displayID: displayID)
-    let overlay = NSPanel(
+    let overlay = RecordingAnnotationPanel(
       contentRect: recordingFrame,
       styleMask: [.borderless, .nonactivatingPanel],
       backing: .buffered,
@@ -118,7 +118,8 @@ final class RecordingOverlayController {
     configure(panel: overlay, level: .statusBar)
     overlay.hasShadow = false
     overlay.ignoresMouseEvents = true
-    overlay.contentView = NSHostingView(rootView: RecordingMarkupOverlay(model: model))
+    overlay.contentView = NSHostingView(rootView: RecordingMarkupOverlay(model: model).ignoresSafeArea())
+    overlay.setFrame(recordingFrame, display: false)
     overlay.orderFrontRegardless()
     annotationPanel = overlay
 
@@ -233,12 +234,24 @@ final class RecordingOverlayController {
     let cgBounds =
       resolvedDisplayID.map(CGDisplayBounds)
       ?? CGRect(origin: .zero, size: screen.frame.size)
-    let x = screen.frame.minX + contentRect.minX - cgBounds.minX
-    let y = screen.frame.maxY - (contentRect.maxY - cgBounds.minY)
-    let converted = CGRect(x: x, y: y, width: contentRect.width, height: contentRect.height)
-    let intersection = converted.intersection(screen.frame)
-    return intersection.isNull || intersection.width < 80 || intersection.height < 80
-      ? screen.frame : intersection
+    return Self.convertCaptureFrame(contentRect, displayBounds: cgBounds, screenFrame: screen.frame)
+  }
+
+  static func convertCaptureFrame(
+    _ contentRect: CGRect, displayBounds: CGRect, screenFrame: CGRect
+  ) -> CGRect {
+    // Preserve the entire captured window, including portions outside the display. Clipping the
+    // panel changes the denominator of normalized strokes and shifts them when baked into images.
+    CGRect(
+      x: screenFrame.minX + contentRect.minX - displayBounds.minX,
+      y: screenFrame.maxY - (contentRect.maxY - displayBounds.minY),
+      width: contentRect.width, height: contentRect.height)
+  }
+}
+
+private final class RecordingAnnotationPanel: NSPanel {
+  override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+    frameRect
   }
 }
 
