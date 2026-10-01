@@ -54,6 +54,8 @@ private struct RecorderMenuIcon: View {
           Label("JesSee is recording", systemImage: "record.circle.fill")
         case .choosingRecording, .choosingScreenshot:
           Label("JesSee is choosing a screen", systemImage: "rectangle.dashed.badge.record")
+        case .startingRecording:
+          Label("JesSee is starting recording", systemImage: "record.circle")
         default:
           Label("JesSee", systemImage: "viewfinder.circle.fill")
         }

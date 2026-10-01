@@ -110,15 +110,30 @@ private struct HomeView: View {
       case .choosingRecording:
         StatusCard(
           icon: "rectangle.dashed.badge.record", title: "Choose what to share",
-          detail: "Pick one window, app, or display in the system panel.")
+          detail: "Pick one window, app, or display in the system panel.",
+          actionTitle: "Retry", action: recorder.retryRecording,
+          secondaryActionTitle: "Cancel", secondaryAction: recorder.cancelRecordingSetup)
+      case .startingRecording:
+        StatusCard(
+          icon: "record.circle", title: "Starting recording…",
+          detail: "Waiting for macOS to start capture. Allow microphone access if prompted.",
+          actionTitle: "Retry", action: recorder.retryRecording,
+          secondaryActionTitle: "Cancel", secondaryAction: recorder.cancelRecordingSetup)
       case .choosingScreenshot:
         StatusCard(
           icon: "camera.viewfinder", title: "Select an area",
           detail: "Drag over any part of the screen, or press Space to capture a window.")
       case .failed(let message):
-        StatusCard(
-          icon: "exclamationmark.triangle", title: "JesSee could not finish", detail: message,
-          actionTitle: "Back", action: recorder.dismissError)
+        if recorder.canRetryRecording {
+          StatusCard(
+            icon: "exclamationmark.triangle", title: "JesSee could not finish", detail: message,
+            actionTitle: "Retry", action: recorder.retryRecording,
+            secondaryActionTitle: "Cancel", secondaryAction: recorder.cancelRecordingSetup)
+        } else {
+          StatusCard(
+            icon: "exclamationmark.triangle", title: "JesSee could not finish", detail: message,
+            actionTitle: "Back", action: recorder.dismissError)
+        }
       case .idle:
         StartCard(store: store)
       }
@@ -762,12 +777,19 @@ private struct StatusCard: View {
   let detail: String
   var actionTitle: String = "Dismiss"
   var action: (() -> Void)? = nil
+  var secondaryActionTitle: String = "Cancel"
+  var secondaryAction: (() -> Void)? = nil
   var body: some View {
     VStack(spacing: 9) {
       Image(systemName: icon).font(.system(size: 28)).foregroundStyle(accent)
       Text(title).font(.headline)
       Text(detail).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
-      if let action { Button(actionTitle, action: action).buttonStyle(.bordered) }
+      HStack {
+        if let action { Button(actionTitle, action: action).buttonStyle(.bordered) }
+        if let secondaryAction {
+          Button(secondaryActionTitle, action: secondaryAction).buttonStyle(.bordered)
+        }
+      }
     }.frame(maxWidth: .infinity).padding(20).background(
       accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 16))
   }
