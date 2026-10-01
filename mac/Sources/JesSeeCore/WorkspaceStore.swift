@@ -173,8 +173,14 @@ public actor CaptureWorkspace {
       try Task.checkCancellation()
       // Re-read after extraction, which can overlap saving edits or publishing this capture.
       guard var updated = self.record(id: recordID) else { throw CancellationError() }
-      updated.imageFilenames.append(contentsOf: frames.map(\.filename))
       var imageTimes = updated.imageTimes ?? [:]
+      // Preserve legacy midpoint estimates before new choices change the frame count.
+      let originalCount = updated.imageFilenames.count
+      for (index, filename) in updated.imageFilenames.enumerated() where imageTimes[filename] == nil {
+        imageTimes[filename] = (Double(index) + 0.5) * (updated.duration ?? duration)
+          / Double(originalCount)
+      }
+      updated.imageFilenames.append(contentsOf: frames.map(\.filename))
       for frame in frames { imageTimes[frame.filename] = frame.seconds }
       updated.imageTimes = imageTimes
       try save(updated)

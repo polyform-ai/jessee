@@ -35,7 +35,8 @@ import Testing
   #expect(Set(clipped).count == clipped.count)
 }
 
-@Test func olderRecordingsGetNearbyFramesOnceWithoutLosingSavedEditsOrLinks() async throws {
+@Test(arguments: [0, 1, 2])
+func olderRecordingsGetNearbyFramesOnceWithoutLosingSavedEditsOrLinks(legacyCase: Int) async throws {
   let ffmpeg = URL(fileURLWithPath: "/opt/homebrew/bin/ffmpeg")
   guard FileManager.default.isExecutableFile(atPath: ffmpeg.path) else { return }
   let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -56,20 +57,35 @@ import Testing
   record.title = "Saved edits"
   record.storyFilename = "edited-story.json"
   record.publicPDFURL = "https://example.com/existing.pdf"
+  if legacyCase > 0 {
+    let frames = try await MediaTools.extractFrames(
+      from: workspace.mediaURL(for: record),
+      times: (0..<10).map { (Double($0) + 0.5) * 5 / 10 },
+      to: workspace.directoryURL(for: record).appendingPathComponent("screenshots"),
+      filenamePrefix: "legacy")
+    record.imageFilenames = frames.map(\.filename)
+    record.imageTimes = legacyCase == 2 ? [frames[0].filename: 0.5] : nil
+  }
   try await workspace.save(record)
   let story = StoryDocument(title: "Saved edits", summary: "", keyPoints: [], steps: [
     StoryStep(startSeconds: 1, endSeconds: 3, title: "Section", narrative: "Edited text", transcript: "")])
   let updatedValue = try await workspace.prepareImageChoices(for: record.id, story: story)
   let updated = try #require(updatedValue)
-  #expect(updated.imageFilenames.count == 6)
+  #expect(updated.imageFilenames.count == record.imageFilenames.count + 6)
   #expect(updated.title == record.title)
   #expect(updated.storyFilename == record.storyFilename)
   #expect(updated.publicPDFURL == record.publicPDFURL)
+  for (index, filename) in record.imageFilenames.enumerated() {
+    let originalTime = record.imageTimes?[filename]
+      ?? (Double(index) + 0.5) * 5 / Double(record.imageFilenames.count)
+    #expect(updated.imageTimes?[filename] == originalTime)
+  }
   for filename in updated.imageFilenames {
     #expect(FileManager.default.fileExists(atPath: workspace.directoryURL(for: updated).appendingPathComponent(filename).path))
   }
   let repeated = try await workspace.prepareImageChoices(for: record.id, story: story)
   #expect(repeated?.imageFilenames == updated.imageFilenames)
+  #expect(repeated?.imageTimes == updated.imageTimes)
 }
 
 @Test @MainActor func multiplePhotosAndTheirAnnotationsRenderInOrder() throws {
