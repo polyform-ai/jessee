@@ -20,6 +20,8 @@ import {
 } from "./pdfPublicationState";
 import { normalizeSourceURL, sourceURLForAutosave } from "./storyURL";
 import { autosaveRetryDelay, shouldFlushPendingAutosave } from "./autosave";
+import { sectionImages, imageFields, type SectionImage } from "./storyImages";
+import { framesAroundSection } from "./frameChoices";
 
 type AnnotationKind = "highlight" | "redaction";
 
@@ -42,6 +44,7 @@ interface StoryStep {
   transcript: string;
   imageFilename?: string;
   imageAnnotations: Annotation[];
+  additionalImages?: SectionImage<Annotation>[];
 }
 
 interface Story {
@@ -159,7 +162,7 @@ const StorySummary = TiptapNode.create({
 const StoryStepNode = TiptapNode.create({
   name: "storyStep",
   group: "block",
-  content: "heading (paragraph | bulletList | orderedList | blockquote)+ storyImage",
+  content: "heading (paragraph | bulletList | orderedList | blockquote)+ storyImage+",
   isolating: true,
   addAttributes() {
     return {
@@ -178,6 +181,7 @@ const StoryStepNode = TiptapNode.create({
 
 let editor: Editor;
 let activeStepIndex: number | undefined;
+let activeImageIndex = 0;
 let candidates: Frame[] = [];
 let candidateIndex = 0;
 let showAllFrames = false;
@@ -210,6 +214,7 @@ const StoryImage = TiptapNode.create({
   addAttributes() {
     return {
       stepIndex: { default: 0 },
+      imageIndex: { default: 0 },
       filename: { default: "" },
       annotations: { default: "[]" }
     };
@@ -219,15 +224,21 @@ const StoryImage = TiptapNode.create({
   addNodeView() {
     return ({ node }) => {
       let currentNode = node;
+      const group = document.createElement("div");
+      group.className = "story-image-group";
+      group.contentEditable = "false";
       const button = document.createElement("button");
       button.type = "button";
       button.className = "story-image";
       button.contentEditable = "false";
 
       const render = () => {
+        imageResizeObserver?.disconnect();
+        imageResizeObserver = undefined;
         const filename = String(currentNode.attrs.filename || "");
         const annotations = parseAnnotations(currentNode.attrs.annotations);
         button.replaceChildren();
+        group.replaceChildren(button);
         button.setAttribute("aria-label", filename ? "Change or mark up this screenshot" : "Choose a screenshot");
 
         const stage = document.createElement("span");
@@ -237,10 +248,17 @@ const StoryImage = TiptapNode.create({
           image.src = filename;
           image.alt = "Selected screenshot";
           stage.append(image);
-          for (const annotation of annotations) stage.append(annotationElement(annotation));
+          for (const annotation of annotations) stage.append(markupAnnotationElement(annotation));
+          const layout = () => layoutMarkupAnnotations(stage, image);
+          image.addEventListener("load", layout, { once: true });
+          imageResizeObserver = new ResizeObserver(layout);
+          imageResizeObserver.observe(stage);
+          imageResizeObserver.observe(image);
+          requestAnimationFrame(layout);
         } else {
           const empty = document.createElement("strong");
-          empty.textContent = "Choose the visual that makes this step clear";
+          empty.textContent = Number(currentNode.attrs.imageIndex) > 0
+            ? "+ Add another photo to this section" : "+ Add a photo to this section";
           stage.append(empty);
         }
         const action = document.createElement("span");
@@ -248,13 +266,27 @@ const StoryImage = TiptapNode.create({
         action.textContent = filename ? "Change image or add markup" : "Choose an image";
         stage.append(action);
         button.append(stage);
+        if (filename) {
+          const controls = document.createElement("div");
+          controls.className = "story-image-controls";
+          for (const [title, offset] of [["Move earlier", -1], ["Move later", 1], ["Remove photo", 0]] as const) {
+            const control = document.createElement("button");
+            control.type = "button";
+            control.textContent = title;
+            control.onclick = () => changeSectionImage(
+              Number(currentNode.attrs.stepIndex), Number(currentNode.attrs.imageIndex), offset);
+            controls.append(control);
+          }
+          group.append(controls);
+        }
       };
 
-      const open = () => openImagePicker(Number(currentNode.attrs.stepIndex));
+      let imageResizeObserver: ResizeObserver | undefined;
+      const open = () => openImagePicker(Number(currentNode.attrs.stepIndex), Number(currentNode.attrs.imageIndex));
       button.addEventListener("click", open);
       render();
       return {
-        dom: button,
+        dom: group,
         update: (nextNode) => {
           if (nextNode.type.name !== "storyImage") return false;
           currentNode = nextNode;
@@ -262,7 +294,10 @@ const StoryImage = TiptapNode.create({
           return true;
         },
         stopEvent: () => true,
-        destroy: () => button.removeEventListener("click", open)
+        destroy: () => {
+          imageResizeObserver?.disconnect();
+          button.removeEventListener("click", open);
+        }
       };
     };
   }
@@ -412,7 +447,7 @@ function renderShell(): void {
   app.innerHTML = `
     <div class="editor-app">
       <header class="editor-header">
-        <div><p class="kicker">Visual story editor</p><h1>Shape the story before you share it</h1><p>Edit like a document, then choose and mark up the strongest screenshot for each ${escapeHTML(sectionLabelLower)}.</p></div>
+        <div><p class="kicker">Visual story editor</p><h1>Shape the story before you share it</h1><p>Edit like a document, then choose and mark up the photos that explain each ${escapeHTML(sectionLabelLower)}.</p></div>
         <div class="header-sharing">
           <div class="total-savings"><span>Total saved ${infoButton("Total estimated GPT-6 Sol input cost saved across every completed recording in this Library, using the same assumptions shown below.", "total savings")}</span><strong id="totalEstimatedSavings">${formatCurrency(payload.totalEstimatedCostSaved)}</strong></div>
           <div class="header-actions"><span id="saveStatus">Saved</span>${standardActions}</div>
@@ -789,10 +824,7 @@ function stepNode(step: StoryStep, index: number): JSONContent {
     content: [
       { type: "heading", attrs: { level: 2 }, content: textContent(step.title) },
       ...htmlBlocks(step.narrativeHTML || narrativeHTML(step.narrative)),
-      {
-        type: "storyImage",
-        attrs: { stepIndex: index, filename: step.imageFilename || "", annotations: JSON.stringify(step.imageAnnotations || []) }
-      }
+      ...imageNodes(sectionImages(step), index)
     ]
   };
 }
@@ -812,7 +844,8 @@ function serializeStory(): Story {
   const steps = children(json).filter((node) => node.type === "storyStep").map((node, index) => {
     const body = children(node).filter((child) => ["paragraph", "bulletList", "orderedList", "blockquote"].includes(child.type || ""));
     const narrativeHTML = renderBlocks(body);
-    const image = children(node).find((child) => child.type === "storyImage");
+    const images = children(node).filter((child) => child.type === "storyImage" && child.attrs?.filename)
+      .map((image) => ({ filename: String(image.attrs!.filename), annotations: parseAnnotations(image.attrs?.annotations) }));
     return {
       id: String(node.attrs?.id || crypto.randomUUID()),
       startSeconds: Number(node.attrs?.startSeconds || 0),
@@ -821,8 +854,7 @@ function serializeStory(): Story {
       narrative: htmlText(narrativeHTML),
       narrativeHTML,
       transcript: String(node.attrs?.transcript || ""),
-      imageFilename: String(image?.attrs?.filename || "") || undefined,
-      imageAnnotations: parseAnnotations(image?.attrs?.annotations)
+      ...imageFields(images)
     } satisfies StoryStep;
   });
   const sourceURL = normalizeSourceURL(mustFind<HTMLInputElement>("#sourceURL").value);
@@ -833,14 +865,16 @@ function serializeStory(): Story {
   };
 }
 
-function openImagePicker(stepIndex: number): void {
+function openImagePicker(stepIndex: number, imageIndex = 0): void {
   activeStepIndex = stepIndex;
+  activeImageIndex = imageIndex;
   showAllFrames = false;
   drawingMode = undefined;
   const step = serializeStory().steps[stepIndex];
   candidates = rankedFrames(step);
-  candidateIndex = Math.max(0, candidates.findIndex((frame) => frame.filename === step.imageFilename));
-  if (candidateIndex < 0) candidateIndex = 0;
+  const selected = sectionImages(step)[imageIndex];
+  const selectedIndex = candidates.findIndex((frame) => frame.filename === selected?.filename);
+  candidateIndex = selectedIndex >= 0 ? selectedIndex : Math.max(0, candidates.findIndex((frame) => frame.seconds >= step.startSeconds));
   syncDraftAnnotations();
   renderPicker();
   mustFind<HTMLDialogElement>("#imagePicker").showModal();
@@ -856,13 +890,13 @@ function renderPicker(): void {
   card.innerHTML = `
     <header><div><p class="kicker">${escapeHTML(sectionLabel)} ${activeStepIndex + 1} visual</p><h2>Choose it, then make the important part obvious</h2><p>${escapeHTML(step.title)}</p></div><button class="icon" id="closePicker" data-tooltip="Close image picker" aria-label="Close image picker" title="Close image picker">×</button></header>
     <div class="picker-toolbar">
-      <div class="segmented"><button id="bestFrames" class="${showAllFrames ? "" : "active"}">Best matches</button><button id="allFrames" class="${showAllFrames ? "active" : ""}">All images</button></div>
+      <div class="segmented"><button id="bestFrames" class="${showAllFrames ? "" : "active"}">Around this section</button><button id="allFrames" class="${showAllFrames ? "active" : ""}">All images</button></div>
       <div class="markup-tools"><button id="highlightMode" class="${drawingMode === "highlight" ? "active" : ""}">Highlight</button><button id="redactMode" class="${drawingMode === "redaction" ? "active" : ""}">Redact</button><button id="undoMarkup" ${draftAnnotations.length ? "" : "disabled"}>Undo</button><button id="clearMarkup" ${draftAnnotations.length ? "" : "disabled"}>Clear</button></div>
       <span>${frame ? `${candidateIndex + 1} of ${candidates.length}` : "No images"}</span>
     </div>
-    ${frame ? `<div class="picker-stage-row"><button class="arrow" id="previousFrame" data-tooltip="Previous screenshot" aria-label="Previous screenshot" title="Previous screenshot" ${candidateIndex === 0 ? "disabled" : ""}>←</button><figure><div class="markup-stage ${drawingMode ? "drawing" : ""}" id="markupStage"><img src="${escapeAttribute(frame.filename)}" alt="Screenshot ${candidateIndex + 1}" />${draftAnnotations.map((annotation) => markupAnnotationElement(annotation).outerHTML).join("")}</div><figcaption><strong>${escapeHTML(frame.filename.split("/").at(-1) || frame.filename)}</strong><span>${formatSeconds(frame.seconds)} · ${Math.abs(frame.seconds - step.endSeconds) < 1 ? "Best timing" : "Nearby moment"}</span></figcaption></figure><button class="arrow" id="nextFrame" data-tooltip="Next screenshot" aria-label="Next screenshot" title="Next screenshot" ${candidateIndex === candidates.length - 1 ? "disabled" : ""}>→</button></div>` : `<div class="empty-picker">No screenshots are available for this recording.</div>`}
-    <div class="picker-actions"><button class="button secondary" id="textOnly">Use text only</button><span>${drawingMode ? "Drag on the screenshot to add markup." : "Select Highlight or Redact, then drag on the screenshot."}</span><button class="button primary" id="useFrame" ${frame ? "" : "disabled"}>Use this image</button></div>
-    <div class="filmstrip">${candidates.map((item, index) => `<button data-frame-index="${index}" class="${index === candidateIndex ? "active" : ""}" aria-label="Choose screenshot ${index + 1}" title="Choose screenshot ${index + 1}"><img src="${escapeAttribute(item.filename)}" alt="" /><span>${String(index + 1).padStart(2, "0")}</span></button>`).join("")}</div>`;
+    ${frame ? `<div class="picker-stage-row"><button class="arrow" id="previousFrame" data-tooltip="Previous screenshot" aria-label="Previous screenshot" title="Previous screenshot" ${candidateIndex === 0 ? "disabled" : ""}>←</button><figure><div class="markup-stage ${drawingMode ? "drawing" : ""}" id="markupStage"><img src="${escapeAttribute(frame.filename)}" alt="Screenshot ${candidateIndex + 1}" />${draftAnnotations.map((annotation) => markupAnnotationElement(annotation).outerHTML).join("")}</div><figcaption><strong>${escapeHTML(frame.filename.split("/").at(-1) || frame.filename)}</strong><span>${formatSeconds(frame.seconds)} · ${frame.seconds < step.startSeconds ? "Before section" : frame.seconds > step.endSeconds ? "After section" : "Within section"}</span></figcaption></figure><button class="arrow" id="nextFrame" data-tooltip="Next screenshot" aria-label="Next screenshot" title="Next screenshot" ${candidateIndex === candidates.length - 1 ? "disabled" : ""}>→</button></div>` : `<div class="empty-picker">No screenshots are available for this recording.</div>`}
+    <div class="picker-actions"><button class="button secondary" id="textOnly">${sectionImages(step)[activeImageIndex] ? "Remove this photo" : sectionImages(step).length ? "Cancel" : "Keep text only"}</button><span>${drawingMode ? "Drag on the screenshot to add markup." : `Section ${formatRange(step.startSeconds, step.endSeconds)} · Browse before and after with the arrows.`}</span><button class="button secondary" id="useAndAddFrame" ${frame ? "" : "disabled"}>Use & add another</button><button class="button primary" id="useFrame" ${frame ? "" : "disabled"}>Use this image</button></div>
+    <div class="filmstrip">${candidates.map((item, index) => `<button data-frame-index="${index}" class="${index === candidateIndex ? "active" : ""}" aria-label="Choose screenshot at ${formatSeconds(item.seconds)}" title="${formatSeconds(item.seconds)}"><img src="${escapeAttribute(item.filename)}" alt="" /><span>${formatSeconds(item.seconds)}</span></button>`).join("")}</div>`;
 
   mustFind<HTMLButtonElement>("#closePicker").onclick = closePicker;
   mustFind<HTMLButtonElement>("#bestFrames").onclick = () => changeFrameCollection(false);
@@ -877,6 +911,7 @@ function renderPicker(): void {
   if (nextFrame) nextFrame.onclick = () => moveFrame(1);
   mustFind<HTMLButtonElement>("#textOnly").onclick = () => applyImage(undefined, []);
   mustFind<HTMLButtonElement>("#useFrame").onclick = () => applyImage(frame, draftAnnotations);
+  mustFind<HTMLButtonElement>("#useAndAddFrame").onclick = () => applyImage(frame, draftAnnotations, true);
   document.querySelectorAll<HTMLButtonElement>("[data-frame-index]").forEach((button) => {
     button.onclick = () => { candidateIndex = Number(button.dataset.frameIndex || 0); syncDraftAnnotations(); renderPicker(); };
   });
@@ -905,12 +940,8 @@ function changeFrameCollection(showAll: boolean): void {
 }
 
 function rankedFrames(step: StoryStep): Frame[] {
-  const all = [...payload.frames].sort((a, b) => Math.abs(a.seconds - step.endSeconds) - Math.abs(b.seconds - step.endSeconds));
   if (showAllFrames) return [...payload.frames].sort((a, b) => a.seconds - b.seconds);
-  const best = all.slice(0, 8);
-  const selected = payload.frames.find((frame) => frame.filename === step.imageFilename);
-  if (selected && !best.some((frame) => frame.filename === selected.filename)) best[best.length - 1] = selected;
-  return best;
+  return framesAroundSection(payload.frames, step.startSeconds, step.endSeconds, sectionImages(step).map((image) => image.filename));
 }
 
 function toggleDrawing(mode: AnnotationKind): void {
@@ -959,23 +990,52 @@ function moveFrame(offset: number): void {
 function syncDraftAnnotations(): void {
   if (activeStepIndex === undefined) return;
   const step = serializeStory().steps[activeStepIndex];
-  draftAnnotations = candidates[candidateIndex]?.filename === step.imageFilename ? [...step.imageAnnotations] : [];
+  const selected = sectionImages(step)[activeImageIndex];
+  draftAnnotations = candidates[candidateIndex]?.filename === selected?.filename ? [...selected.annotations] : [];
 }
 
-function applyImage(frame: Frame | undefined, annotations: Annotation[]): void {
-  if (activeStepIndex === undefined) return;
+function imageNodes(images: SectionImage<Annotation>[], stepIndex: number): JSONContent[] {
+  return [...images, { filename: "", annotations: [] }].map((image, imageIndex) => ({
+    type: "storyImage",
+    attrs: { stepIndex, imageIndex, filename: image.filename, annotations: JSON.stringify(image.annotations) }
+  }));
+}
+
+function replaceSectionImages(stepIndex: number, images: SectionImage<Annotation>[]): void {
   const transaction = editor.state.tr;
-  editor.state.doc.descendants((node, position) => {
-    if (node.type.name === "storyImage" && Number(node.attrs.stepIndex) === activeStepIndex) {
-      transaction.setNodeMarkup(position, undefined, {
-        ...node.attrs,
-        filename: frame?.filename || "",
-        annotations: JSON.stringify(annotations)
-      });
-    }
+  let index = -1;
+  editor.state.doc.forEach((node, position) => {
+    if (node.type.name !== "storyStep" || ++index !== stepIndex) return;
+    let first = -1;
+    node.forEach((child, offset) => {
+      if (child.type.name === "storyImage" && first < 0) first = position + 1 + offset;
+    });
+    if (first >= 0) transaction.replaceWith(first, position + node.nodeSize - 1,
+      imageNodes(images, stepIndex).map((image) => editor.schema.nodeFromJSON(image)));
   });
   editor.view.dispatch(transaction);
+}
+
+function changeSectionImage(stepIndex: number, imageIndex: number, offset: number): void {
+  const images = sectionImages(serializeStory().steps[stepIndex]);
+  if (offset === 0) images.splice(imageIndex, 1);
+  else {
+    const target = imageIndex + offset;
+    if (target < 0 || target >= images.length) return;
+    [images[imageIndex], images[target]] = [images[target], images[imageIndex]];
+  }
+  replaceSectionImages(stepIndex, images);
+}
+
+function applyImage(frame: Frame | undefined, annotations: Annotation[], addAnother = false): void {
+  if (activeStepIndex === undefined) return;
+  const stepIndex = activeStepIndex;
+  const images = sectionImages(serializeStory().steps[stepIndex]);
+  if (frame) images.splice(activeImageIndex, 1, { filename: frame.filename, annotations: [...annotations] });
+  else images.splice(activeImageIndex, 1);
+  replaceSectionImages(stepIndex, images);
   closePicker();
+  if (addAnother) openImagePicker(stepIndex, images.length);
 }
 
 function closePicker(): void {

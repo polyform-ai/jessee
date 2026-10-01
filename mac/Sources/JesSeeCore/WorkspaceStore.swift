@@ -152,6 +152,49 @@ public actor CaptureWorkspace {
     records.first { $0.id == id }
   }
 
+  public func prepareImageChoices(for recordID: String, story: StoryDocument) async throws
+    -> CaptureRecord?
+  {
+    guard let record = record(id: recordID), record.source != .screenshot,
+      let duration = record.duration
+    else { return record(id: recordID) }
+    let existingTimes = Array((record.imageTimes ?? [:]).values)
+    let times = MediaTools.sectionBoundaryFrameTimes(for: story, duration: duration).filter { time in
+      !existingTimes.contains(where: { abs($0 - time) < 0.35 })
+    }
+    guard !times.isEmpty else { return record }
+    let directory = directoryURL(for: record)
+    let screenshotDirectory = directory.appendingPathComponent("screenshots", isDirectory: true)
+    let prefix = "choices-\(UUID().uuidString)"
+    do {
+      let frames = try await MediaTools.extractFrames(
+        from: mediaURL(for: record), times: times, to: screenshotDirectory,
+        recordingMarkups: record.recordingMarkups ?? [], filenamePrefix: prefix)
+      try Task.checkCancellation()
+      // Re-read after extraction, which can overlap saving edits or publishing this capture.
+      guard var updated = self.record(id: recordID) else { throw CancellationError() }
+      var imageTimes = updated.imageTimes ?? [:]
+      // Preserve legacy midpoint estimates before new choices change the frame count.
+      let originalCount = updated.imageFilenames.count
+      for (index, filename) in updated.imageFilenames.enumerated() where imageTimes[filename] == nil {
+        imageTimes[filename] = (Double(index) + 0.5) * (updated.duration ?? duration)
+          / Double(originalCount)
+      }
+      updated.imageFilenames.append(contentsOf: frames.map(\.filename))
+      for frame in frames { imageTimes[frame.filename] = frame.seconds }
+      updated.imageTimes = imageTimes
+      try save(updated)
+      return updated
+    } catch {
+      let files = (try? FileManager.default.contentsOfDirectory(
+        at: screenshotDirectory, includingPropertiesForKeys: nil)) ?? []
+      for file in files where file.lastPathComponent.hasPrefix("\(prefix)-") {
+        try? FileManager.default.removeItem(at: file)
+      }
+      throw error
+    }
+  }
+
   public nonisolated func directoryURL(for record: CaptureRecord) -> URL {
     let date = Self.folderDate(from: record.createdAt)
     return rootURL.appendingPathComponent("\(date)-\(record.id.prefix(8))", isDirectory: true)

@@ -620,8 +620,13 @@ final class AppStore: ObservableObject {
     guard let currentRecord = await sourceWorkspace.record(id: record.id),
       let filename = currentRecord.storyFilename
     else { return nil }
-    return try? await sourceWorkspace.read(
+    guard let story = try? await sourceWorkspace.read(
       StoryDocument.self, filename: filename, for: currentRecord)
+    else { return nil }
+    if let updated = try? await sourceWorkspace.prepareImageChoices(for: record.id, story: story) {
+      replace(updated, from: sourceWorkspace)
+    }
+    return Task.isCancelled ? nil : story
   }
 
   func totalEstimatedCostSaved(

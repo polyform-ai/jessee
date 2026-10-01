@@ -109,6 +109,8 @@ body.is-dirty #saveStatus { color: #9a6100; }
 [data-story-step] blockquote { margin: 16px 0; padding: 13px 17px; border-left: 4px solid #5a52ff; border-radius: 0 11px 11px 0; background: #f2f0ff; color: #39364e; }
 [data-story-step] blockquote p { margin: 0; }
 .story-image { display: block; width: 100%; margin-top: 22px; padding: 0; text-align: left; border: 0; background: transparent; cursor: pointer; }
+.story-image-controls { display: flex; justify-content: flex-end; gap: 8px; padding-top: 8px; }
+.story-image-controls button { border: 1px solid #dad8e3; border-radius: 7px; background: #fff; padding: 5px 8px; color: #625e70; cursor: pointer; font-size: 11px; }
 .story-image-stage { position: relative; display: block; overflow: hidden; min-height: 130px; border: 1px solid #dad8e3; border-radius: 14px; background: #f2f1f6; }
 .story-image-stage img { display: block; width: 100%; height: auto; }
 .story-image-stage.empty { display: grid; place-items: center; min-height: 155px; color: #777480; border-style: dashed; }

@@ -93,29 +93,11 @@ else
 
 This release is signed by Polyform, notarized by Apple, and can update itself from inside JesSee.
 
-- See a higher, high-resolution screen-recording savings estimate based on GPT-6 Sol, plus the total estimated money saved across the entire Library with concise inline explanations.
-- Keep editing without a Save button: changes autosave reliably while Open PDF and Get Link render the latest story on demand.
-- Keep recording markups aligned with the exact extracted frame, including captures near the start or end of a recording.
-- Stay signed in to Polyform across app launches with background workflow-auth refresh and durable refresh-token recovery.
-- Share public PDFs more reliably with stable saved links, safer retries and cleanup, protection against stale edits, and clearer progress and completion feedback.
-- Let JesSee infer the structure that fits each recording—tutorial steps, issues, findings, decisions, examples, or another useful document shape—without dropping distinct items.
-- Record with a visible timer and live microphone level.
-- Draw, highlight, undo, clear, redo, or stop directly from the floating controls.
-- Press ⌥⇧S again from anywhere to stop and process the recording.
-- Finish onboarding with a clear confirmation before JesSee moves into the menu bar.
-- Get an immediate transcription notification, then another when the finished story opens for review.
-- Open Recent stories and See all directly in the Library editor without losing your place.
-- Let JesSee prioritize marked evidence while preserving useful screenshots from across the full recording.
-- Edit rich text, choose alternate screenshots, add highlights or redactions, retain a webpage source link, and export one continuous PDF.
-- Generate and copy a public PDF link directly beside the editor's save controls.
-- Start or stop a recording with ⌥⇧S, or use ⌥⇧C to drag over part of the screen, press Space to choose a window, save the screenshot to the Library, and create a public link after reviewing the edit when signed in with Polyform.
-- Open captured screenshots in the Library to add text, highlight or redact details, copy the annotated image or PDF, and share the result.
-- See a confirmation in JesSee and a Mac notification when a screenshot URL is copied to the clipboard.
-- Share anonymous, media-free product analytics by default, with a clear opt-out in Settings.
-- Ask for email inside Polyform Covered and associate signed-in analytics with an opaque account ID without sending the email or grant ID.
-- Open the Library automatically whenever a configured JesSee app launches.
-- Preserve the active webpage URL automatically when a recording starts from a supported browser on macOS 15.2 or newer.
-- Use the refreshed JesSee identity across the native app and website.
+- Retry or cancel recording setup if screen selection or capture startup stalls, with clearer microphone permission feedback.
+- Keep recording annotations aligned with the selected window or display, including windows that extend beyond the screen.
+- Choose nearby screenshots around the start and end of each section, including moments one or two seconds before and after.
+- Add multiple photos to a section, annotate each one, reorder or remove them, and include them all in the exported document.
+- Preserve existing single-photo documents, saved edits, and public links when opening older recordings.
 EOF
 fi
 

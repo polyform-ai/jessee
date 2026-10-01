@@ -38,6 +38,11 @@ let package = Package(
       ]
     ),
     .testTarget(
+      name: "JesSeeAppTests",
+      dependencies: ["JesSeeApp"],
+      path: "mac/Tests/JesSeeAppTests"
+    ),
+    .testTarget(
       name: "JesSeeCoreTests",
       dependencies: ["JesSeeCore"],
       path: "mac/Tests/JesSeeCoreTests"

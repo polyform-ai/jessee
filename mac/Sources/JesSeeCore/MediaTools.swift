@@ -101,6 +101,7 @@ public enum MediaTools {
 
     var frames: [CapturedFrame] = []
     for (index, seconds) in times.enumerated() {
+      try Task.checkCancellation()
       let requestedTime = CMTime(seconds: seconds, preferredTimescale: 600)
       let result = try await generator.image(at: requestedTime)
       let extractedSeconds = result.actualTime.seconds
@@ -122,6 +123,21 @@ public enum MediaTools {
           }))
     }
     return frames
+  }
+
+  public static func sectionBoundaryFrameTimes(for story: StoryDocument, duration: Double)
+    -> [Double]
+  {
+    guard duration > 0 else { return [] }
+    let lastTime = max(0, duration - 0.05)
+    let times = story.steps.flatMap { step in
+      [step.startSeconds, step.endSeconds].flatMap { boundary in
+        [-2.0, -1, 0, 1, 2].map { max(0, min(lastTime, boundary + $0)) }
+      }
+    }.sorted()
+    return times.reduce(into: []) { result, time in
+      if result.last.map({ time - $0 >= 0.35 }) ?? true { result.append(time) }
+    }
   }
 
   public static func srt(from transcript: TranscriptDocument) -> String {

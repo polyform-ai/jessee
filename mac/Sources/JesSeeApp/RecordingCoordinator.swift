@@ -21,6 +21,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
   enum State: Equatable {
     case idle
     case choosingRecording
+    case startingRecording
     case choosingScreenshot
     case recording
     case stopping
@@ -36,7 +37,19 @@ final class RecordingCoordinator: NSObject, ObservableObject {
   var onScreenshotCaptured: ((ScreenshotResult) -> Void)?
   var onStopRequested: (() -> Void)?
 
-  private let picker = SCContentSharingPicker.shared
+  private let presentPicker: (any SCContentSharingPickerObserver) -> Void
+  private let dismissPicker: (any SCContentSharingPickerObserver) -> Void
+  private let selectionTimeout: Duration
+  private let startupTimeout: Duration
+  private var pickerObserver: RecordingPickerObserver?
+  private var timeoutTask: Task<Void, Never>?
+  private final class RecordingAttempt {
+    let id = UUID()
+    var isCanceled = false
+  }
+  private var recordingAttempt: RecordingAttempt?
+  var recordingAttemptID: UUID? { recordingAttempt?.id }
+  private var lastCaptureWasRecording = true
   private var stream: SCStream?
   private var recordingOutput: SCRecordingOutput?
   private var outputURL: URL?
@@ -49,27 +62,70 @@ final class RecordingCoordinator: NSObject, ObservableObject {
   private var pendingScreenshotSourceURL: String?
   private var recordingSourceURL: String?
 
-  override init() {
+  init(
+    selectionTimeout: Duration = .seconds(90),
+    startupTimeout: Duration = .seconds(30),
+    presentPicker: @escaping (any SCContentSharingPickerObserver) -> Void = { observer in
+      let picker = SCContentSharingPicker.shared
+      var configuration = SCContentSharingPickerConfiguration()
+      configuration.allowedPickerModes = [.singleDisplay, .singleWindow, .singleApplication]
+      configuration.excludedBundleIDs = [Bundle.main.bundleIdentifier ?? "ai.polyform.jessee"]
+      configuration.allowsChangingSelectedContent = false
+      picker.defaultConfiguration = configuration
+      picker.maximumStreamCount = 1
+      picker.add(observer)
+      picker.isActive = true
+      picker.present()
+    },
+    dismissPicker: @escaping (any SCContentSharingPickerObserver) -> Void = { observer in
+      let picker = SCContentSharingPicker.shared
+      picker.remove(observer)
+      picker.isActive = false
+    }
+  ) {
+    self.selectionTimeout = selectionTimeout
+    self.startupTimeout = startupTimeout
+    self.presentPicker = presentPicker
+    self.dismissPicker = dismissPicker
     super.init()
-    picker.add(self)
-    var configuration = SCContentSharingPickerConfiguration()
-    configuration.allowedPickerModes = [.singleDisplay, .singleWindow, .singleApplication]
-    configuration.excludedBundleIDs = [Bundle.main.bundleIdentifier ?? "ai.polyform.jessee"]
-    configuration.allowsChangingSelectedContent = false
-    picker.defaultConfiguration = configuration
-    picker.maximumStreamCount = 1
-    picker.isActive = true
   }
 
   func chooseWhatToRecord() {
     guard state == .idle || isFailure else { return }
+    lastCaptureWasRecording = true
+    let attempt = RecordingAttempt()
+    recordingAttempt = attempt
+    let attemptID = attempt.id
     pendingBrowserApplication = BrowserURLReader.frontmostSupportedBrowser()
     state = .choosingRecording
-    picker.present()
+    let observer = RecordingPickerObserver(coordinator: self, attemptID: attemptID)
+    pickerObserver = observer
+    scheduleTimeout(
+      after: selectionTimeout, attemptID: attemptID, expectedState: .choosingRecording,
+      message: "Screen selection did not finish. Retry to reopen the screen picker, or cancel.")
+    presentPicker(observer)
+  }
+
+  var canRetryRecording: Bool {
+    state == .choosingRecording || state == .startingRecording
+      || (isFailure && lastCaptureWasRecording)
+  }
+
+  func retryRecording() {
+    guard canRetryRecording else { return }
+    cancelRecordingSetup()
+    chooseWhatToRecord()
+  }
+
+  func cancelRecordingSetup() {
+    guard canRetryRecording else { return }
+    resetRecording()
+    state = .idle
   }
 
   func chooseScreenshot() {
     guard state == .idle || isFailure else { return }
+    lastCaptureWasRecording = false
     pendingBrowserApplication = BrowserURLReader.frontmostSupportedBrowser()
     pendingScreenshotSourceURL = pendingBrowserApplication.flatMap {
       BrowserURLReader.currentPage(for: $0)?.url
@@ -88,7 +144,10 @@ final class RecordingCoordinator: NSObject, ObservableObject {
     overlay.setStopping()
     if notifyUser { onStopRequested?() }
     Task {
-      do { try await stream.stopCapture() } catch { finishWithError(error.localizedDescription) }
+      do { try await stream.stopCapture() } catch {
+        guard self.stream === stream else { return }
+        finishWithError(error.localizedDescription)
+      }
     }
   }
 
@@ -99,7 +158,10 @@ final class RecordingCoordinator: NSObject, ObservableObject {
   }
 
   func dismissError() {
-    if isFailure { state = .idle }
+    if isFailure {
+      resetRecording()
+      state = .idle
+    }
   }
 
   private var isFailure: Bool {
@@ -107,11 +169,37 @@ final class RecordingCoordinator: NSObject, ObservableObject {
     return false
   }
 
-  private func startRecording(filter: SCContentFilter) async {
+  // Change state before awaiting macOS so duplicate selections cannot create two streams.
+  func beginRecordingStartup(attemptID: UUID) -> Bool {
+    guard recordingAttemptID == attemptID, state == .choosingRecording else { return false }
+    state = .startingRecording
+    scheduleTimeout(
+      after: startupTimeout, attemptID: attemptID, expectedState: .startingRecording,
+      message: "Recording did not start. Check any macOS permission prompts, then retry or cancel.")
+    return true
+  }
+
+  fileprivate func startRecording(filter: SCContentFilter, attemptID: UUID) async {
+    guard beginRecordingStartup(attemptID: attemptID), let attempt = recordingAttempt else {
+      return
+    }
+    let microphoneAllowed = await AVCaptureDevice.requestAccess(for: .audio)
+    guard recordingAttemptID == attemptID, state == .startingRecording else { return }
+    guard microphoneAllowed else {
+      finishWithError(
+        "Microphone access is needed to narrate a recording. Enable JesSee in System Settings → Privacy & Security → Microphone, then retry.")
+      return
+    }
     recordingSourceURL = selectedSourceURL(for: filter)
     recordingContentRect = filter.contentRect
     if #available(macOS 15.2, *) {
       recordingDisplayID = filter.includedDisplays.first?.displayID
+      // contentRect can be local to the capture. The overlay needs global screen coordinates.
+      if filter.style == .window, let window = filter.includedWindows.first {
+        recordingContentRect = window.frame
+      } else if filter.style == .display, let display = filter.includedDisplays.first {
+        recordingContentRect = display.frame
+      }
     } else {
       recordingDisplayID = nil
     }
@@ -130,6 +218,8 @@ final class RecordingCoordinator: NSObject, ObservableObject {
     streamConfiguration.showMouseClicks = true
     streamConfiguration.capturesAudio = false
     streamConfiguration.captureMicrophone = true
+    // Window shadows add pixels outside the bounds used by the drawing overlay.
+    streamConfiguration.ignoreShadowsSingleWindow = true
 
     let tempURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("JesSee-\(UUID().uuidString).mp4")
@@ -148,15 +238,43 @@ final class RecordingCoordinator: NSObject, ObservableObject {
       outputURL = tempURL
       discardCurrentRecording = false
       try await stream.startCapture()
+      // Cancellation can race with startCapture; stop again if it completed after cancellation.
+      if attempt.isCanceled {
+        try? await stream.stopCapture()
+        try? FileManager.default.removeItem(at: tempURL)
+      }
     } catch {
+      guard recordingAttemptID == attemptID else {
+        if attempt.isCanceled { try? FileManager.default.removeItem(at: tempURL) }
+        return
+      }
       finishWithError(error.localizedDescription)
     }
   }
 
-  private func finishWithError(_ message: String) {
-    if let outputURL { try? FileManager.default.removeItem(at: outputURL) }
+  private func scheduleTimeout(
+    after duration: Duration, attemptID: UUID, expectedState: State, message: String
+  ) {
+    timeoutTask?.cancel()
+    timeoutTask = Task { [weak self] in
+      do { try await Task.sleep(for: duration) } catch { return }
+      guard let self, self.recordingAttemptID == attemptID, self.state == expectedState else {
+        return
+      }
+      self.finishWithError(message)
+    }
+  }
+
+  private func resetRecording() {
+    let abandonedStream = stream
+    let abandonedURL = outputURL
+    recordingAttempt?.isCanceled = true
+    recordingAttempt = nil
+    timeoutTask?.cancel()
+    timeoutTask = nil
+    if let observer = pickerObserver { dismissPicker(observer) }
+    pickerObserver = nil
     overlay.cancel()
-    state = .failed(message)
     startedAt = nil
     stream = nil
     recordingOutput = nil
@@ -164,6 +282,19 @@ final class RecordingCoordinator: NSObject, ObservableObject {
     pendingBrowserApplication = nil
     pendingScreenshotSourceURL = nil
     recordingSourceURL = nil
+    discardCurrentRecording = false
+    recordingContentRect = .zero
+    recordingDisplayID = nil
+    // Clear identity first so callbacks from the stopped stream cannot affect a retry.
+    Task {
+      if let abandonedStream { try? await abandonedStream.stopCapture() }
+      if let abandonedURL { try? FileManager.default.removeItem(at: abandonedURL) }
+    }
+  }
+
+  fileprivate func finishWithError(_ message: String) {
+    resetRecording()
+    state = .failed(message)
   }
 
   private func completeRecording() {
@@ -171,6 +302,11 @@ final class RecordingCoordinator: NSObject, ObservableObject {
     let shouldRedo = discardCurrentRecording
     let markups = overlay.finish()
     let sourceURL = recordingSourceURL
+    recordingAttempt = nil
+    timeoutTask?.cancel()
+    timeoutTask = nil
+    if let observer = pickerObserver { dismissPicker(observer) }
+    pickerObserver = nil
     state = .idle
     startedAt = nil
     stream = nil
@@ -178,6 +314,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
     outputURL = nil
     discardCurrentRecording = false
     recordingSourceURL = nil
+    pendingBrowserApplication = nil
 
     if shouldRedo {
       if let finishedURL { try? FileManager.default.removeItem(at: finishedURL) }
@@ -245,14 +382,26 @@ final class RecordingCoordinator: NSObject, ObservableObject {
   }
 }
 
-extension RecordingCoordinator: SCContentSharingPickerObserver {
+// A fresh observer captures each attempt's identity, including callbacks already queued at cancel.
+private final class RecordingPickerObserver: NSObject, SCContentSharingPickerObserver {
+  private weak var coordinator: RecordingCoordinator?
+  private let attemptID: UUID
+
+  init(coordinator: RecordingCoordinator, attemptID: UUID) {
+    self.coordinator = coordinator
+    self.attemptID = attemptID
+  }
+
   nonisolated func contentSharingPicker(
     _ picker: SCContentSharingPicker,
     didCancelFor stream: SCStream?
   ) {
-    Task { @MainActor in
-      self.pendingBrowserApplication = nil
-      self.state = .idle
+    guard stream == nil else { return }
+    Task { @MainActor [weak coordinator, attemptID] in
+      guard let coordinator, coordinator.recordingAttemptID == attemptID,
+        coordinator.state == .choosingRecording
+      else { return }
+      coordinator.cancelRecordingSetup()
     }
   }
 
@@ -261,24 +410,30 @@ extension RecordingCoordinator: SCContentSharingPickerObserver {
     didUpdateWith filter: SCContentFilter,
     for stream: SCStream?
   ) {
-    Task { @MainActor in
-      switch self.state {
-      case .choosingRecording:
-        await self.startRecording(filter: filter)
-      default:
-        break
-      }
+    guard stream == nil else { return }
+    Task { @MainActor [weak coordinator, attemptID] in
+      await coordinator?.startRecording(filter: filter, attemptID: attemptID)
     }
   }
 
   nonisolated func contentSharingPickerStartDidFailWithError(_ error: any Error) {
-    Task { @MainActor in self.finishWithError(error.localizedDescription) }
+    Task { @MainActor [weak coordinator, attemptID] in
+      guard let coordinator, coordinator.recordingAttemptID == attemptID,
+        coordinator.state == .choosingRecording
+      else { return }
+      coordinator.finishWithError(error.localizedDescription)
+    }
   }
 }
 
 extension RecordingCoordinator: SCRecordingOutputDelegate {
   nonisolated func recordingOutputDidStartRecording(_ recordingOutput: SCRecordingOutput) {
     Task { @MainActor [self] in
+      guard self.recordingOutput === recordingOutput, self.state == .startingRecording else {
+        return
+      }
+      self.timeoutTask?.cancel()
+      self.timeoutTask = nil
       let startedAt = Date()
       self.startedAt = startedAt
       self.state = .recording
@@ -294,17 +449,28 @@ extension RecordingCoordinator: SCRecordingOutputDelegate {
   nonisolated func recordingOutput(
     _ recordingOutput: SCRecordingOutput, didFailWithError error: any Error
   ) {
-    Task { @MainActor in self.finishWithError(error.localizedDescription) }
+    Task { @MainActor in
+      guard self.recordingOutput === recordingOutput else { return }
+      self.finishWithError(error.localizedDescription)
+    }
   }
 
   nonisolated func recordingOutputDidFinishRecording(_ recordingOutput: SCRecordingOutput) {
-    Task { @MainActor in self.completeRecording() }
+    Task { @MainActor in
+      guard self.recordingOutput === recordingOutput else { return }
+      guard self.state == .recording || self.state == .stopping else {
+        self.finishWithError("Recording ended before it could start. Retry or cancel.")
+        return
+      }
+      self.completeRecording()
+    }
   }
 }
 
 extension RecordingCoordinator: SCStreamDelegate {
   nonisolated func stream(_ stream: SCStream, didStopWithError error: any Error) {
     Task { @MainActor in
+      guard self.stream === stream else { return }
       if self.state != .stopping { self.finishWithError(error.localizedDescription) }
     }
   }
@@ -319,7 +485,10 @@ extension RecordingCoordinator: SCStreamOutput {
     guard outputType == .microphone, sampleBuffer.isValid,
       let level = Self.microphoneLevel(in: sampleBuffer)
     else { return }
-    Task { @MainActor in self.overlay.updateMicLevel(level) }
+    Task { @MainActor in
+      guard self.stream === stream, self.state == .recording else { return }
+      self.overlay.updateMicLevel(level)
+    }
   }
 
   nonisolated private static func microphoneLevel(in sampleBuffer: CMSampleBuffer) -> Double? {

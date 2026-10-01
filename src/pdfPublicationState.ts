@@ -1,3 +1,5 @@
+import type { SectionImage } from "./storyImages";
+
 interface PDFAnnotation {
   id: string;
   kind: string;
@@ -13,6 +15,7 @@ interface PDFStoryEntry {
   narrativeHTML?: string;
   imageFilename?: string;
   imageAnnotations: PDFAnnotation[];
+  additionalImages?: SectionImage<PDFAnnotation>[];
 }
 
 interface PDFStory {
@@ -51,6 +54,7 @@ export function pdfPublicationState(story: PDFStory): PDFPublicationState {
       narrative: step.narrative,
       narrativeHTML: step.narrativeHTML,
       imageFilename: step.imageFilename,
+      additionalImages: step.additionalImages?.length ? step.additionalImages : undefined,
       imageAnnotations: step.imageAnnotations.map((annotation) => ({
         id: annotation.id,
         kind: annotation.kind,
@@ -77,6 +81,13 @@ export function serializedPDFPublicationState(state: PDFPublicationState): strin
       narrative: entry.narrative,
       narrativeHTML: entry.narrativeHTML,
       imageFilename: entry.imageFilename,
+      additionalImages: entry.additionalImages?.length ? entry.additionalImages.map((image) => ({
+        filename: image.filename,
+        annotations: image.annotations.map((annotation) => ({
+          id: annotation.id, kind: annotation.kind, x: annotation.x, y: annotation.y,
+          width: annotation.width, height: annotation.height
+        }))
+      })) : undefined,
       imageAnnotations: entry.imageAnnotations.map((annotation) => ({
         id: annotation.id,
         kind: annotation.kind,
