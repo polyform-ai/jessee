@@ -10,6 +10,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
   struct Result {
     var url: URL
     var markups: [RecordingMarkupStroke]
+    var geometry: [RecordingFrameGeometry]
     var sourceURL: String?
   }
 
@@ -32,6 +33,9 @@ final class RecordingCoordinator: NSObject, ObservableObject {
   @Published private(set) var startedAt: Date?
 
   var overlayModel: RecordingOverlayModel { overlay.model }
+  let audio = RecordingAudioModel()
+  var onMicrophoneSelected: ((String) -> Void)?
+  var onAudioWarning: ((String) -> Void)?
 
   var onFinished: ((Result) -> Void)?
   var onScreenshotCaptured: ((ScreenshotResult) -> Void)?
@@ -55,6 +59,15 @@ final class RecordingCoordinator: NSObject, ObservableObject {
   private var outputURL: URL?
   private var discardCurrentRecording = false
   private let overlay = RecordingOverlayController()
+  private var streamConfiguration: SCStreamConfiguration?
+  private var audioHealth = MicrophoneCaptureHealth()
+  private var audioMonitorTask: Task<Void, Never>?
+  private var hasNotifiedAudioWarning = false
+  private var activeInputID: String?
+  private var recordingGeometry: [RecordingFrameGeometry] = []
+  private var firstScreenTimestamp: Double?
+  private var captureStartedAt: Date?
+  private let screenQueue = DispatchQueue(label: "ai.polyform.jessee.capture-geometry")
   private let microphoneQueue = DispatchQueue(label: "ai.polyform.jessee.microphone-meter")
   private var recordingContentRect: CGRect = .zero
   private var recordingDisplayID: CGDirectDisplayID?
@@ -190,6 +203,13 @@ final class RecordingCoordinator: NSObject, ObservableObject {
         "Microphone access is needed to narrate a recording. Enable JesSee in System Settings → Privacy & Security → Microphone, then retry.")
       return
     }
+    audio.refreshInputs()
+    guard let input = audio.resolvedInput() else {
+      finishWithError("The selected microphone is unavailable. Choose another input, then retry.")
+      return
+    }
+    activeInputID = input.id
+    audio.activeInputName = input.name
     recordingSourceURL = selectedSourceURL(for: filter)
     recordingContentRect = filter.contentRect
     if #available(macOS 15.2, *) {
@@ -218,6 +238,8 @@ final class RecordingCoordinator: NSObject, ObservableObject {
     streamConfiguration.showMouseClicks = true
     streamConfiguration.capturesAudio = false
     streamConfiguration.captureMicrophone = true
+    streamConfiguration.microphoneCaptureDeviceID = input.id
+    self.streamConfiguration = streamConfiguration
     // Window shadows add pixels outside the bounds used by the drawing overlay.
     streamConfiguration.ignoreShadowsSingleWindow = true
 
@@ -233,6 +255,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
     do {
       try stream.addRecordingOutput(output)
       try stream.addStreamOutput(self, type: .microphone, sampleHandlerQueue: microphoneQueue)
+      try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: screenQueue)
       self.stream = stream
       recordingOutput = output
       outputURL = tempURL
@@ -274,6 +297,7 @@ final class RecordingCoordinator: NSObject, ObservableObject {
     timeoutTask = nil
     if let observer = pickerObserver { dismissPicker(observer) }
     pickerObserver = nil
+    stopAudioMonitor()
     overlay.cancel()
     startedAt = nil
     stream = nil
@@ -302,6 +326,8 @@ final class RecordingCoordinator: NSObject, ObservableObject {
     let shouldRedo = discardCurrentRecording
     let markups = overlay.finish()
     let sourceURL = recordingSourceURL
+    let geometry = recordingGeometry
+    stopAudioMonitor()
     recordingAttempt = nil
     timeoutTask?.cancel()
     timeoutTask = nil
@@ -320,8 +346,92 @@ final class RecordingCoordinator: NSObject, ObservableObject {
       if let finishedURL { try? FileManager.default.removeItem(at: finishedURL) }
       chooseWhatToRecord()
     } else if let finishedURL {
-      onFinished?(Result(url: finishedURL, markups: markups, sourceURL: sourceURL))
+      onFinished?(Result(url: finishedURL, markups: markups, geometry: geometry, sourceURL: sourceURL))
     }
+  }
+
+  var canSelectMicrophone: Bool { state == .idle || isFailure || state == .recording }
+
+  func selectMicrophone(_ id: String) {
+    guard !audio.isSwitchingInput,
+      state == .idle || isFailure || state == .recording
+    else { return }
+    audio.refreshInputs()
+    if state != .recording {
+      audio.selectedInputID = id
+      onMicrophoneSelected?(id)
+      return
+    }
+    guard let stream, let configuration = streamConfiguration else { return }
+    let input = id.isEmpty
+      ? audio.inputs.first { $0.id == AVCaptureDevice.default(for: .audio)?.uniqueID }
+      : audio.inputs.first { $0.id == id }
+    guard let input else {
+      audio.warning = "That microphone is unavailable. Choose another input."
+      return
+    }
+    audio.isSwitchingInput = true
+    let previousID = configuration.microphoneCaptureDeviceID
+    configuration.microphoneCaptureDeviceID = input.id
+    Task {
+      defer { if self.stream === stream { audio.isSwitchingInput = false } }
+      do {
+        try await stream.updateConfiguration(configuration)
+        guard self.stream === stream, state == .recording else { return }
+        activeInputID = input.id
+        audio.selectedInputID = id
+        audio.activeInputName = input.name
+        audio.level = 0
+        audio.warning = nil
+        audioHealth.reset(at: .now)
+        hasNotifiedAudioWarning = false
+        onMicrophoneSelected?(id)
+      } catch {
+        guard self.stream === stream else { return }
+        configuration.microphoneCaptureDeviceID = previousID
+        audio.warning = "Could not switch microphones. Try another input or redo this take."
+      }
+    }
+  }
+
+  private func startAudioMonitor() {
+    audioHealth.reset(at: .now)
+    hasNotifiedAudioWarning = false
+    audio.warning = nil
+    audio.level = 0
+    audioMonitorTask?.cancel()
+    audioMonitorTask = Task { [weak self] in
+      while !Task.isCancelled {
+        do { try await Task.sleep(for: .seconds(1)) } catch { return }
+        guard let self, self.state == .recording else { return }
+        self.audio.refreshInputs()
+        let disconnected = !self.audio.inputs.contains { $0.id == self.activeInputID }
+        if disconnected || self.audioHealth.isSilent(at: .now) {
+          let message = disconnected
+            ? "Microphone disconnected. Choose another input below."
+            : "No microphone audio detected. Speak or choose another input below."
+          self.audio.warning = message
+          self.audio.level = 0
+          if !self.hasNotifiedAudioWarning {
+            self.hasNotifiedAudioWarning = true
+            self.onAudioWarning?("\(self.audio.activeInputName): \(message)")
+          }
+        }
+      }
+    }
+  }
+
+  private func stopAudioMonitor() {
+    audioMonitorTask?.cancel()
+    audioMonitorTask = nil
+    audio.warning = nil
+    audio.level = 0
+    audio.isSwitchingInput = false
+    activeInputID = nil
+    streamConfiguration = nil
+    recordingGeometry = []
+    firstScreenTimestamp = nil
+    captureStartedAt = nil
   }
 
   private func captureInteractiveScreenshot() async {
@@ -434,15 +544,17 @@ extension RecordingCoordinator: SCRecordingOutputDelegate {
       }
       self.timeoutTask?.cancel()
       self.timeoutTask = nil
-      let startedAt = Date()
+      let startedAt = self.captureStartedAt ?? Date()
       self.startedAt = startedAt
       self.state = .recording
       self.overlay.start(
         contentRect: self.recordingContentRect,
         displayID: self.recordingDisplayID,
-        startedAt: startedAt,
+        startedAt: startedAt, audio: self.audio,
+        onSelectInput: { [weak self] in self?.selectMicrophone($0) },
         onStop: { [weak self] in self?.stop() },
         onRedo: { [weak self] in self?.redo() })
+      self.startAudioMonitor()
     }
   }
 
@@ -482,34 +594,57 @@ extension RecordingCoordinator: SCStreamOutput {
     didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
     of outputType: SCStreamOutputType
   ) {
-    guard outputType == .microphone, sampleBuffer.isValid,
-      let level = Self.microphoneLevel(in: sampleBuffer)
-    else { return }
-    Task { @MainActor in
-      guard self.stream === stream, self.state == .recording else { return }
-      self.overlay.updateMicLevel(level)
+    guard sampleBuffer.isValid else { return }
+    if outputType == .microphone, let rms = AudioSignal.rms(in: sampleBuffer) {
+      let receivedAt = Date()
+      Task { @MainActor in
+        guard self.stream === stream, self.state == .recording else { return }
+        self.audioHealth.receive(rms: rms, at: receivedAt)
+        let decibels = 20 * log10(max(rms, 0.00001))
+        self.audio.level = max(0, min(1, (decibels + 55) / 55))
+        if rms > 0.0001 { self.audio.warning = nil }
+      }
+    } else if outputType == .screen,
+      let buffer = sampleBuffer.imageBuffer,
+      let attachments = CMSampleBufferGetSampleAttachmentsArray(
+        sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
+      let info = attachments.first,
+      let status = info[.status] as? Int, status == SCFrameStatus.complete.rawValue,
+      let contentDictionary = info[.contentRect] as? [String: Any],
+      let contentRect = CGRect(dictionaryRepresentation: contentDictionary as CFDictionary),
+      let scaleFactor = info[.scaleFactor] as? Double,
+      contentRect.width > 0, contentRect.height > 0,
+      scaleFactor > 0
+    {
+      let screenRect = (info[.screenRect] as? [String: Any]).flatMap {
+        CGRect(dictionaryRepresentation: $0 as CFDictionary)
+      }
+      let timestamp = sampleBuffer.presentationTimeStamp.seconds
+      let surfaceSize = CGSize(width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer))
+      Task { @MainActor in
+        guard self.stream === stream,
+          self.state == .startingRecording || self.state == .recording,
+          timestamp.isFinite
+        else { return }
+        if self.firstScreenTimestamp == nil {
+          self.firstScreenTimestamp = timestamp
+          self.captureStartedAt = Date()
+        }
+        let seconds = max(0, timestamp - (self.firstScreenTimestamp ?? timestamp))
+        let geometry = RecordingFrameGeometry(
+          seconds: seconds, contentRect: contentRect,
+          scaleFactor: scaleFactor, surfaceSize: surfaceSize)
+        let old = self.recordingGeometry.last
+        if old == nil || old?.x != geometry.x || old?.y != geometry.y
+          || old?.width != geometry.width || old?.height != geometry.height
+        {
+          self.recordingGeometry.append(geometry)
+        }
+        if let screenRect, screenRect.width > 0, screenRect.height > 0 {
+          self.recordingContentRect = screenRect
+          self.overlay.updateCaptureFrame(screenRect, displayID: nil)
+        }
+      }
     }
-  }
-
-  nonisolated private static func microphoneLevel(in sampleBuffer: CMSampleBuffer) -> Double? {
-    var result: Double?
-    try? sampleBuffer.withAudioBufferList { audioBufferList, _ in
-      guard
-        let description = sampleBuffer.formatDescription?.audioStreamBasicDescription,
-        let format = AVAudioFormat(
-          standardFormatWithSampleRate: description.mSampleRate,
-          channels: description.mChannelsPerFrame),
-        let samples = AVAudioPCMBuffer(
-          pcmFormat: format,
-          bufferListNoCopy: audioBufferList.unsafePointer),
-        let channel = samples.floatChannelData?.pointee,
-        samples.frameLength > 0
-      else { return }
-      var meanSquare: Float = 0
-      vDSP_measqv(channel, 1, &meanSquare, vDSP_Length(samples.frameLength))
-      let decibels = 20 * log10(max(sqrt(Double(meanSquare)), 0.000_01))
-      result = max(0, min(1, (decibels + 55) / 55))
-    }
-    return result
   }
 }

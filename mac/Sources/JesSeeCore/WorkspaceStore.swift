@@ -31,7 +31,8 @@ public actor CaptureWorkspace {
     source: CaptureSource,
     capturedSourceURL: String? = nil,
     processingProviderMode: AIProviderMode? = nil,
-    recordingMarkups: [RecordingMarkupStroke]? = nil
+    recordingMarkups: [RecordingMarkupStroke]? = nil,
+    recordingGeometry: [RecordingFrameGeometry]? = nil
   ) throws -> CaptureRecord {
     guard FileManager.default.fileExists(atPath: sourceURL.path) else {
       throw JesSeeError.sourceUnavailable(sourceURL.path)
@@ -59,6 +60,7 @@ public actor CaptureWorkspace {
       sourceURL: PolyformClient.normalizedWebURL(capturedSourceURL),
       mediaFilename: filename,
       recordingMarkups: recordingMarkups,
+      recordingGeometry: recordingGeometry,
       processingRetryPolicyVersion: CaptureProcessingRetryPolicy.currentVersion,
       processingProviderMode: processingProviderMode
     )
@@ -169,7 +171,8 @@ public actor CaptureWorkspace {
     do {
       let frames = try await MediaTools.extractFrames(
         from: mediaURL(for: record), times: times, to: screenshotDirectory,
-        recordingMarkups: record.recordingMarkups ?? [], filenamePrefix: prefix)
+        recordingMarkups: record.recordingMarkups ?? [],
+        recordingGeometry: record.recordingGeometry ?? [], filenamePrefix: prefix)
       try Task.checkCancellation()
       // Re-read after extraction, which can overlap saving edits or publishing this capture.
       guard var updated = self.record(id: recordID) else { throw CancellationError() }

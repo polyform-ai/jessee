@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import Combine
 import JesSeeCore
 import SwiftUI
 
@@ -8,10 +9,8 @@ final class RecordingOverlayModel: ObservableObject {
   @Published var tool: RecordingMarkupKind?
   @Published var strokes: [RecordingMarkupStroke] = []
   @Published var currentPoints: [RecordingMarkupPoint] = []
-  @Published var micLevel: Double = 0
   @Published var isStopping = false
   private(set) var startedAt = Date()
-  private var lastMicUpdate = Date.distantPast
 
   var visibleStrokes: [RecordingMarkupStroke] {
     strokes.filter { $0.removedAtSeconds == nil }
@@ -22,8 +21,6 @@ final class RecordingOverlayModel: ObservableObject {
     tool = nil
     strokes = []
     currentPoints = []
-    micLevel = 0
-    lastMicUpdate = .distantPast
     isStopping = false
   }
 
@@ -72,14 +69,6 @@ final class RecordingOverlayModel: ObservableObject {
     currentPoints = []
   }
 
-  func updateMicLevel(_ level: Double) {
-    let now = Date()
-    guard now.timeIntervalSince(lastMicUpdate) >= 0.05 else { return }
-    lastMicUpdate = now
-    let next = max(0, min(1, level))
-    micLevel = micLevel * 0.58 + next * 0.42
-  }
-
   private var elapsedSeconds: Double {
     max(0, Date().timeIntervalSince(startedAt))
   }
@@ -103,6 +92,8 @@ final class RecordingOverlayController {
     contentRect: CGRect,
     displayID: CGDirectDisplayID?,
     startedAt: Date,
+    audio: RecordingAudioModel,
+    onSelectInput: @escaping (String) -> Void,
     onStop: @escaping () -> Void,
     onRedo: @escaping () -> Void
   ) {
@@ -118,7 +109,7 @@ final class RecordingOverlayController {
     configure(panel: overlay, level: .statusBar)
     overlay.hasShadow = false
     overlay.ignoresMouseEvents = true
-    overlay.contentView = NSHostingView(rootView: RecordingMarkupOverlay(model: model).ignoresSafeArea())
+    overlay.contentView = RecordingMarkupCanvas(model: model)
     overlay.setFrame(recordingFrame, display: false)
     overlay.orderFrontRegardless()
     annotationPanel = overlay
@@ -128,7 +119,7 @@ final class RecordingOverlayController {
       x: recordingFrame.midX - hudWidth / 2,
       y: recordingFrame.minY + 18,
       width: hudWidth,
-      height: 104)
+      height: 174)
     let hud = NSPanel(
       contentRect: hudFrame,
       styleMask: [.borderless, .nonactivatingPanel],
@@ -140,7 +131,7 @@ final class RecordingOverlayController {
     hud.hasShadow = true
     hud.contentView = NSHostingView(
       rootView: RecordingHUDView(
-        model: model,
+        model: model, audio: audio, onSelectInput: onSelectInput,
         setTool: { [weak self] in self?.setTool($0) },
         undo: { [weak self] in self?.model.undo() },
         clear: { [weak self] in self?.model.clear() },
@@ -169,8 +160,13 @@ final class RecordingOverlayController {
     annotationPanel?.ignoresMouseEvents = true
   }
 
-  func updateMicLevel(_ level: Double) {
-    model.updateMicLevel(level)
+  func updateCaptureFrame(_ contentRect: CGRect, displayID: CGDirectDisplayID?) {
+    let frame = Self.appKitFrame(for: contentRect, displayID: displayID)
+    if annotationPanel?.frame != frame { annotationPanel?.setFrame(frame, display: true) }
+    if let hud = hudPanel {
+      let origin = CGPoint(x: frame.midX - hud.frame.width / 2, y: frame.minY + 18)
+      if hud.frame.origin != origin { hud.setFrameOrigin(origin) }
+    }
   }
 
   func finish() -> [RecordingMarkupStroke] {
@@ -255,68 +251,63 @@ private final class RecordingAnnotationPanel: NSPanel {
   }
 }
 
-private struct RecordingMarkupOverlay: View {
-  @ObservedObject var model: RecordingOverlayModel
+/// AppKit event coordinates and drawing use the same flipped content bounds. SwiftUI's
+/// safe-area expansion near the menu bar must never become part of stored stroke coordinates.
+@MainActor
+final class RecordingMarkupCanvas: NSView {
+  let model: RecordingOverlayModel
+  private var observation: AnyCancellable?
+  override var isFlipped: Bool { true }
 
-  var body: some View {
-    GeometryReader { geometry in
-      Canvas { context, size in
-        for stroke in model.visibleStrokes {
-          draw(stroke, in: &context, size: size)
-        }
-        if let tool = model.tool, model.currentPoints.count > 1 {
-          draw(
-            RecordingMarkupStroke(
-              kind: tool, points: model.currentPoints, createdAtSeconds: 0),
-            in: &context,
-            size: size)
-        }
-      }
-      .contentShape(Rectangle())
-      .gesture(
-        DragGesture(minimumDistance: 0)
-          .onChanged { value in
-            if model.currentPoints.isEmpty {
-              model.beginStroke(at: value.location, size: geometry.size)
-            } else {
-              model.continueStroke(at: value.location, size: geometry.size)
-            }
-          }
-          .onEnded { value in
-            model.finishStroke(at: value.location, size: geometry.size)
-          })
-    }
-    .background(Color.clear)
+  init(model: RecordingOverlayModel) {
+    self.model = model
+    super.init(frame: .zero)
+    observation = model.objectWillChange.sink { [weak self] _ in self?.needsDisplay = true }
   }
 
-  private func draw(
-    _ stroke: RecordingMarkupStroke,
-    in context: inout GraphicsContext,
-    size: CGSize
-  ) {
-    guard let first = stroke.points.first else { return }
-    var path = Path()
-    path.move(to: CGPoint(x: first.x * size.width, y: first.y * size.height))
-    for point in stroke.points.dropFirst() {
-      path.addLine(to: CGPoint(x: point.x * size.width, y: point.y * size.height))
+  required init?(coder: NSCoder) { nil }
+
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+  override func mouseDown(with event: NSEvent) {
+    model.beginStroke(at: convert(event.locationInWindow, from: nil), size: bounds.size)
+  }
+
+  override func mouseDragged(with event: NSEvent) {
+    model.continueStroke(at: convert(event.locationInWindow, from: nil), size: bounds.size)
+  }
+
+  override func mouseUp(with event: NSEvent) {
+    model.finishStroke(at: convert(event.locationInWindow, from: nil), size: bounds.size)
+  }
+
+  override func draw(_ dirtyRect: NSRect) {
+    var strokes = model.visibleStrokes
+    if let tool = model.tool, model.currentPoints.count > 1 {
+      strokes.append(RecordingMarkupStroke(
+        kind: tool, points: model.currentPoints, createdAtSeconds: 0))
     }
-    switch stroke.kind {
-    case .pen:
-      context.stroke(
-        path,
-        with: .color(.red),
-        style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
-    case .highlight:
-      context.stroke(
-        path,
-        with: .color(.yellow.opacity(0.46)),
-        style: StrokeStyle(lineWidth: 22, lineCap: .round, lineJoin: .round))
+    for stroke in strokes {
+      guard let first = stroke.points.first else { continue }
+      let path = NSBezierPath()
+      path.move(to: CGPoint(x: first.x * bounds.width, y: first.y * bounds.height))
+      for point in stroke.points.dropFirst() {
+        path.line(to: CGPoint(x: point.x * bounds.width, y: point.y * bounds.height))
+      }
+      path.lineCapStyle = .round
+      path.lineJoinStyle = .round
+      path.lineWidth = stroke.kind == .pen ? 5 : 22
+      (stroke.kind == .pen ? NSColor.systemRed : NSColor.systemYellow.withAlphaComponent(0.46))
+        .setStroke()
+      path.stroke()
     }
   }
 }
 
 private struct RecordingHUDView: View {
   @ObservedObject var model: RecordingOverlayModel
+  @ObservedObject var audio: RecordingAudioModel
+  let onSelectInput: (String) -> Void
   let setTool: (RecordingMarkupKind) -> Void
   let undo: () -> Void
   let clear: () -> Void
@@ -331,7 +322,7 @@ private struct RecordingHUDView: View {
         RecordingElapsedTime(startedAt: model.startedAt)
           .font(.system(size: 14, weight: .bold))
           .frame(width: 48, alignment: .leading)
-        MicrophoneMeter(level: model.micLevel)
+        MicrophoneMeter(level: audio.level)
         Divider().frame(height: 24)
         RecordingToolButton(
           title: "Draw", shortcut: "⌥D", systemImage: "pencil.tip",
@@ -372,6 +363,14 @@ private struct RecordingHUDView: View {
         }
         .buttonStyle(.borderedProminent).tint(.red).disabled(model.isStopping)
         .jesseeHoverHelp("Stop and process · ⌥⇧S", onChange: showControl)
+      }
+      MicrophoneInputPicker(audio: audio, onSelect: onSelectInput)
+        .font(.system(size: 11))
+        .disabled(model.isStopping)
+      if let warning = audio.warning {
+        Label(warning, systemImage: "mic.slash.fill")
+          .font(.system(size: 10, weight: .semibold)).foregroundStyle(.orange)
+          .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
       }
       Text(
         hoveredControl

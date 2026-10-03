@@ -89,6 +89,7 @@ public enum MediaTools {
     to directoryURL: URL,
     maximumWidth: CGFloat = 1920,
     recordingMarkups: [RecordingMarkupStroke] = [],
+    recordingGeometry: [RecordingFrameGeometry] = [],
     filenamePrefix: String = "frame"
   ) async throws -> [CapturedFrame] {
     try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
@@ -106,7 +107,9 @@ public enum MediaTools {
       let result = try await generator.image(at: requestedTime)
       let extractedSeconds = result.actualTime.seconds
       let actualSeconds = extractedSeconds.isFinite ? max(0, extractedSeconds) : seconds
-      let markedImage = applyMarkups(recordingMarkups, at: actualSeconds, to: result.image)
+      let markedImage = applyMarkups(
+        recordingMarkups, at: actualSeconds, to: result.image,
+        contentRect: RecordingFrameGeometry.contentRect(at: actualSeconds, in: recordingGeometry))
       let bitmap = NSBitmapImageRep(cgImage: markedImage)
       guard let data = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.88])
       else {
@@ -158,7 +161,8 @@ public enum MediaTools {
   }
 
   static func applyMarkups(
-    _ markups: [RecordingMarkupStroke], at seconds: Double, to image: CGImage
+    _ markups: [RecordingMarkupStroke], at seconds: Double, to image: CGImage,
+    contentRect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1)
   ) -> CGImage {
     let visible = markups.filter { $0.isVisible(at: seconds) && $0.points.count > 1 }
     guard !visible.isEmpty,
@@ -181,13 +185,13 @@ public enum MediaTools {
       let first = markup.points[0]
       path.move(
         to: CGPoint(
-          x: clamped(first.x) * bounds.width,
-          y: (1 - clamped(first.y)) * bounds.height))
+          x: (contentRect.minX + clamped(first.x) * contentRect.width) * bounds.width,
+          y: (1 - contentRect.minY - clamped(first.y) * contentRect.height) * bounds.height))
       for point in markup.points.dropFirst() {
         path.addLine(
           to: CGPoint(
-            x: clamped(point.x) * bounds.width,
-            y: (1 - clamped(point.y)) * bounds.height))
+            x: (contentRect.minX + clamped(point.x) * contentRect.width) * bounds.width,
+            y: (1 - contentRect.minY - clamped(point.y) * contentRect.height) * bounds.height))
       }
       switch markup.kind {
       case .pen:

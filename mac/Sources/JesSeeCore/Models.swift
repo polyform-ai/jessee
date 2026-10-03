@@ -408,6 +408,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
   public var imageFilenames: [String]
   public var imageTimes: [String: Double]?
   public var recordingMarkups: [RecordingMarkupStroke]?
+  public var recordingGeometry: [RecordingFrameGeometry]?
   public var automaticProcessingAttempts: Int?
   public var automaticProcessingRetryAt: Date?
   public var processingRetryPolicyVersion: Int?
@@ -440,6 +441,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     imageFilenames: [String] = [],
     imageTimes: [String: Double]? = nil,
     recordingMarkups: [RecordingMarkupStroke]? = nil,
+    recordingGeometry: [RecordingFrameGeometry]? = nil,
     automaticProcessingAttempts: Int? = nil,
     automaticProcessingRetryAt: Date? = nil,
     processingRetryPolicyVersion: Int? = nil,
@@ -471,6 +473,7 @@ public struct CaptureRecord: Codable, Sendable, Equatable, Identifiable {
     self.imageFilenames = imageFilenames
     self.imageTimes = imageTimes
     self.recordingMarkups = recordingMarkups
+    self.recordingGeometry = recordingGeometry
     self.automaticProcessingAttempts = automaticProcessingAttempts
     self.automaticProcessingRetryAt = automaticProcessingRetryAt
     self.processingRetryPolicyVersion = processingRetryPolicyVersion
@@ -571,6 +574,7 @@ public struct JesSeeConfiguration: Codable, Sendable, Equatable {
   public var outputFolderPath: String
   public var setupCompleted: Bool
   public var aiProviderMode: AIProviderMode?
+  public var microphoneInputID: String?
   public var openAtLogin: Bool
   public var shareScreenshotsForStory: Bool
   public var shareAnonymousFeatureUsage: Bool
@@ -578,6 +582,7 @@ public struct JesSeeConfiguration: Codable, Sendable, Equatable {
   public init(
     email: String = "", outputFolderPath: String = "", setupCompleted: Bool = false,
     aiProviderMode: AIProviderMode? = nil,
+    microphoneInputID: String? = nil,
     openAtLogin: Bool = true,
     shareScreenshotsForStory: Bool = true,
     shareAnonymousFeatureUsage: Bool = true
@@ -586,6 +591,7 @@ public struct JesSeeConfiguration: Codable, Sendable, Equatable {
     self.outputFolderPath = outputFolderPath
     self.setupCompleted = setupCompleted
     self.aiProviderMode = aiProviderMode
+    self.microphoneInputID = microphoneInputID
     self.openAtLogin = openAtLogin
     self.shareScreenshotsForStory = shareScreenshotsForStory
     self.shareAnonymousFeatureUsage = shareAnonymousFeatureUsage
@@ -596,6 +602,7 @@ public struct JesSeeConfiguration: Codable, Sendable, Equatable {
     case outputFolderPath
     case setupCompleted
     case aiProviderMode
+    case microphoneInputID
     case openAtLogin
     case shareScreenshotsForStory
     case shareScreenshotsWithOpenAI
@@ -609,6 +616,7 @@ public struct JesSeeConfiguration: Codable, Sendable, Equatable {
     setupCompleted = try container.decodeIfPresent(Bool.self, forKey: .setupCompleted) ?? false
     aiProviderMode = try container.decodeIfPresent(AIProviderMode.self, forKey: .aiProviderMode)
     if aiProviderMode == nil, setupCompleted { aiProviderMode = .bringYourOwnKey }
+    microphoneInputID = try container.decodeIfPresent(String.self, forKey: .microphoneInputID)
     openAtLogin = try container.decodeIfPresent(Bool.self, forKey: .openAtLogin) ?? true
     shareScreenshotsForStory =
       try container.decodeIfPresent(Bool.self, forKey: .shareScreenshotsForStory)
@@ -624,6 +632,7 @@ public struct JesSeeConfiguration: Codable, Sendable, Equatable {
     try container.encode(outputFolderPath, forKey: .outputFolderPath)
     try container.encode(setupCompleted, forKey: .setupCompleted)
     try container.encodeIfPresent(aiProviderMode, forKey: .aiProviderMode)
+    try container.encodeIfPresent(microphoneInputID, forKey: .microphoneInputID)
     try container.encode(openAtLogin, forKey: .openAtLogin)
     try container.encode(shareScreenshotsForStory, forKey: .shareScreenshotsForStory)
     try container.encode(shareAnonymousFeatureUsage, forKey: .shareAnonymousFeatureUsage)
@@ -690,6 +699,7 @@ public enum JesSeeError: LocalizedError, Equatable {
   case outputFolderUnavailable
   case sourceUnavailable(String)
   case mediaHasNoAudio
+  case mediaHasSilentAudio
   case audioTooLarge
   case requestFailed(Int, String)
   case invalidResponse(String)
@@ -708,6 +718,7 @@ public enum JesSeeError: LocalizedError, Equatable {
     case .outputFolderUnavailable: "Choose an output folder before recording or importing."
     case .sourceUnavailable(let path): "The source video is no longer available at \(path)."
     case .mediaHasNoAudio: "This video does not contain an audio track to transcribe."
+    case .mediaHasSilentAudio: "No microphone audio was captured. Your video is saved. Choose a working microphone, check the level meter, and record a new take."
     case .audioTooLarge: "The prepared audio is too large to transcribe in one request."
     case .requestFailed(let status, let detail):
       "The AI service rejected the request (\(status)). \(detail)"
