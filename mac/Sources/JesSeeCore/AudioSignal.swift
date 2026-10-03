@@ -27,28 +27,32 @@ public enum AudioSignal {
             count: Int(item.mDataByteSize) / MemoryLayout<Double>.size)
           for sample in values { sum += sample * sample }
           count += values.count
-        } else if format.mFormatFlags & kAudioFormatFlagIsSignedInteger != 0,
-          format.mBitsPerChannel == 32
-        {
-          let values = UnsafeBufferPointer(
-            start: data.assumingMemoryBound(to: Int32.self),
-            count: Int(item.mDataByteSize) / MemoryLayout<Int32>.size)
-          for value in values {
-            let sample = Double(value) / 2147483648
+        } else if format.mFormatFlags & kAudioFormatFlagIsSignedInteger != 0 {
+          let bits = Int(format.mBitsPerChannel)
+          let channels = format.mFormatFlags & kAudioFormatFlagIsNonInterleaved != 0
+            ? 1 : Int(format.mChannelsPerFrame)
+          guard channels > 0 else { continue }
+          let bytes = Int(format.mBytesPerFrame) / channels
+          guard (1...4).contains(bytes), (1...32).contains(bits), bits <= bytes * 8 else { continue }
+          let length = Int(item.mDataByteSize) / bytes
+          let pointer = data.assumingMemoryBound(to: UInt8.self)
+          let bigEndian = format.mFormatFlags & kAudioFormatFlagIsBigEndian != 0
+          let alignedHigh = format.mFormatFlags & kAudioFormatFlagIsAlignedHigh != 0
+          let mask = (UInt64(1) << bits) - 1
+          let sign = UInt64(1) << (bits - 1)
+          for index in 0..<length {
+            var raw: UInt64 = 0
+            for byte in 0..<bytes {
+              let shift = (bigEndian ? bytes - 1 - byte : byte) * 8
+              raw |= UInt64(pointer[index * bytes + byte]) << shift
+            }
+            if alignedHigh { raw >>= bytes * 8 - bits }
+            raw &= mask
+            let signed = raw & sign == 0 ? Int64(raw) : Int64(raw) - Int64(mask + 1)
+            let sample = Double(signed) / Double(sign)
             sum += sample * sample
           }
-          count += values.count
-        } else if format.mFormatFlags & kAudioFormatFlagIsSignedInteger != 0,
-          format.mBitsPerChannel == 16
-        {
-          let values = UnsafeBufferPointer(
-            start: data.assumingMemoryBound(to: Int16.self),
-            count: Int(item.mDataByteSize) / MemoryLayout<Int16>.size)
-          for value in values {
-            let sample = Double(value) / 32768
-            sum += sample * sample
-          }
-          count += values.count
+          count += length
         }
       }
     }

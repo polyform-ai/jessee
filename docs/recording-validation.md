@@ -2,7 +2,7 @@
 
 Run `npm run mac:check` for editor type checks, editor tests, Swift regressions, and app assembly.
 
-The Swift tests cover silent tracks, late quiet audio in the second channel, 16/32-bit integer and 32/64-bit float PCM input, microphone warning timing and recovery, missing-input selection, saved configuration, old captures without geometry metadata, AppKit pointer coordinates near the menu bar, window resizing, and annotated-image pixels with video padding.
+The Swift tests cover silent tracks, late quiet audio in the second channel, 16/24/32-bit integer and 32/64-bit float PCM input (including packed, big-endian, and aligned 24-bit USB formats), microphone warning timing and recovery, missing-input selection, saved configuration, old captures without geometry metadata, AppKit pointer coordinates near the menu bar, window resizing, and annotated-image pixels with Retina video padding.
 
 For a fresh native ScreenCaptureKit check, use an unlocked desktop with screen-capture permission:
 

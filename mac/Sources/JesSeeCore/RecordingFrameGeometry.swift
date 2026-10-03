@@ -11,8 +11,9 @@ public struct RecordingFrameGeometry: Codable, Sendable, Equatable {
 
   public init(seconds: Double, contentRect: CGRect, scaleFactor: Double, surfaceSize: CGSize) {
     self.seconds = seconds
-    x = contentRect.minX * scaleFactor / surfaceSize.width
-    y = contentRect.minY * scaleFactor / surfaceSize.height
+    // ScreenCaptureKit reports padding origins in surface pixels, but sizes in points.
+    x = contentRect.minX / surfaceSize.width
+    y = contentRect.minY / surfaceSize.height
     width = contentRect.width * scaleFactor / surfaceSize.width
     height = contentRect.height * scaleFactor / surfaceSize.height
   }

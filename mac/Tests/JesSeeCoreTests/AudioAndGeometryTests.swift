@@ -65,7 +65,7 @@ private func waveFile(withSignal: Bool) throws -> URL {
   #expect(RecordingFrameGeometry.contentRect(at: 1, in: [geometry])
     == CGRect(x: 0, y: 0, width: 1, height: 1))
   #expect(RecordingFrameGeometry.contentRect(at: 2, in: [geometry])
-    == CGRect(x: 0.05, y: 1.0 / 6, width: 0.8, height: 2.0 / 3))
+    == CGRect(x: 0.025, y: 1.0 / 12, width: 0.8, height: 2.0 / 3))
   let record = CaptureRecord(title: "New", source: .recording, mediaFilename: "recording.mp4",
     recordingGeometry: [geometry])
   let decoded = try JesSeeJSON.decoder().decode(CaptureRecord.self, from: JesSeeJSON.encoder().encode(record))
@@ -87,8 +87,8 @@ private func waveFile(withSignal: Bool) throws -> URL {
   let strokes = [RecordingMarkupStroke(kind: .pen,
     points: [.init(x: 0.25, y: 0.25), .init(x: 0.35, y: 0.25)], createdAtSeconds: 0)]
   let frames = [
-    RecordingFrameGeometry(seconds: 0, contentRect: CGRect(x: 100, y: 60, width: 800, height: 400),
-      scaleFactor: 1, surfaceSize: CGSize(width: 1000, height: 600)),
+    RecordingFrameGeometry(seconds: 0, contentRect: CGRect(x: 100, y: 60, width: 400, height: 200),
+      scaleFactor: 2, surfaceSize: CGSize(width: 1000, height: 600)),
     RecordingFrameGeometry(seconds: 1, contentRect: CGRect(x: 0, y: 0, width: 1000, height: 600),
       scaleFactor: 1, surfaceSize: CGSize(width: 1000, height: 600))]
   for (seconds, x, y) in [(0.0, 340, 160), (1.0, 300, 150)] {
@@ -102,14 +102,18 @@ private func waveFile(withSignal: Bool) throws -> URL {
   }
 }
 
-@Test(arguments: ["int16", "int32", "float32", "float64"])
+@Test(arguments: ["int16", "int32", "float32", "float64", "int24", "int24be", "int24low32", "int24high32"])
 func microphoneMeterReadsStereoDevicePCMFormats(format: String) throws {
-  let bits: UInt32 = format == "int16" ? 16 : format == "float64" ? 64 : 32
+  let bits: UInt32 = format.hasPrefix("int24") ? 24 : format == "int16" ? 16 : format == "float64" ? 64 : 32
   let isFloat = format.hasPrefix("float")
-  let bytes = bits / 8
+  let bytes: UInt32 = format.hasSuffix("32") && bits == 24 ? 4 : bits / 8
+  var flags = isFloat ? kAudioFormatFlagIsFloat : kAudioFormatFlagIsSignedInteger
+  if bytes * 8 == bits { flags |= kAudioFormatFlagIsPacked }
+  if format == "int24be" { flags |= kAudioFormatFlagIsBigEndian }
+  if format == "int24high32" { flags |= kAudioFormatFlagIsAlignedHigh }
   var description = AudioStreamBasicDescription(mSampleRate: 48000,
     mFormatID: kAudioFormatLinearPCM,
-    mFormatFlags: (isFloat ? kAudioFormatFlagIsFloat : kAudioFormatFlagIsSignedInteger) | kAudioFormatFlagIsPacked,
+    mFormatFlags: flags,
     mBytesPerPacket: bytes * 2, mFramesPerPacket: 1, mBytesPerFrame: bytes * 2,
     mChannelsPerFrame: 2, mBitsPerChannel: bits, mReserved: 0)
   var pcm = Data()
@@ -117,10 +121,21 @@ func microphoneMeterReadsStereoDevicePCMFormats(format: String) throws {
     var value = value
     withUnsafeBytes(of: &value) { pcm.append(contentsOf: $0) }
   }
-  for _ in 0..<2 {
+  for frame in 0..<2 {
     switch format {
     case "int16": append(Int16(0)); append(Int16(8192))
     case "int32": append(Int32(0)); append(Int32(536870912))
+    case "int24", "int24be", "int24low32", "int24high32":
+      // Positive and negative quarter-scale samples, including nonzero padding bits.
+      let signal: UInt32 = frame == 0 ? 0x200000 : 0xE00000
+      for value: UInt32 in [0, signal] {
+        let raw = format == "int24high32" ? (value << 8) | 0xAB
+          : format == "int24low32" ? value | 0xAB000000 : value
+        for byte in 0..<Int(bytes) {
+          let shift = (format == "int24be" ? Int(bytes) - 1 - byte : byte) * 8
+          pcm.append(UInt8(truncatingIfNeeded: raw >> shift))
+        }
+      }
     case "float32": append(Float(0)); append(Float(0.25))
     default: append(Double(0)); append(Double(0.25))
     }
