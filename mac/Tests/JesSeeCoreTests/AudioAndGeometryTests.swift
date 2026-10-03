@@ -102,6 +102,16 @@ private func waveFile(withSignal: Bool) throws -> URL {
   }
 }
 
+@Test func downsizedRetinaGeometryUsesTheOutputContentSize() {
+  // A 3840×2160 source at 2× is reduced to 2560×1440. SCK's contentRect
+  // describes that output region in points (1280×720), not the source's 1920×1080.
+  let frame = RecordingFrameGeometry(seconds: 0,
+    contentRect: CGRect(x: 0, y: 0, width: 1280, height: 720), scaleFactor: 2,
+    surfaceSize: CGSize(width: 2560, height: 1440))
+  #expect(RecordingFrameGeometry.contentRect(at: 0, in: [frame])
+    == CGRect(x: 0, y: 0, width: 1, height: 1))
+}
+
 @Test(arguments: ["int16", "int32", "float32", "float64", "int24", "int24be", "int24low32", "int24high32"])
 func microphoneMeterReadsStereoDevicePCMFormats(format: String) throws {
   let bits: UInt32 = format.hasPrefix("int24") ? 24 : format == "int16" ? 16 : format == "float64" ? 64 : 32

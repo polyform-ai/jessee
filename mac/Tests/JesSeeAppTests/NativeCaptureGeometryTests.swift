@@ -10,6 +10,7 @@ private struct NativeCaptureSample: @unchecked Sendable {
   var contentRect: CGRect
   var screenRect: CGRect
   var scaleFactor: Double
+  var contentScale: Double
 }
 
 private final class NativeGeometryProbe: NSObject, SCStreamOutput, @unchecked Sendable {
@@ -33,11 +34,12 @@ private final class NativeGeometryProbe: NSObject, SCStreamOutput, @unchecked Se
       let screen = info[.screenRect] as? [String: Any],
       let screenRect = CGRect(dictionaryRepresentation: screen as CFDictionary),
       let factor = info[.scaleFactor] as? Double,
+      let contentScale = info[.contentScale] as? Double,
       let image = context.createCGImage(CIImage(cvPixelBuffer: pixels),
         from: CGRect(x: 0, y: 0, width: CVPixelBufferGetWidth(pixels), height: CVPixelBufferGetHeight(pixels)))
     else { return }
     lock.lock()
-    samples.append(.init(image: image, contentRect: rect, screenRect: screenRect, scaleFactor: factor))
+    samples.append(.init(image: image, contentRect: rect, screenRect: screenRect, scaleFactor: factor, contentScale: contentScale))
     lock.unlock()
   }
 }
@@ -83,7 +85,7 @@ private final class NativeGeometryProbe: NSObject, SCStreamOutput, @unchecked Se
       }
       try await Task.sleep(for: .milliseconds(350))
       let sample = try #require(probe.latest())
-      print("Native capture phase \(phase): rect=\(sample.contentRect), screen=\(sample.screenRect), factor=\(sample.scaleFactor), surface=\(sample.image.width)x\(sample.image.height)")
+      print("Native capture phase \(phase): rect=\(sample.contentRect), screen=\(sample.screenRect), factor=\(sample.scaleFactor), contentScale=\(sample.contentScale), surface=\(sample.image.width)x\(sample.image.height)")
       let geometry = RecordingFrameGeometry(seconds: 0, contentRect: sample.contentRect,
         scaleFactor: sample.scaleFactor,
         surfaceSize: CGSize(width: sample.image.width, height: sample.image.height))
