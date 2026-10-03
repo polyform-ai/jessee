@@ -87,6 +87,8 @@ ditto -c -k --sequesterRsrc --keepParent "$app_dir" "$archive_path"
 
 if [[ -n "${JESSEE_RELEASE_NOTES_FILE:-}" ]]; then
   cp "$JESSEE_RELEASE_NOTES_FILE" "$notes_path"
+elif [[ -f "$repo_dir/mac/ReleaseNotes/$version.md" ]]; then
+  cp "$repo_dir/mac/ReleaseNotes/$version.md" "$notes_path"
 else
   cat > "$notes_path" <<EOF
 # JesSee $version

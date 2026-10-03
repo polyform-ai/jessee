@@ -1,5 +1,6 @@
 import AppKit
 import Testing
+import JesSeeCore
 @testable import JesSeeApp
 
 @MainActor
@@ -17,6 +18,36 @@ struct RecordingOverlayTests {
     #expect(model.strokes[0].points.first?.x == 0.25)
     #expect(model.strokes[0].points.first?.y == 0.25)
     #expect(model.strokes[0].points.last?.y == 0.5)
+  }
+
+  @Test func appKitCanvasStoresTheActualPointerPositionNearTheMenuBar() throws {
+    let model = RecordingOverlayModel()
+    let canvas = RecordingMarkupCanvas(model: model)
+    let screen = try #require(NSScreen.main)
+    let panel = NSPanel(
+      contentRect: CGRect(x: screen.frame.minX + 20, y: screen.frame.maxY - 300,
+        width: 800, height: 300),
+      styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    panel.level = .statusBar
+    panel.contentView = canvas
+    panel.contentView?.layoutSubtreeIfNeeded()
+    defer { panel.close() }
+    model.toggle(.pen)
+    func event(_ type: NSEvent.EventType, at point: CGPoint) throws -> NSEvent {
+      try #require(NSEvent.mouseEvent(with: type,
+        location: canvas.convert(point, to: nil), modifierFlags: [], timestamp: 0,
+        windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+    }
+    canvas.mouseDown(with: try event(.leftMouseDown, at: CGPoint(x: 200, y: 75)))
+    canvas.mouseUp(with: try event(.leftMouseUp, at: CGPoint(x: 400, y: 150)))
+    #expect(model.strokes.first?.points.first == RecordingMarkupPoint(x: 0.25, y: 0.25))
+    #expect(model.strokes.first?.points.last == RecordingMarkupPoint(x: 0.5, y: 0.5))
+    // Resize the actual AppKit content view, then repeat: no safe-area-dependent offset.
+    panel.setFrame(CGRect(x: 20, y: screen.frame.maxY - 600, width: 1000, height: 600), display: false)
+    canvas.mouseDown(with: try event(.leftMouseDown, at: CGPoint(x: 250, y: 150)))
+    canvas.mouseUp(with: try event(.leftMouseUp, at: CGPoint(x: 500, y: 300)))
+    #expect(model.strokes.last?.points.first == RecordingMarkupPoint(x: 0.25, y: 0.25))
+    #expect(model.strokes.last?.points.last == RecordingMarkupPoint(x: 0.5, y: 0.5))
   }
 
   @Test func captureCoordinatesRespectAnOffsetSecondaryDisplay() {

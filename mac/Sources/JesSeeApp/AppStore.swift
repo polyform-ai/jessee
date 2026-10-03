@@ -128,6 +128,17 @@ final class AppStore: ObservableObject {
       workspace = initialWorkspace
       workspacesByRootURL[initialWorkspace.rootURL.standardizedFileURL] = initialWorkspace
     }
+    recorder.audio.selectedInputID = configuration.microphoneInputID ?? ""
+    recorder.onMicrophoneSelected = { [weak self] id in
+      guard let self else { return }
+      self.configuration.microphoneInputID = id.isEmpty ? nil : id
+      self.persistConfiguration()
+    }
+    recorder.onAudioWarning = { [weak self] message in
+      self?.postSystemNotification(
+        title: "No microphone audio detected", body: message,
+        identifier: "recording-microphone-warning")
+    }
     recorder.onFinished = { [weak self] result in
       Task { @MainActor in
         await self?.addCapture(
@@ -135,6 +146,7 @@ final class AppStore: ObservableObject {
           source: .recording,
           deleteSourceAfterImport: true,
           recordingMarkups: result.markups,
+          recordingGeometry: result.geometry,
           capturedSourceURL: result.sourceURL)
       }
     }
@@ -851,6 +863,7 @@ final class AppStore: ObservableObject {
     source: CaptureSource,
     deleteSourceAfterImport: Bool = false,
     recordingMarkups: [RecordingMarkupStroke]? = nil,
+    recordingGeometry: [RecordingFrameGeometry]? = nil,
     capturedSourceURL: String? = nil
   ) async {
     guard let workspace else {
@@ -863,7 +876,7 @@ final class AppStore: ObservableObject {
         source: source,
         capturedSourceURL: capturedSourceURL,
         processingProviderMode: configuration.aiProviderMode,
-        recordingMarkups: recordingMarkups)
+        recordingMarkups: recordingMarkups, recordingGeometry: recordingGeometry)
       if deleteSourceAfterImport { try? FileManager.default.removeItem(at: url) }
       guard isCurrentWorkspace(workspace) else { return }
       captures = await workspace.allRecords()

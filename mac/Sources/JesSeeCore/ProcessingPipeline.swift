@@ -74,6 +74,7 @@ public struct CaptureProcessor: Sendable {
       try await update(&record, stage: .preparingAudio, onProgress: onProgress)
 
       let audioURL = directory.appendingPathComponent("narration.m4a")
+      try await AudioSignal.requireSignal(in: mediaURL)
       try await MediaTools.extractAudio(from: mediaURL, to: audioURL)
       try await update(&record, stage: .transcribing, onProgress: onProgress)
 
@@ -95,7 +96,8 @@ public struct CaptureProcessor: Sendable {
         from: mediaURL,
         times: times,
         to: directory.appendingPathComponent("screenshots", isDirectory: true),
-        recordingMarkups: record.recordingMarkups ?? []
+        recordingMarkups: record.recordingMarkups ?? [],
+        recordingGeometry: record.recordingGeometry ?? []
       )
       record.imageFilenames = frames.map(\.filename)
       record.imageTimes = Dictionary(uniqueKeysWithValues: frames.map { ($0.filename, $0.seconds) })
@@ -123,6 +125,7 @@ public struct CaptureProcessor: Sendable {
               times: candidateTimes,
               to: directory.appendingPathComponent("screenshots", isDirectory: true),
               recordingMarkups: record.recordingMarkups ?? [],
+              recordingGeometry: record.recordingGeometry ?? [],
               filenamePrefix: "refine-\(round)"
             )
             record.imageFilenames.append(contentsOf: nearbyFrames.map(\.filename))

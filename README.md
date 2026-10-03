@@ -21,6 +21,8 @@ Use it for:
 - Automatic source webpage URLs for recordings started from supported browsers on macOS 15.2+
 - A live timer, microphone meter, drawing and highlighting controls
 - One global `⌥⇧S` shortcut to start or stop and process a recording
+- Select your microphone before recording or switch it from the floating controls; silence and disconnected inputs show a warning.
+- Silent audio tracks are kept in the Library with a clear error instead of generating a guessed story.
 - Video import for existing screen recordings
 - Background transcription and AI-chosen document structure with timestamp-aligned screenshots
 - A local library with processing state, retry, replay, and editable history

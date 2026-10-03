@@ -125,6 +125,7 @@ private struct HomeView: View {
           detail: "Drag over any part of the screen, or press Space to capture a window.")
       case .failed(let message):
         if recorder.canRetryRecording {
+          RecordingMicrophonePicker(recorder: recorder)
           StatusCard(
             icon: "exclamationmark.triangle", title: "JesSee could not finish", detail: message,
             actionTitle: "Retry", action: recorder.retryRecording,
@@ -149,6 +150,7 @@ private struct StartCard: View {
 
   var body: some View {
     VStack(spacing: 10) {
+      RecordingMicrophonePicker(recorder: store.recorder)
       CaptureActionButton(
         title: "Start recording",
         detail: "Show and explain anything on your Mac",
@@ -267,11 +269,11 @@ private struct CaptureActionButton: View {
 
 private struct RecordingControls: View {
   @ObservedObject var recorder: RecordingCoordinator
-  @ObservedObject private var overlayModel: RecordingOverlayModel
+  @ObservedObject private var audio: RecordingAudioModel
 
   init(recorder: RecordingCoordinator) {
     self.recorder = recorder
-    self.overlayModel = recorder.overlayModel
+    self.audio = recorder.audio
   }
 
   var body: some View {
@@ -279,10 +281,15 @@ private struct RecordingControls: View {
       HStack {
         Circle().fill(.red).frame(width: 10, height: 10)
         Text("Recording").font(.headline)
-        MicrophoneMeter(level: overlayModel.micLevel)
+        MicrophoneMeter(level: audio.level)
         Spacer()
         RecordingElapsedTime(startedAt: recorder.startedAt ?? .now)
           .font(.title3.weight(.semibold))
+      }
+      RecordingMicrophonePicker(recorder: recorder)
+      if let warning = audio.warning {
+        Label(warning, systemImage: "mic.slash.fill")
+          .font(.caption).foregroundStyle(.orange)
       }
       HStack(spacing: 10) {
         Button(action: recorder.redo) { Label("Redo", systemImage: "arrow.counterclockwise") }
@@ -1214,6 +1221,7 @@ struct SettingsView: View {
         Button("Choose a different folder") { _ = store.chooseOutputFolder() }
       }
       Section("Recording") {
+        RecordingMicrophonePicker(recorder: store.recorder)
         LabeledContent("Microphone", value: store.microphoneAllowed ? "Enabled" : "Needs access")
         if !store.microphoneAllowed {
           Button("Enable microphone") {
