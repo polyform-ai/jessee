@@ -180,6 +180,7 @@ private struct StartCard: View {
       HStack(spacing: 8) {
         Image(systemName: "mic")
           .foregroundStyle(.tertiary)
+          .accessibilityHidden(true)
         RecordingMicrophonePicker(recorder: store.recorder)
           .pickerStyle(.menu)
           .controlSize(.small)
