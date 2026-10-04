@@ -150,7 +150,6 @@ private struct StartCard: View {
 
   var body: some View {
     VStack(spacing: 10) {
-      RecordingMicrophonePicker(recorder: store.recorder)
       CaptureActionButton(
         title: "Start recording",
         detail: "Show and explain anything on your Mac",
@@ -178,6 +177,20 @@ private struct StartCard: View {
           .frame(maxWidth: .infinity).padding(.vertical, 4)
       }
       .buttonStyle(.bordered).controlSize(.large)
+      HStack(spacing: 8) {
+        Image(systemName: "mic")
+          .foregroundStyle(.tertiary)
+          .accessibilityHidden(true)
+        RecordingMicrophonePicker(recorder: store.recorder)
+          .pickerStyle(.menu)
+          .controlSize(.small)
+          .buttonStyle(.borderless)
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      .padding(.horizontal, 10)
+      .padding(.vertical, 6)
+      .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 8))
     }
   }
 
