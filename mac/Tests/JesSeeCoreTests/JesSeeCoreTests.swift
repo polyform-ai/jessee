@@ -444,6 +444,51 @@ private struct WorkflowTestValue: Decodable, Equatable {
   #expect(uploadJSON["content_type"] as? String == "application/pdf")
 }
 
+@Test(arguments: [true, false])
+func fileSharingRequiresASingleUseLink(hasSingleUseLink: Bool) async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [StubURLProtocol.self]
+  let client = PolyformClient(
+    configuration: PolyformServiceConfiguration(
+      apiBase: URL(string: "https://example.test")!, appKey: "app-key"),
+    session: URLSession(configuration: configuration))
+  let singleUseLink = "https://example.test/workflow-auth/media/once/test-file"
+  let completed = hasSingleUseLink
+    ? #"{"upload_id":"test-file","single_use_url":"\#(singleUseLink)"}"#
+    : #"{"upload_id":"test-file","public_url":"https://example.test/reusable"}"#
+  var stubs: [StubURLProtocol.Stub] = [
+    .init(
+      status: 201,
+      data: Data(
+        #"{"upload_id":"test-file","upload_url":"https://example.test/upload-target"}"#.utf8)),
+    .init(status: 200, data: Data()),
+    .init(status: 200, data: Data(completed.utf8)),
+  ]
+  if !hasSingleUseLink { stubs.append(.init(status: 204, data: Data())) }
+  StubURLProtocol.prepare(stubs)
+
+  let file = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).txt")
+  try Data("sample".utf8).write(to: file)
+  defer { try? FileManager.default.removeItem(at: file) }
+
+  if hasSingleUseLink {
+    let link = try await client.publishFileForSingleDownload(
+      at: file, contentType: "text/plain", accessToken: "token")
+    #expect(link.absoluteString == singleUseLink)
+  } else {
+    await #expect(throws: PolyformClientError.self) {
+      try await client.publishFileForSingleDownload(
+        at: file, contentType: "text/plain", accessToken: "token")
+    }
+    #expect(StubURLProtocol.requests().last?.httpMethod == "DELETE")
+  }
+  let requestBody = try #require(StubURLProtocol.bodies().first ?? nil)
+  let json = try #require(JSONSerialization.jsonObject(with: requestBody) as? [String: Any])
+  #expect(json["visibility"] as? String == "single_use")
+  #expect(json["content_type"] as? String == "text/plain")
+  #expect(json["byte_count"] as? Int == 6)
+}
+
 @Test func publicPDFWithoutUsableLinkIsDeleted() async throws {
   let configuration = URLSessionConfiguration.ephemeral
   configuration.protocolClasses = [StubURLProtocol.self]
