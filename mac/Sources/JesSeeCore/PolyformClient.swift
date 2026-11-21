@@ -96,6 +96,7 @@ public struct WorkflowAuthAttempt: Sendable, Equatable {
 public struct ManagedUpload: Sendable, Equatable {
   public var id: String
   public var publicURL: URL?
+  public var singleUseURL: URL?
 }
 
 public struct PolyformClient: Sendable {
@@ -273,8 +274,8 @@ public struct PolyformClient: Sendable {
   }
 
   public func publishPDF(at fileURL: URL, accessToken: String) async throws -> ManagedUpload {
-    try await publishPublicFile(
-      at: fileURL, contentType: "application/pdf", kind: "PDF", accessToken: accessToken)
+    try await publishSharedFile(
+      at: fileURL, contentType: "application/pdf", kind: "PDF", accessToken: accessToken).upload
   }
 
   public func publishImage(
@@ -283,38 +284,48 @@ public struct PolyformClient: Sendable {
     guard contentType == "image/png" || contentType == "image/jpeg" else {
       throw PolyformClientError.invalidResponse("JesSee can only publish PNG or JPEG screenshots.")
     }
-    return try await publishPublicFile(
-      at: fileURL, contentType: contentType, kind: "screenshot", accessToken: accessToken)
+    return try await publishSharedFile(
+      at: fileURL, contentType: contentType, kind: "screenshot", accessToken: accessToken).upload
   }
 
-  private func publishPublicFile(
-    at fileURL: URL, contentType: String, kind: String, accessToken: String
-  ) async throws -> ManagedUpload {
+  public func publishFileForSingleDownload(
+    at fileURL: URL, contentType: String, accessToken: String
+  ) async throws -> URL {
+    try await publishSharedFile(
+      at: fileURL, contentType: contentType, kind: "file", singleUse: true, accessToken: accessToken).link
+  }
+
+  private func publishSharedFile(
+    at fileURL: URL, contentType: String, kind: String, singleUse: Bool = false, accessToken: String
+  ) async throws -> (upload: ManagedUpload, link: URL) {
     let uploaded = try await upload(
-      fileURL: fileURL, contentType: contentType, visibility: "public",
+      fileURL: fileURL, contentType: contentType, visibility: singleUse ? "single_use" : "public",
       accessToken: accessToken)
-    guard uploaded.publicURL != nil else {
+    let linkType = singleUse ? "one-time download link" : "public link"
+    guard let link = singleUse ? uploaded.singleUseURL : uploaded.publicURL else {
       do {
         try await deleteUpload(id: uploaded.id, accessToken: accessToken)
       } catch {
         throw PolyformClientError.invalidResponse(
-          "Polyform uploaded the \(kind) without a public link, and upload \(uploaded.id) could not be removed: \(error.localizedDescription)")
+          "Polyform uploaded the \(kind) without a \(linkType), and upload \(uploaded.id) could not be removed: \(error.localizedDescription)")
       }
       throw PolyformClientError.invalidResponse(
-        "Polyform uploaded the \(kind) but did not return its public link.")
+        "Polyform uploaded the \(kind) but did not return its \(linkType).")
     }
-    return uploaded
+    return (uploaded, link)
   }
 
   public func upload(
     fileURL: URL, contentType: String, visibility: String, accessToken: String
   ) async throws -> ManagedUpload {
-    let data = try Data(contentsOf: fileURL)
+    guard let fileSize = try fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+      throw PolyformClientError.invalidResponse("JesSee could not read the file size.")
+    }
     let created: UploadResponse = try await post(
       configuration.authURL("uploads"),
       body: UploadRequest(
         filename: fileURL.lastPathComponent, contentType: contentType,
-        byteCount: data.count, visibility: visibility),
+        byteCount: fileSize, visibility: visibility),
       accessToken: accessToken)
     do {
       guard let uploadURLValue = created.uploadURL, let uploadURL = URL(string: uploadURLValue)
@@ -324,14 +335,14 @@ public struct PolyformClient: Sendable {
       var put = URLRequest(url: uploadURL)
       put.httpMethod = "PUT"
       put.setValue(contentType, forHTTPHeaderField: "Content-Type")
-      put.httpBody = data
-      _ = try await checkedData(for: put)
+      _ = try await checkedData(for: put, uploading: fileURL)
       let completed: UploadResponse = try await post(
         configuration.authURL("uploads/\(created.uploadID)/complete"),
         body: EmptyBody(), accessToken: accessToken)
       return ManagedUpload(
         id: completed.uploadID,
-        publicURL: completed.publicURL.flatMap(URL.init(string:)))
+        publicURL: completed.publicURL.flatMap(URL.init(string:)),
+        singleUseURL: PolyformServiceConfiguration.validatedHTTPSURL(completed.singleUseURL))
     } catch {
       do {
         try await deleteUpload(id: created.uploadID, accessToken: accessToken)
@@ -441,11 +452,18 @@ public struct PolyformClient: Sendable {
   }
 
   private func checkedData(
-    for request: URLRequest, recognizesAuthenticationFailure: Bool = false
+    for request: URLRequest, uploading fileURL: URL? = nil,
+    recognizesAuthenticationFailure: Bool = false
   ) async throws -> Data {
     let data: Data
     let response: URLResponse
-    do { (data, response) = try await session.data(for: request) } catch {
+    do {
+      if let fileURL {
+        (data, response) = try await session.upload(for: request, fromFile: fileURL)
+      } else {
+        (data, response) = try await session.data(for: request)
+      }
+    } catch {
       throw PolyformClientError.requestFailed(0, error.localizedDescription)
     }
     guard let http = response as? HTTPURLResponse else {
@@ -561,11 +579,13 @@ private struct UploadResponse: Decodable {
   var uploadID: String
   var uploadURL: String?
   var publicURL: String?
+  var singleUseURL: String?
 
   private enum CodingKeys: String, CodingKey {
     case uploadID = "uploadId"
     case uploadURL = "uploadUrl"
     case publicURL = "publicUrl"
+    case singleUseURL = "singleUseUrl"
   }
 }
 

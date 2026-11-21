@@ -172,11 +172,14 @@ private struct StartCard: View {
           ? "Capture an area or window, upload it, and copy its public URL"
           : "Capture an area or window and open it in your Library",
         action: store.captureScreenshotLink)
-      Button(action: store.importVideo) {
-        Label("Import a video", systemImage: "square.and.arrow.down")
+      Button(action: store.importFile) {
+        Label(
+          store.isUploadingFile ? "Uploading file…" : "Import file",
+          systemImage: "square.and.arrow.down")
           .frame(maxWidth: .infinity).padding(.vertical, 4)
       }
       .buttonStyle(.bordered).controlSize(.large)
+      .disabled(store.isUploadingFile)
       HStack(spacing: 8) {
         Image(systemName: "mic")
           .foregroundStyle(.tertiary)
@@ -859,8 +862,11 @@ struct LibraryView: View {
       }
       .navigationTitle("Library")
       .toolbar {
-        Button(action: store.importVideo) { Label("Import video", systemImage: "plus") }
-          .help("Import a video")
+        Button(action: store.importFile) {
+          Label(store.isUploadingFile ? "Uploading file…" : "Import file", systemImage: "plus")
+        }
+        .help("Import a video or create a one-time download link for another file")
+        .disabled(store.isUploadingFile)
       }
     } detail: {
       if let id = store.selectedCaptureID,

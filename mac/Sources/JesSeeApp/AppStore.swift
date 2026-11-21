@@ -4,6 +4,7 @@ import Carbon.HIToolbox
 import JesSeeCore
 import ServiceManagement
 import SwiftUI
+import UniformTypeIdentifiers
 @preconcurrency import UserNotifications
 
 private enum AppHotKeyAction: UInt32 {
@@ -63,6 +64,7 @@ final class AppStore: ObservableObject {
   @Published private(set) var authenticationState: AuthenticationState
   @Published private(set) var publishingCaptureID: String?
   @Published private(set) var isSavingScreenshot = false
+  @Published private(set) var isUploadingFile = false
   @Published private(set) var hasAPIKey: Bool
   @Published private(set) var isTestingAPIKey = false
   @Published private(set) var readyCaptureID: String?
@@ -405,15 +407,54 @@ final class AppStore: ObservableObject {
     NSWorkspace.shared.open(url)
   }
 
-  func importVideo() {
+  func importFile() {
+    guard !isUploadingFile else { return }
     let panel = NSOpenPanel()
-    panel.title = "Import a video"
+    panel.title = "Import a file"
+    panel.message = "Videos become stories. Other files are uploaded for a single download."
     panel.prompt = "Import"
     panel.canChooseDirectories = false
+    panel.treatsFilePackagesAsDirectories = true
     panel.allowsMultipleSelection = false
-    panel.allowedContentTypes = [.movie, .video]
     guard panel.runModal() == .OK, let url = panel.url else { return }
-    Task { await addCapture(from: url, source: .importedVideo) }
+
+    do {
+      let values = try url.resourceValues(forKeys: [.contentTypeKey, .isRegularFileKey])
+      guard values.isRegularFile == true else {
+        show(.error("Choose a regular file to import."), asSystemNotification: true)
+        return
+      }
+      let type = values.contentType ?? UTType(filenameExtension: url.pathExtension)
+      if let type, type.conforms(to: .movie) || type.conforms(to: .video) {
+        Task { await addCapture(from: url, source: .importedVideo) }
+      } else {
+        guard isSignedIntoPolyform else {
+          show(.error("Sign in with Polyform in Settings to share files."), asSystemNotification: true)
+          return
+        }
+        isUploadingFile = true
+        let contentType = type?.preferredMIMEType ?? "application/octet-stream"
+        Task { await shareImportedFile(url, contentType: contentType) }
+      }
+    } catch {
+      show(.error(error.localizedDescription), asSystemNotification: true)
+    }
+  }
+
+  private func shareImportedFile(_ url: URL, contentType: String) async {
+    defer { isUploadingFile = false }
+    do {
+      let link = try await withPolyformAuthentication { client, token in
+        try await client.publishFileForSingleDownload(
+          at: url, contentType: contentType, accessToken: token)
+      }
+      copyToPasteboard(link.absoluteString)
+      show(.success("One-time download link copied."), asSystemNotification: true)
+    } catch JesSeeError.signInRequired {
+      show(.error("Sign in with Polyform in Settings to share files."), asSystemNotification: true)
+    } catch {
+      show(.error(error.localizedDescription), asSystemNotification: true)
+    }
   }
 
   func startRecording() {

@@ -84,6 +84,8 @@ Public links are independent of the selected AI provider and use the same workfl
 
 The Polyform backend must allow both `application/pdf` and `image/png` for workflow-auth managed uploads before enabling public upload access for the group. If PNG uploads are not yet allowed, JesSee will show the backend error and no screenshot link will be copied. Do not enable this for a release until the backend change has been deployed and a signed build has completed an end-to-end upload test.
 
+For non-video files selected through **Import file**, JesSee requests `single_use` visibility with the same Polyform sign-in and public-upload permission. The completed upload returns a `single_use_url`, which JesSee copies to the clipboard. The link opens a download page. Pressing **Download file** starts the transfer and redeems the link. Deploy backend support for this visibility before distributing the app update.
+
 ## Analytics cleanup
 
 JesSee sends optional native product events directly to GA4. The old **JesSee App Analytics Receiver** workflow is not used by this implementation and can be retired after the new app version is distributed.
